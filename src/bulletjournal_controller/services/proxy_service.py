@@ -25,13 +25,18 @@ HOP_BY_HOP_HEADERS = {
 
 
 class ProxyService:
-    def __init__(self, *, project_service):
+    def __init__(self, *, project_service, job_service):
         self.project_service = project_service
+        self.job_service = job_service
 
     def ensure_project_ready(self, project_id: str):
         project = self.project_service.get_project(project_id)
         if project.status == ProjectStatus.STOPPED.value:
-            project = self.project_service.start_project(project_id)
+            self.job_service.ensure_project_running_via_job(project_id)
+            project = self.project_service.get_project(project_id)
+        elif project.status == ProjectStatus.STARTING.value:
+            self.job_service.ensure_project_running_via_job(project_id)
+            project = self.project_service.get_project(project_id)
         if project.container_port is None:
             raise RuntimeOperationError('Project runtime is unavailable.')
         return project

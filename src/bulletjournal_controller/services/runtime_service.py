@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import re
 import socket
 from dataclasses import dataclass
 
 from bulletjournal_controller.config import DEFAULT_RUNTIME_INTERNAL_PORT, InstanceConfig, ServerConfig
+from bulletjournal_controller.domain.enums import ProjectStatus, ProjectStatusReason
 from bulletjournal_controller.domain.errors import RuntimeOperationError
 from bulletjournal_controller.domain.models import ProjectRecord
 from bulletjournal_controller.runtime.docker_adapter import DockerAdapter
@@ -105,6 +107,70 @@ class RuntimeService:
         for name in names:
             self.remove_container_by_name(name)
         return names
+
+    def reconcile_instance_projects(self, *, projects: list[ProjectRecord], projects_repo) -> None:
+        for project in projects:
+            container_name = project.container_name or self.container_name_for(project.project_id)
+            runtime = self.inspect_container(container_name)
+            if runtime is None:
+                if project.status in {ProjectStatus.RUNNING.value, ProjectStatus.STARTING.value, ProjectStatus.STOPPING.value}:
+                    projects_repo.update(
+                        project.project_id,
+                        status=ProjectStatus.STOPPED.value,
+                        status_reason=ProjectStatusReason.MANUAL_STOP.value,
+                        container_name=None,
+                        container_id=None,
+                        container_port=None,
+                        runtime_stopped_at=utc_now_iso(),
+                    )
+                continue
+            projects_repo.update(
+                project.project_id,
+                status=ProjectStatus.RUNNING.value,
+                status_reason=None,
+                container_name=runtime['container_name'],
+                container_id=runtime['container_id'],
+                container_port=runtime['container_port'],
+                runtime_started_at=runtime['runtime_started_at'],
+                runtime_stopped_at=None,
+            )
+
+    def inspect_container(self, container_name: str) -> dict[str, object] | None:
+        result = self.adapter.run(self.adapter.build_inspect_command(container_name), timeout=90)
+        stderr = result.stderr or ''
+        if result.returncode != 0 and 'No such object' in stderr:
+            return None
+        if result.returncode != 0:
+            raise RuntimeOperationError(stderr.strip() or 'Docker inspect failed.')
+        payload = json.loads(result.stdout or '[]')
+        if not isinstance(payload, list) or not payload:
+            return None
+        record = payload[0]
+        if not isinstance(record, dict):
+            return None
+        state_obj = record.get('State')
+        state = state_obj if isinstance(state_obj, dict) else {}
+        if state.get('Running') is not True:
+            return None
+        network_obj = record.get('NetworkSettings')
+        network = network_obj if isinstance(network_obj, dict) else {}
+        ports_obj = network.get('Ports')
+        ports = ports_obj if isinstance(ports_obj, dict) else {}
+        binding_obj = ports.get('8765/tcp')
+        bindings = binding_obj if isinstance(binding_obj, list) else []
+        host_port = None
+        if bindings:
+            binding = bindings[0]
+            if isinstance(binding, dict) and binding.get('HostPort'):
+                host_port = int(binding['HostPort'])
+        if host_port is None:
+            return None
+        return {
+            'container_name': container_name,
+            'container_id': str(record.get('Id') or container_name),
+            'container_port': host_port,
+            'runtime_started_at': str(state.get('StartedAt') or utc_now_iso()),
+        }
 
     def update_limits(self, *, project: ProjectRecord) -> None:
         if not project.container_name:

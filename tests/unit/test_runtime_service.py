@@ -17,6 +17,9 @@ class FakeAdapter:
     def build_list_by_label_command(self, *, label: str):
         return ['docker', 'ps', '-a', '--filter', f'label={label}', '--format', '{{.Names}}']
 
+    def build_logs_command(self, container_name: str):
+        return ['docker', 'logs', container_name]
+
     def run(self, command, *, timeout=120, capture_output=True):
         _ = timeout
         _ = capture_output

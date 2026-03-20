@@ -38,6 +38,8 @@ def test_repository_crud_behaves_deterministically(instance_root) -> None:
         created_by_user_id=user.user_id,
         created_at='2026-03-18T12:00:00Z',
         updated_at='2026-03-18T12:00:00Z',
+        last_graph_edit_at=None,
+        last_notebook_edit_at=None,
         last_edit_at=None,
         last_run_finished_at=None,
         idle_shutdown_eligible_at=None,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request, WebSocket
 
-from bulletjournal_controller.api.auth import get_current_session_bundle
+from bulletjournal_controller.api.auth import get_current_session_bundle, require_same_origin
 
 
 router = APIRouter(tags=['proxy'])
@@ -10,6 +10,7 @@ router = APIRouter(tags=['proxy'])
 
 @router.api_route('/p/{project_id}', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
 async def proxy_http_root(project_id: str, request: Request, bundle=Depends(get_current_session_bundle)):
+    require_same_origin(request)
     return await request.app.state.container.proxy_service.proxy_http(
         project_id=project_id,
         path='',
@@ -20,6 +21,7 @@ async def proxy_http_root(project_id: str, request: Request, bundle=Depends(get_
 
 @router.api_route('/p/{project_id}/{path:path}', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
 async def proxy_http(project_id: str, path: str, request: Request, bundle=Depends(get_current_session_bundle)):
+    require_same_origin(request)
     return await request.app.state.container.proxy_service.proxy_http(
         project_id=project_id,
         path=path,

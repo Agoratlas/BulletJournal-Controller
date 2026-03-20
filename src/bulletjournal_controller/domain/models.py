@@ -38,6 +38,8 @@ class ProjectRecord:
     created_by_user_id: str
     created_at: str
     updated_at: str
+    last_graph_edit_at: str | None
+    last_notebook_edit_at: str | None
     last_edit_at: str | None
     last_run_finished_at: str | None
     idle_shutdown_eligible_at: str | None
@@ -64,6 +66,8 @@ class ProjectRecord:
             'root_path': self.root_path,
             'created_at': self.created_at,
             'updated_at': self.updated_at,
+            'last_graph_edit_at': self.last_graph_edit_at,
+            'last_notebook_edit_at': self.last_notebook_edit_at,
             'last_edit_at': self.last_edit_at,
             'last_run_finished_at': self.last_run_finished_at,
             'idle_shutdown_eligible_at': self.idle_shutdown_eligible_at,

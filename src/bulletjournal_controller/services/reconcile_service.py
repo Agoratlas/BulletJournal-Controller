@@ -5,6 +5,7 @@ import time
 
 from bulletjournal_controller.config import RECONCILE_INTERVAL_SECONDS
 from bulletjournal_controller.domain.enums import ProjectStatus, ProjectStatusReason
+from bulletjournal_controller.utils import parse_iso8601, utc_now
 
 
 class ReconcileService:
@@ -33,7 +34,8 @@ class ReconcileService:
                 continue
             status = self.runtime_service.fetch_project_status(project=project)
             self.project_service.apply_runtime_status(project_id=project.project_id, status_payload=status)
-            if status.get('idle_shutdown_eligible') is True and status.get('idle_shutdown_eligible_since'):
+            eligible_since = parse_iso8601(status.get('idle_shutdown_eligible_since') if isinstance(status.get('idle_shutdown_eligible_since'), str) else None)
+            if status.get('idle_shutdown_eligible') is True and eligible_since is not None and eligible_since <= utc_now():
                 self.project_service.stop_project(project.project_id, reason=ProjectStatusReason.IDLE_TIMEOUT.value)
 
     def _run_loop(self) -> None:

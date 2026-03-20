@@ -73,6 +73,7 @@ class ExportService:
             manifest = json.loads(archive.read('export_manifest.json').decode('utf-8'))
             if not isinstance(manifest, dict):
                 raise ValidationError('Invalid export manifest.')
+            self._validate_manifest(manifest)
             project_id = str(project_id_override or manifest['project_id'])
             destination = self.instance_paths.project_root(project_id)
             if destination.exists():
@@ -92,10 +93,22 @@ class ExportService:
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(archive.read(member))
-        record = self._reconstruct_project_record(destination=destination, project_id=project_id, manifest=manifest)
+        record = self._reconstruct_project_record(
+            destination=destination,
+            project_id=project_id,
+            manifest=manifest,
+            include_install=include_install,
+        )
         return {'project_id': project_id, 'include_install': include_install, 'manifest': manifest, 'project': record.to_api()}
 
-    def _reconstruct_project_record(self, *, destination: Path, project_id: str, manifest: dict[str, object]) -> ProjectRecord:
+    def _reconstruct_project_record(
+        self,
+        *,
+        destination: Path,
+        project_id: str,
+        manifest: dict[str, object],
+        include_install: bool,
+    ) -> ProjectRecord:
         pyproject = tomllib.loads((destination / 'pyproject.toml').read_text(encoding='utf-8'))
         project_section = pyproject.get('project', {}) if isinstance(pyproject, dict) else {}
         dependencies = project_section.get('dependencies', []) if isinstance(project_section, dict) else []
@@ -114,6 +127,8 @@ class ExportService:
             created_by_user_id=self.default_created_by_user_id,
             created_at=now,
             updated_at=now,
+            last_graph_edit_at=None,
+            last_notebook_edit_at=None,
             last_edit_at=None,
             last_run_finished_at=None,
             idle_shutdown_eligible_at=None,
@@ -121,8 +136,8 @@ class ExportService:
             bulletjournal_version=bulletjournal_version,
             custom_requirements_text=''.join(f'{line}\n' for line in custom_requirements),
             lock_sha256=lock_sha256,
-            install_status=InstallStatus.READY.value,
-            last_install_at=now,
+            install_status=InstallStatus.PENDING.value if not include_install else InstallStatus.READY.value,
+            last_install_at=now if include_install else None,
             cpu_limit_millis=1000,
             memory_limit_bytes=1073741824,
             gpu_enabled=False,
@@ -132,6 +147,24 @@ class ExportService:
             runtime_started_at=None,
             runtime_stopped_at=now,
         )
+
+    @staticmethod
+    def _validate_manifest(manifest: dict[str, object]) -> None:
+        required = {
+            'schema_version': int,
+            'project_id': str,
+            'exported_at': str,
+            'controller_version': str,
+            'include_artifacts': bool,
+            'bulletjournal_version': str,
+            'python_version': str,
+        }
+        for key, expected_type in required.items():
+            value = manifest.get(key)
+            if type(value) is not expected_type:
+                raise ValidationError(f'Invalid export manifest field: {key}')
+        if int(manifest['schema_version']) != EXPORT_MANIFEST_VERSION:
+            raise ValidationError('Unsupported export manifest schema version.')
 
     @staticmethod
     def _resolve_bulletjournal_version(dependencies: list[str]) -> str | None:

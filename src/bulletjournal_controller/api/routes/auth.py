@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request, Response
 
-from bulletjournal_controller.api.auth import clear_session_cookie, get_current_session_bundle, set_session_cookie
+from bulletjournal_controller.api.auth import clear_session_cookie, get_current_session_bundle, require_same_origin, set_session_cookie
 from bulletjournal_controller.api.schemas import LoginRequest, SessionResponse, UserResponse
 
 
 router = APIRouter(prefix='/session', tags=['auth'])
 
 
-@router.post('/login', response_model=SessionResponse)
+@router.post('/login', response_model=SessionResponse, dependencies=[Depends(require_same_origin)])
 def login(payload: LoginRequest, request: Request, response: Response):
     container = request.app.state.container
     user = container.auth_service.authenticate_user(username=payload.username, password=payload.password)
@@ -30,8 +30,8 @@ def login(payload: LoginRequest, request: Request, response: Response):
     )
 
 
-@router.post('/logout', response_model=SessionResponse)
-def logout(request: Request, response: Response):
+@router.post('/logout', response_model=SessionResponse, dependencies=[Depends(require_same_origin)])
+def logout(request: Request, response: Response, _bundle=Depends(get_current_session_bundle)):
     request.app.state.container.auth_service.revoke_session(request.cookies.get('bulletjournal_session'))
     clear_session_cookie(response)
     return SessionResponse(authenticated=False, user=None)

@@ -47,7 +47,11 @@ class StateDB:
                     ).fetchone()
                     if applied is not None:
                         continue
-                connection.executescript(sql)
+                try:
+                    connection.executescript(sql)
+                except sqlite3.OperationalError as exc:
+                    if 'duplicate column name' not in str(exc).lower():
+                        raise
                 connection.execute(
                     'INSERT OR IGNORE INTO schema_migrations (name, applied_at) VALUES (?, ?)',
                     (name, utc_now_iso()),

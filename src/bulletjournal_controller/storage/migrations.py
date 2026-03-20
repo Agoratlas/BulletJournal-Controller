@@ -86,4 +86,46 @@ MIGRATIONS: list[tuple[str, str]] = [
         CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
         """,
     ),
+    (
+        '002_project_activity_columns',
+        """
+        ALTER TABLE projects ADD COLUMN last_graph_edit_at TEXT;
+        ALTER TABLE projects ADD COLUMN last_notebook_edit_at TEXT;
+        """,
+    ),
+    (
+        '003_jobs_without_project_fk',
+        """
+        CREATE TABLE jobs_new (
+            job_id TEXT PRIMARY KEY,
+            project_id TEXT,
+            job_type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            requested_by_user_id TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            result_json TEXT,
+            log_path TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            started_at TEXT,
+            finished_at TEXT,
+            error_message TEXT,
+            FOREIGN KEY(requested_by_user_id) REFERENCES users(user_id)
+        );
+
+        INSERT INTO jobs_new (
+            job_id, project_id, job_type, status, requested_by_user_id, payload_json, result_json, log_path,
+            created_at, started_at, finished_at, error_message
+        )
+        SELECT
+            job_id, project_id, job_type, status, requested_by_user_id, payload_json, result_json, log_path,
+            created_at, started_at, finished_at, error_message
+        FROM jobs;
+
+        DROP TABLE jobs;
+        ALTER TABLE jobs_new RENAME TO jobs;
+
+        CREATE INDEX IF NOT EXISTS idx_jobs_project_id ON jobs(project_id);
+        CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+        """,
+    ),
 ]

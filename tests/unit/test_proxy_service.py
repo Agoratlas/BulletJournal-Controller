@@ -6,7 +6,7 @@ from bulletjournal_controller.services.proxy_service import ProxyService
 
 
 def test_proxy_http_uses_exact_incoming_request_path() -> None:
-    service = ProxyService(project_service=SimpleNamespace())
+    service = ProxyService(project_service=SimpleNamespace(), job_service=SimpleNamespace())
     request = SimpleNamespace(
         url=SimpleNamespace(path='/p/test/'),
         query_params=SimpleNamespace(multi_items=lambda: []),
@@ -20,7 +20,7 @@ def test_proxy_http_uses_exact_incoming_request_path() -> None:
 
 
 def test_proxy_websocket_uses_exact_incoming_request_path() -> None:
-    service = ProxyService(project_service=SimpleNamespace())
+    service = ProxyService(project_service=SimpleNamespace(), job_service=SimpleNamespace())
     websocket = SimpleNamespace(
         url=SimpleNamespace(path='/p/test/ws'),
         query_params=SimpleNamespace(multi_items=lambda: []),

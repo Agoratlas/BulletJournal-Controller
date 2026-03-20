@@ -67,10 +67,15 @@ def update_project(project_id: str, payload: UpdateProjectRequest, request: Requ
     return project.to_api()
 
 
-@router.delete('/{project_id}', status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_same_origin)])
-def delete_project(project_id: str, request: Request, _user=Depends(get_current_user)):
-    request.app.state.container.project_service.delete_project(project_id)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+@router.delete('/{project_id}', status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_same_origin)])
+def delete_project(project_id: str, request: Request, user=Depends(get_current_user)):
+    job = request.app.state.container.job_service.queue_job(
+        job_type='delete_project',
+        requested_by_user_id=user.user_id,
+        payload={'project_id': project_id},
+        project_id=project_id,
+    )
+    return {'job': job.to_api()}
 
 
 @router.post('/{project_id}/start', status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_same_origin)])

@@ -63,6 +63,8 @@ class ProjectService:
             created_by_user_id=created_by_user_id,
             created_at=now,
             updated_at=now,
+            last_graph_edit_at=None,
+            last_notebook_edit_at=None,
             last_edit_at=None,
             last_run_finished_at=None,
             idle_shutdown_eligible_at=None,
@@ -181,6 +183,8 @@ class ProjectService:
         idle_since = status_payload.get('idle_shutdown_eligible_since')
         return self.projects.update(
             project_id,
+            last_graph_edit_at=graph_edit if isinstance(graph_edit, str) else None,
+            last_notebook_edit_at=notebook_edit if isinstance(notebook_edit, str) else None,
             last_edit_at=last_edit_at,
             last_run_finished_at=last_run_finished_at if isinstance(last_run_finished_at, str) else None,
             idle_shutdown_eligible_at=idle_since if isinstance(idle_since, str) else None,

@@ -48,8 +48,23 @@ def test_project_create_list_detail_update_delete(instance_root, server_config) 
         assert updated.status_code == 200
         assert updated.json()['limits']['cpu_limit_millis'] == 3000
 
-        deleted = client.delete('/api/v1/projects/study-a', headers={'origin': 'http://testserver'})
-        assert deleted.status_code == 204
+        blocked_delete = client.delete('/api/v1/projects/study-a', headers={'origin': 'http://testserver'})
+        assert blocked_delete.status_code == 409
+
+        project = container.project_service.create_project(
+            project_id='study-b',
+            created_by_user_id=container.users.get_by_username('admin').user_id,
+            python_version='3.11',
+            bulletjournal_version='0.1.0',
+            custom_requirements_text='',
+            cpu_limit_millis=1000,
+            memory_limit_bytes=2048,
+            gpu_enabled=False,
+        )
+        container.projects.update(project.project_id, status='stopped', install_status='ready')
+        deleted = client.delete('/api/v1/projects/study-b', headers={'origin': 'http://testserver'})
+        assert deleted.status_code == 202
+        assert deleted.json()['job']['job_type'] == 'delete_project'
 
 
 def test_invalid_request_shape_returns_422(instance_root, server_config) -> None:

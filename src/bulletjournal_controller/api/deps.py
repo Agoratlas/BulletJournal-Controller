@@ -72,14 +72,20 @@ class ServiceContainer:
             default_created_by_user_id=SYSTEM_USER_ID,
         )
         self.job_service = JobService(instance_paths=instance_paths, jobs=self.jobs)
-        self.job_service.bind_services(project_service=self.project_service, export_service=self.export_service)
-        self.proxy_service = ProxyService(project_service=self.project_service)
+        self.job_service.bind_services(
+            project_service=self.project_service,
+            export_service=self.export_service,
+            runtime_service=self.runtime_service,
+            system_user_id=SYSTEM_USER_ID,
+        )
+        self.proxy_service = ProxyService(project_service=self.project_service, job_service=self.job_service)
         self.reconcile_service = ReconcileService(
             project_service=self.project_service,
             runtime_service=self.runtime_service,
         )
 
     def start(self) -> None:
+        self.runtime_service.reconcile_instance_projects(projects=self.project_service.list_projects(), projects_repo=self.projects)
         self.job_service.start()
         self.reconcile_service.start()
 

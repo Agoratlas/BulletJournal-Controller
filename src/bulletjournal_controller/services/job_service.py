@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import queue
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -23,10 +24,14 @@ class JobService:
         self._stop_event = threading.Event()
         self.project_service = None
         self.export_service = None
+        self.runtime_service = None
+        self.system_user_id: str | None = None
 
-    def bind_services(self, *, project_service, export_service) -> None:
+    def bind_services(self, *, project_service, export_service, runtime_service, system_user_id: str) -> None:
         self.project_service = project_service
         self.export_service = export_service
+        self.runtime_service = runtime_service
+        self.system_user_id = system_user_id
 
     def start(self) -> None:
         if self._thread is not None:
@@ -130,6 +135,19 @@ class JobService:
             )
             project = self.project_service.mark_install_succeeded(project.project_id, lock_sha256=lock_sha)
             return {'project_id': project.project_id, 'status': project.status, 'install_status': project.install_status}
+        if job.job_type == JobType.INSTALL_ENVIRONMENT.value:
+            project = self.project_service.get_project(job.project_id)
+            self.project_service.mark_installing(project.project_id)
+            current = self.project_service.get_project(project.project_id)
+            lock_sha = self.project_service.environment_service.install_environment(
+                project=current,
+                project_paths=self.project_service.project_paths(project.project_id),
+                log_writer=log_writer,
+                mark_all_artifacts_stale=bool(payload.get('mark_all_artifacts_stale', False)),
+                reason=str(payload.get('reason') or 'controller environment install'),
+            )
+            project = self.project_service.mark_install_succeeded(project.project_id, lock_sha256=lock_sha)
+            return {'project_id': project.project_id, 'status': project.status, 'install_status': project.install_status}
         if job.job_type == JobType.START_PROJECT.value:
             project = self.project_service.start_project(job.project_id)
             return {'project_id': project.project_id, 'status': project.status}
@@ -180,19 +198,58 @@ class JobService:
             )
             if bool(payload.get('include_install', False)):
                 imported_project_id = str(imported['project_id'])
-                self.project_service.mark_installing(imported_project_id)
-                project = self.project_service.get_project(imported_project_id)
-                lock_sha = self.project_service.environment_service.install_environment(
-                    project=project,
-                    project_paths=self.project_service.project_paths(imported_project_id),
+                project = self._run_install_environment_job(
+                    project_id=imported_project_id,
                     log_writer=log_writer,
                     mark_all_artifacts_stale=False,
                     reason='project import install',
                 )
-                project = self.project_service.mark_install_succeeded(imported_project_id, lock_sha256=lock_sha)
                 imported['project'] = project.to_api()
             return imported
+        if job.job_type == JobType.DELETE_PROJECT.value:
+            self.project_service.delete_project(job.project_id)
+            return {'project_id': job.project_id, 'deleted': True}
         raise JobExecutionError(f'Unsupported job type {job.job_type}.')
+
+    def ensure_project_running_via_job(self, project_id: str) -> None:
+        if self.project_service is None or self.runtime_service is None or self.system_user_id is None:
+            raise JobExecutionError('Job service is not fully bound.')
+        project = self.project_service.get_project(project_id)
+        if project.status == ProjectStatus.RUNNING.value and project.container_port is not None:
+            return
+        if project.status == ProjectStatus.STOPPED.value:
+            try:
+                self.queue_job(
+                    job_type=JobType.START_PROJECT.value,
+                    requested_by_user_id=self.system_user_id,
+                    payload={'project_id': project_id, 'source': 'proxy_auto_start'},
+                    project_id=project_id,
+                )
+            except ConflictError:
+                pass
+        deadline = time.monotonic() + 90.0
+        while time.monotonic() < deadline:
+            current = self.project_service.get_project(project_id)
+            if current.status == ProjectStatus.RUNNING.value and current.container_port is not None:
+                return
+            if current.status == ProjectStatus.ERROR.value:
+                raise JobExecutionError(f'Project {project_id} failed to start for proxy access.')
+            time.sleep(0.5)
+        raise JobExecutionError(f'Project {project_id} did not become ready for proxy access within 90 seconds.')
+
+    def _run_install_environment_job(self, *, project_id: str, log_writer, mark_all_artifacts_stale: bool, reason: str):
+        if self.project_service is None:
+            raise JobExecutionError('Job service is not fully bound.')
+        self.project_service.mark_installing(project_id)
+        project = self.project_service.get_project(project_id)
+        lock_sha = self.project_service.environment_service.install_environment(
+            project=project,
+            project_paths=self.project_service.project_paths(project_id),
+            log_writer=log_writer,
+            mark_all_artifacts_stale=mark_all_artifacts_stale,
+            reason=reason,
+        )
+        return self.project_service.mark_install_succeeded(project_id, lock_sha256=lock_sha)
 
     def _apply_project_failure_state(self, job: JobRecord) -> None:
         if job.project_id is None or self.project_service is None:

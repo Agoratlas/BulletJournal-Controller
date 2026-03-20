@@ -1330,7 +1330,11 @@ function ProjectPage() {
     }
     setDeleting(true)
     try {
-      await request<void>(`/api/v1/projects/${projectId}`, { method: 'DELETE' })
+      const response = await request<ProjectActionJobResponse>(`/api/v1/projects/${projectId}`, { method: 'DELETE' })
+      if (response.job) {
+        setFlash(`Queued ${response.job.job_type}.`)
+        setActiveJobIds((current) => Array.from(new Set([...current, response.job!.job_id])))
+      }
       navigate('/', { replace: true })
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Failed to delete project.')

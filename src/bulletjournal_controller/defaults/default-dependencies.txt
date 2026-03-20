@@ -1,0 +1,2 @@
+# Base managed runtime
+bulletjournal @ git+https://github.com/Agoratlas/BulletJournal

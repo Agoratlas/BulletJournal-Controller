@@ -58,7 +58,8 @@ class JobService:
         if reject_on_conflict and project_id is not None and self.jobs.has_active_mutation(project_id):
             raise ConflictError(f'Project {project_id} already has a queued or running mutation.')
         job_id = f'job-{random_token(bytes_length=12)}'
-        log_path = self.instance_paths.job_logs_dir / f'{job_id}.log'
+        created_at = utc_now_iso()
+        log_path = self.instance_paths.job_logs_dir / f'{self._timestamp_for_filename(created_at)}__{job_id}.log'
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.write_text('', encoding='utf-8')
         job = self.jobs.create(
@@ -70,7 +71,7 @@ class JobService:
             payload_json=json_dumps(payload),
             result_json=None,
             log_path=str(log_path),
-            created_at=utc_now_iso(),
+            created_at=created_at,
             started_at=None,
             finished_at=None,
             error_message=None,
@@ -282,4 +283,10 @@ class JobService:
     @staticmethod
     def _log(path: Path, message: str) -> None:
         with path.open('a', encoding='utf-8') as handle:
-            handle.write(f'{utc_now_iso()} {message}\n')
+            lines = message.splitlines() or ['']
+            for line in lines:
+                handle.write(f'{utc_now_iso()} {line}\n')
+
+    @staticmethod
+    def _timestamp_for_filename(value: str) -> str:
+        return value.replace(':', '-')

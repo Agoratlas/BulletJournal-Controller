@@ -4,7 +4,7 @@
   "runtime_dockerfile": "runtime/Dockerfile",
   "runtime_build_context": ".",
   "default_dependencies_file": "default-dependencies.txt",
-  "ssh_dir": null,
+  "ssh_dir": "ssh",
   "private_assets_dir": null,
   "local_bulletjournal_source": null
 }

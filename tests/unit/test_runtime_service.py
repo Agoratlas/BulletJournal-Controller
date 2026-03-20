@@ -20,6 +20,9 @@ class FakeAdapter:
     def build_logs_command(self, container_name: str):
         return ['docker', 'logs', container_name]
 
+    def build_inspect_command(self, container_name: str):
+        return ['docker', 'inspect', container_name]
+
     def run(self, command, *, timeout=120, capture_output=True):
         _ = timeout
         _ = capture_output
@@ -71,3 +74,14 @@ def test_cleanup_instance_containers_removes_all_matching_names() -> None:
     removed = service.cleanup_instance_containers()
     assert removed == ['bulletjournal-main-a', 'bulletjournal-main-b']
     assert adapter.commands[0] == ['docker', 'ps', '-a', '--filter', 'label=bulletjournal.instance_id=main-instance', '--format', '{{.Names}}']
+
+
+def test_inspect_container_treats_lowercase_no_such_object_as_missing() -> None:
+    adapter = FakeAdapter([SimpleNamespace(returncode=1, stdout='', stderr='error: no such object: bulletjournal-main-testproject')])
+    service = RuntimeService(
+        instance_config=_instance_config(),
+        server_config=ServerConfig(session_secret='secret', cookie_secure=False),
+        adapter=adapter,
+        runtime_config_service=SimpleNamespace(runtime_config=SimpleNamespace(runtime_image_name='img'), additional_mounts=lambda: []),
+    )
+    assert service.inspect_container('bulletjournal-main-testproject') is None

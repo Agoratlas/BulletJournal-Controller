@@ -138,7 +138,7 @@ class RuntimeService:
     def inspect_container(self, container_name: str) -> dict[str, object] | None:
         result = self.adapter.run(self.adapter.build_inspect_command(container_name), timeout=90)
         stderr = result.stderr or ''
-        if result.returncode != 0 and 'No such object' in stderr:
+        if result.returncode != 0 and 'no such object' in stderr.lower():
             return None
         if result.returncode != 0:
             raise RuntimeOperationError(stderr.strip() or 'Docker inspect failed.')

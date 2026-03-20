@@ -29,6 +29,15 @@ class DummyRuntimeConfigService:
         return []
 
 
+class DummyRuntimeConfigServiceWithMounts(DummyRuntimeConfigService):
+    def __init__(self, additional_mounts: list[tuple[Path, str, bool]]):
+        super().__init__()
+        self._additional_mounts = additional_mounts
+
+    def additional_mounts(self) -> list[tuple[Path, str, bool]]:
+        return self._additional_mounts
+
+
 @dataclass
 class DummyProjectPaths:
     pyproject_path: Path
@@ -94,6 +103,8 @@ def test_render_pyproject_contains_expected_fields() -> None:
     assert 'name = "bulletjournal-project-study-a"' in rendered
     assert 'requires-python = "==3.11.*"' in rendered
     assert 'schema_version = 1' in rendered
+    assert 'build-backend = "setuptools.build_meta"' in rendered
+    assert 'packages = []' in rendered
 
 
 def test_render_pyproject_includes_local_source_when_configured(tmp_path: Path) -> None:
@@ -105,6 +116,48 @@ def test_render_pyproject_includes_local_source_when_configured(tmp_path: Path) 
     rendered = service.render_pyproject(project_id='study-a', python_version='3.11', dependencies=['bulletjournal', 'alpha'])
     assert '[tool.uv.sources]' in rendered
     assert '/opt/bulletjournal/local-source/BulletJournal' in rendered
+
+
+def test_parse_dependency_config_supports_index_shorthand() -> None:
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=InstallerRunner(DockerAdapter()),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+    config = service.parse_dependency_config('cugraph-cu13 @ https://pypi.nvidia.com\npandas\n')
+    assert config.dependency_lines == ['cugraph-cu13', 'pandas']
+    assert config.extra_index_urls == ['https://pypi.nvidia.com']
+    assert config.source_indexes == {'cugraph-cu13': 'https://pypi.nvidia.com'}
+
+
+def test_parse_dependency_config_supports_inline_index_comment() -> None:
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=InstallerRunner(DockerAdapter()),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+    config = service.parse_dependency_config('cugraph-cu13 # index-url: https://pypi.nvidia.com\npandas\n')
+    assert config.dependency_lines == ['cugraph-cu13', 'pandas']
+    assert config.extra_index_urls == ['https://pypi.nvidia.com']
+    assert config.source_indexes == {'cugraph-cu13': 'https://pypi.nvidia.com'}
+
+
+def test_render_pyproject_emits_uv_index_sources_for_shorthand_index() -> None:
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=InstallerRunner(DockerAdapter()),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+    rendered = service.render_pyproject(
+        project_id='study-a',
+        python_version='3.11',
+        dependencies=['cugraph-cu13', 'pandas'],
+        extra_index_urls=['https://pypi.nvidia.com'],
+        source_indexes={'cugraph-cu13': 'https://pypi.nvidia.com'},
+    )
+    assert '[[tool.uv.index]]' in rendered
+    assert 'url = "https://pypi.nvidia.com"' in rendered
+    assert 'cugraph-cu13 = { index = "extra_index_1" }' in rendered
 
 
 def test_default_dependency_text_reloads_from_runtime_config_service(tmp_path: Path) -> None:
@@ -131,6 +184,20 @@ def test_default_dependency_text_reloads_from_runtime_config_service(tmp_path: P
     assert 'alpha==1' in service.default_dependency_text()
     runtime_config_service.path = defaults_b
     assert 'beta==2' in service.default_dependency_text()
+
+
+def test_default_dependency_text_preserves_comments_for_ui(tmp_path: Path) -> None:
+    defaults = tmp_path / 'defaults.txt'
+    defaults.write_text('# comment\ncugraph-cu13 # index-url: https://pypi.nvidia.com\n', encoding='utf-8')
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=InstallerRunner(DockerAdapter()),
+        runtime_config_service=DummyRuntimeConfigService(defaults),
+    )
+    rendered = service.default_dependency_text()
+    assert '# comment' in rendered
+    assert '# index-url: https://pypi.nvidia.com' in rendered
+    assert 'bulletjournal==' in rendered
 
 
 def test_write_project_environment_does_not_create_placeholder_lockfile(tmp_path: Path) -> None:
@@ -216,3 +283,37 @@ def test_install_environment_uses_extended_retry_budget_for_mount_visibility(tmp
 
     assert result == 'lock-sha'
     assert installer.calls == 7
+
+
+def test_install_environment_retries_when_additional_mount_is_not_immediately_visible(tmp_path: Path) -> None:
+    project_root = tmp_path / 'project'
+    project_root.mkdir(parents=True)
+    ssh_root = tmp_path / 'ssh'
+    ssh_root.mkdir(parents=True)
+    lock_path = project_root / 'uv.lock'
+    lock_path.write_text('lock = true\n', encoding='utf-8')
+    project_paths = type('ProjectPaths', (), {'root': project_root, 'uv_lock_path': lock_path})()
+    installer = RetryingInstaller(
+        [
+            FakeResult(returncode=1, stderr='docker: Error response from daemon: invalid mount config for type "bind": bind source path does not exist'),
+            FakeResult(returncode=0),
+        ],
+    )
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=installer,
+        runtime_config_service=DummyRuntimeConfigServiceWithMounts([(ssh_root, '/root/.ssh', True)]),
+    )
+    service.compute_lock_sha256 = lambda _path: 'lock-sha'  # type: ignore[method-assign]
+    project = type('ProjectRecord', (), {'gpu_enabled': False})()
+
+    result = service.install_environment(
+        project=project,
+        project_paths=project_paths,
+        log_writer=lambda _message: None,
+        mark_all_artifacts_stale=False,
+        reason='test',
+    )
+
+    assert result == 'lock-sha'
+    assert installer.calls == 2

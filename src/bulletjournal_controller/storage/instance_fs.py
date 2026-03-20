@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import shutil
 import sqlite3
+from dataclasses import replace
 from dataclasses import dataclass
 from pathlib import Path
 
-from bulletjournal_controller.config import InstanceConfig, default_instance_config, instance_config_json, load_instance_config
+from bulletjournal_controller.config import bundled_defaults_root, InstanceConfig, default_instance_config, instance_config_json, load_instance_config
 from bulletjournal_controller.domain.errors import ConfigurationError, NotFoundError, ProjectValidationError
 from bulletjournal_controller.domain.rules import validate_project_id
 from bulletjournal_controller.storage.atomic_write import atomic_write_text
@@ -150,6 +151,10 @@ class InstancePaths:
     def local_default_dependencies_path(self) -> Path:
         return self.local_config_dir / 'default-dependencies.txt'
 
+    @property
+    def local_runtime_json_path(self) -> Path:
+        return self.local_config_dir / 'runtime.json'
+
     def project_root(self, project_id: str) -> Path:
         return self.projects_dir / validate_project_id(project_id)
 
@@ -160,7 +165,8 @@ class InstancePaths:
 def init_instance_root(path: Path, *, config: InstanceConfig | None = None) -> InstancePaths:
     root = path.resolve()
     paths = InstancePaths(root)
-    resolved_config = config or default_instance_config()
+    source_config = config or default_instance_config()
+    resolved_config = _resolve_instance_local_config(paths, source_config)
     ensure_directory(paths.config_dir)
     ensure_directory(paths.metadata_dir)
     ensure_directory(paths.projects_dir)
@@ -175,7 +181,7 @@ def init_instance_root(path: Path, *, config: InstanceConfig | None = None) -> I
         paths.controller_log_path.write_text('', encoding='utf-8')
     if not paths.instance_json_path.exists():
         atomic_write_text(paths.instance_json_path, instance_config_json(resolved_config))
-    _seed_local_config(paths, resolved_config)
+    _seed_local_config(paths, source_config)
     if not paths.state_db_path.exists():
         sqlite3.connect(paths.state_db_path).close()
     return paths
@@ -285,3 +291,15 @@ def _seed_local_config(paths: InstancePaths, config: InstanceConfig) -> None:
         source = Path(config.runtime_dockerfile)
         if source.is_file() and not paths.local_runtime_dockerfile_path.exists():
             atomic_write_text(paths.local_runtime_dockerfile_path, source.read_text(encoding='utf-8'))
+    defaults_runtime_json = bundled_defaults_root() / 'runtime.json'
+    if defaults_runtime_json.is_file() and not paths.local_runtime_json_path.exists():
+        atomic_write_text(paths.local_runtime_json_path, defaults_runtime_json.read_text(encoding='utf-8'))
+
+
+def _resolve_instance_local_config(paths: InstancePaths, config: InstanceConfig) -> InstanceConfig:
+    return replace(
+        config,
+        default_dependencies_file=str(paths.local_default_dependencies_path),
+        runtime_dockerfile=str(paths.local_runtime_dockerfile_path),
+        runtime_build_context=str(paths.local_config_dir),
+    )

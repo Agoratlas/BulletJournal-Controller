@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import os
 import re
 import time
@@ -14,8 +15,19 @@ from bulletjournal_controller.utils import normalize_package_name, read_text_if_
 
 
 DEPENDENCY_NAME_PATTERN = re.compile(r'^\s*([A-Za-z0-9][A-Za-z0-9._-]*)')
+INDEX_DIRECT_URL_PATTERN = re.compile(r'^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*@\s*(https?://\S+)\s*$')
+INLINE_INDEX_COMMENT_PATTERN = re.compile(r'^(?P<dependency>.+?)\s+#\s*index-url:\s*(?P<index_url>https?://\S+)\s*$')
 MISSING_BIND_MOUNT_PATTERN = re.compile(r'bind source path does not exist', re.IGNORECASE)
 INSTALL_RETRY_DELAYS_SECONDS = (0.25, 0.75, 1.5, 3.0, 5.0, 8.0)
+ARCHIVE_SUFFIXES = ('.whl', '.tar.gz', '.zip', '.tar.bz2', '.tar.lz', '.tar.lzma', '.tar.xz', '.tar.zst', '.tar', '.tbz', '.tgz', '.tlz', '.txz')
+VCS_PREFIXES = ('git+', 'hg+', 'svn+', 'bzr+')
+
+
+@dataclass(slots=True)
+class DependencyConfig:
+    dependency_lines: list[str]
+    extra_index_urls: list[str]
+    source_indexes: dict[str, str]
 
 
 class EnvironmentService:
@@ -33,19 +45,49 @@ class EnvironmentService:
         text = read_text_if_exists(Path(path))
         if text is None:
             return required + '\n'
-        lines = self.parse_dependency_text(text)
-        if not any(self.dependency_identity(line) == 'bulletjournal' for line in lines):
-            lines.insert(0, required)
-        return ''.join(f'{line}\n' for line in lines)
+        rendered = text if text.endswith('\n') else f'{text}\n'
+        config = self.parse_dependency_config(rendered)
+        if not any(self.dependency_identity(line) == 'bulletjournal' for line in config.dependency_lines):
+            return f'{required}\n{rendered}'
+        return rendered
 
     def parse_dependency_text(self, text: str) -> list[str]:
+        return self.parse_dependency_config(text).dependency_lines
+
+    def parse_dependency_config(self, text: str) -> DependencyConfig:
         lines: list[str] = []
+        extra_index_urls: list[str] = []
+        source_indexes: dict[str, str] = {}
         for raw_line in text.splitlines():
             line = raw_line.strip()
             if not line or line.startswith('#'):
                 continue
+            if line.startswith('--extra-index-url '):
+                extra_index_urls.append(line.removeprefix('--extra-index-url ').strip())
+                continue
+            if line.startswith('--index-url '):
+                extra_index_urls.append(line.removeprefix('--index-url ').strip())
+                continue
+            inline_index = self._inline_index_comment(line)
+            if inline_index is not None:
+                dependency_name, index_url = inline_index
+                lines.append(dependency_name)
+                extra_index_urls.append(index_url)
+                source_indexes[normalize_package_name(dependency_name)] = index_url
+                continue
+            shorthand = self._index_shorthand(line)
+            if shorthand is not None:
+                dependency_name, index_url = shorthand
+                lines.append(dependency_name)
+                extra_index_urls.append(index_url)
+                source_indexes[normalize_package_name(dependency_name)] = index_url
+                continue
             lines.append(line)
-        return lines
+        return DependencyConfig(
+            dependency_lines=lines,
+            extra_index_urls=self._dedupe(extra_index_urls),
+            source_indexes=source_indexes,
+        )
 
     def dependency_identity(self, line: str) -> str:
         match = DEPENDENCY_NAME_PATTERN.match(line)
@@ -55,18 +97,20 @@ class EnvironmentService:
         return normalize_package_name(token)
 
     def merge_dependency_lines(self, *, bulletjournal_version: str, custom_requirements_text: str) -> list[str]:
-        defaults = self.parse_dependency_text(self.default_dependency_text())
-        if not any(self.dependency_identity(line) == 'bulletjournal' for line in defaults):
-            defaults.insert(0, f'bulletjournal=={bulletjournal_version}')
-        defaults = [
+        defaults = self.parse_dependency_config(self.default_dependency_text())
+        default_lines = defaults.dependency_lines
+        if not any(self.dependency_identity(line) == 'bulletjournal' for line in default_lines):
+            default_lines.insert(0, f'bulletjournal=={bulletjournal_version}')
+        default_lines = [
             f'bulletjournal=={bulletjournal_version}' if self.dependency_identity(line) == 'bulletjournal' else line
-            for line in defaults
+            for line in default_lines
         ]
-        custom_lines = self.parse_dependency_text(custom_requirements_text)
+        custom = self.parse_dependency_config(custom_requirements_text)
+        custom_lines = custom.dependency_lines
         custom_map = {self.dependency_identity(line): line for line in custom_lines}
         result: list[str] = []
         seen: set[str] = set()
-        for line in defaults:
+        for line in default_lines:
             identity = self.dependency_identity(line)
             resolved = custom_map.get(identity, line)
             result.append(resolved)
@@ -78,16 +122,40 @@ class EnvironmentService:
                 seen.add(identity)
         return result
 
+    def merge_dependency_config(self, *, bulletjournal_version: str, custom_requirements_text: str) -> DependencyConfig:
+        default_config = self.parse_dependency_config(self.default_dependency_text())
+        custom_config = self.parse_dependency_config(custom_requirements_text)
+        dependency_lines = self.merge_dependency_lines(
+            bulletjournal_version=bulletjournal_version,
+            custom_requirements_text=custom_requirements_text,
+        )
+        source_indexes = dict(default_config.source_indexes)
+        source_indexes.update(custom_config.source_indexes)
+        return DependencyConfig(
+            dependency_lines=dependency_lines,
+            extra_index_urls=self._dedupe(default_config.extra_index_urls + custom_config.extra_index_urls),
+            source_indexes=source_indexes,
+        )
+
     def render_pyproject(
         self,
         *,
         project_id: str,
         python_version: str,
         dependencies: list[str],
+        extra_index_urls: list[str] | None = None,
+        source_indexes: dict[str, str] | None = None,
     ) -> str:
         dependency_lines = '\n'.join(f'  "{line}",' for line in dependencies)
-        source_block = self._local_source_block(dependencies)
+        source_block = self._source_block(
+            dependencies=dependencies,
+            extra_index_urls=extra_index_urls or [],
+            source_indexes=source_indexes or {},
+        )
         return (
+            '[build-system]\n'
+            'requires = ["setuptools>=68", "wheel"]\n'
+            'build-backend = "setuptools.build_meta"\n\n'
             '[project]\n'
             f'name = "bulletjournal-project-{project_id}"\n'
             'version = "0.0.0"\n'
@@ -98,6 +166,8 @@ class EnvironmentService:
             f'{source_block}'
             '[tool.uv]\n'
             'package = false\n\n'
+            '[tool.setuptools]\n'
+            'packages = []\n\n'
             '[tool.bulletjournal_controller]\n'
             'schema_version = 1\n'
             f'project_id = "{project_id}"\n'
@@ -112,15 +182,21 @@ class EnvironmentService:
         bulletjournal_version: str,
         custom_requirements_text: str,
     ) -> list[str]:
-        dependencies = self.merge_dependency_lines(
+        config = self.merge_dependency_config(
             bulletjournal_version=bulletjournal_version,
             custom_requirements_text=custom_requirements_text,
         )
         atomic_write_text(
             project_paths.pyproject_path,
-            self.render_pyproject(project_id=project_id, python_version=python_version, dependencies=dependencies),
+            self.render_pyproject(
+                project_id=project_id,
+                python_version=python_version,
+                dependencies=config.dependency_lines,
+                extra_index_urls=config.extra_index_urls,
+                source_indexes=config.source_indexes,
+            ),
         )
-        return dependencies
+        return config.dependency_lines
 
     def compute_lock_sha256(self, path: Path) -> str:
         return sha256_file(path)
@@ -144,7 +220,7 @@ class EnvironmentService:
         log_writer(f'install command: {" ".join(command)}')
         result = self._run_with_mount_retry(
             command=command,
-            project_root=project_paths.root,
+            mount_paths=[project_paths.root, *[mount_path for mount_path, _target, _readonly in self.runtime_config_service.additional_mounts()]],
             log_writer=log_writer,
         )
         if result.returncode != 0:
@@ -167,13 +243,14 @@ class EnvironmentService:
                 raise RuntimeError('Artifact invalidation failed after environment install.')
         return self.compute_lock_sha256(project_paths.uv_lock_path)
 
-    def _run_with_mount_retry(self, *, command: list[str], project_root: Path, log_writer):
+    def _run_with_mount_retry(self, *, command: list[str], mount_paths: list[Path], log_writer):
         attempts = len(INSTALL_RETRY_DELAYS_SECONDS) + 1
         result = None
         for index in range(attempts):
-            if not project_root.exists():
-                raise RuntimeError(f'Project root disappeared before install: {project_root}')
-            self._flush_project_root(project_root)
+            for mount_path in mount_paths:
+                if not mount_path.exists():
+                    raise RuntimeError(f'Container mount path disappeared before install: {mount_path}')
+                self._flush_mount_path(mount_path)
             result = self.installer.run(command)
             if result.stdout:
                 log_writer(result.stdout.rstrip())
@@ -187,7 +264,7 @@ class EnvironmentService:
                 return result
             delay = INSTALL_RETRY_DELAYS_SECONDS[index]
             log_writer(
-                f'detected transient Docker bind mount visibility failure for {project_root}; retrying in {delay:.2f}s',
+                f'detected transient Docker bind mount visibility failure; retrying in {delay:.2f}s',
             )
             time.sleep(delay)
         if result is None:
@@ -199,7 +276,7 @@ class EnvironmentService:
         return bool(MISSING_BIND_MOUNT_PATTERN.search(stderr))
 
     @staticmethod
-    def _flush_project_root(project_root: Path) -> None:
+    def _flush_mount_path(project_root: Path) -> None:
         try:
             directory_fd = os.open(project_root, os.O_RDONLY)
         except OSError:
@@ -211,13 +288,65 @@ class EnvironmentService:
         finally:
             os.close(directory_fd)
 
-    def _local_source_block(self, dependencies: list[str]) -> str:
+    def _source_block(self, *, dependencies: list[str], extra_index_urls: list[str], source_indexes: dict[str, str]) -> str:
+        lines: list[str] = []
+        index_names: dict[str, str] = {}
+        for offset, index_url in enumerate(extra_index_urls, start=1):
+            name = f'extra_index_{offset}'
+            index_names[index_url] = name
+            lines.append('[[tool.uv.index]]')
+            lines.append(f'name = "{name}"')
+            lines.append(f'url = "{index_url}"')
+            lines.append('')
+
+        source_lines: list[str] = []
         local_source = self.runtime_config_service.runtime_config.local_bulletjournal_source
         if local_source is None:
-            return ''
-        if not any(self.dependency_identity(line) == 'bulletjournal' for line in dependencies):
-            return ''
-        return (
-            '[tool.uv.sources]\n'
-            'bulletjournal = { path = "/opt/bulletjournal/local-source/BulletJournal", editable = true }\n\n'
-        )
+            pass
+        elif any(self.dependency_identity(line) == 'bulletjournal' for line in dependencies):
+            source_lines.append('bulletjournal = { path = "/opt/bulletjournal/local-source/BulletJournal", editable = true }')
+
+        for dependency_name, index_url in source_indexes.items():
+            index_name = index_names.get(index_url)
+            if index_name:
+                source_lines.append(f'{dependency_name} = {{ index = "{index_name}" }}')
+
+        if source_lines:
+            lines.append('[tool.uv.sources]')
+            lines.extend(source_lines)
+            lines.append('')
+
+        return '' if not lines else '\n'.join(lines) + '\n'
+
+    @staticmethod
+    def _dedupe(values: list[str]) -> list[str]:
+        result: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            if value not in seen:
+                result.append(value)
+                seen.add(value)
+        return result
+
+    @staticmethod
+    def _index_shorthand(line: str) -> tuple[str, str] | None:
+        match = INDEX_DIRECT_URL_PATTERN.match(line)
+        if match is None:
+            return None
+        dependency_name = match.group(1).strip()
+        url = match.group(2).strip()
+        lowered = url.lower()
+        if lowered.startswith(VCS_PREFIXES):
+            return None
+        if lowered.endswith(ARCHIVE_SUFFIXES):
+            return None
+        return dependency_name, url
+
+    @staticmethod
+    def _inline_index_comment(line: str) -> tuple[str, str] | None:
+        match = INLINE_INDEX_COMMENT_PATTERN.match(line)
+        if match is None:
+            return None
+        dependency_name = match.group('dependency').strip()
+        index_url = match.group('index_url').strip()
+        return dependency_name, index_url

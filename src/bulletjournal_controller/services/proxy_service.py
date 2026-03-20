@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit, urlunsplit
 from urllib.parse import urlencode
 
 from bulletjournal_controller.domain.enums import ProjectStatus
@@ -41,19 +42,28 @@ class ProxyService:
             raise RuntimeOperationError('Project runtime is unavailable.')
         return project
 
-    async def proxy_http(self, *, project_id: str, path: str, request: Request, authenticated_username: str) -> Response:
+    async def proxy_http(
+        self,
+        *,
+        project_id: str,
+        path: str,
+        request: Request,
+        authenticated_username: str,
+        target_path_override: str | None = None,
+    ) -> Response:
         import httpx
         from fastapi.responses import StreamingResponse
 
         _ = path
         project = self.ensure_project_ready(project_id)
         query = urlencode(list(request.query_params.multi_items()))
-        target_path = request.url.path
+        target_path = target_path_override or request.url.path
         target = f'http://127.0.0.1:{project.container_port}{target_path}'
         if query:
             target = f'{target}?{query}'
         body = await request.body()
-        async with httpx.AsyncClient(timeout=None, follow_redirects=False) as client:
+        client = httpx.AsyncClient(timeout=None, follow_redirects=False)
+        try:
             upstream = client.build_request(
                 request.method,
                 target,
@@ -63,16 +73,29 @@ class ProxyService:
             response = await client.send(upstream, stream=True)
 
             async def body_iterator():
-                async for chunk in response.aiter_bytes():
-                    yield chunk
-                await response.aclose()
+                try:
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+                finally:
+                    await response.aclose()
+                    await client.aclose()
 
+            response_headers = self._response_headers(
+                response.headers,
+                project_id=project_id,
+                upstream_port=project.container_port,
+                    request_host=request.headers.get('host', ''),
+                    request_scheme=request.url.scheme,
+                )
             return StreamingResponse(
                 body_iterator(),
                 status_code=response.status_code,
-                headers=self._response_headers(response.headers),
+                headers=response_headers,
                 media_type=response.headers.get('content-type'),
             )
+        except Exception:
+            await client.aclose()
+            raise
 
     async def proxy_websocket(self, *, project_id: str, path: str, websocket: WebSocket, authenticated_username: str) -> None:
         from websockets.asyncio.client import connect as ws_connect
@@ -98,11 +121,11 @@ class ProxyService:
         forwarded = {
             key: value
             for key, value in headers.items()
-            if key.lower() not in HOP_BY_HOP_HEADERS and key.lower() not in {'host', 'content-length'}
+            if key.lower() not in HOP_BY_HOP_HEADERS and key.lower() != 'content-length'
         }
+        forwarded['host'] = request.headers.get('host', '')
         forwarded['X-Forwarded-Host'] = request.headers.get('host', '')
         forwarded['X-Forwarded-Proto'] = request.url.scheme
-        forwarded['X-Forwarded-Prefix'] = f'/p/{project_id}'
         forwarded['X-BulletJournal-Authenticated-User'] = username
         return forwarded
 
@@ -110,16 +133,45 @@ class ProxyService:
         forwarded = {
             key: value
             for key, value in websocket.headers.items()
-            if key.lower() not in HOP_BY_HOP_HEADERS and not key.lower().startswith('sec-websocket-') and key.lower() != 'host'
+            if key.lower() not in HOP_BY_HOP_HEADERS and not key.lower().startswith('sec-websocket-')
         }
+        forwarded['host'] = websocket.headers.get('host', '')
         forwarded['X-Forwarded-Host'] = websocket.headers.get('host', '')
         forwarded['X-Forwarded-Proto'] = websocket.url.scheme
-        forwarded['X-Forwarded-Prefix'] = f'/p/{project_id}'
         forwarded['X-BulletJournal-Authenticated-User'] = username
         return forwarded
 
-    def _response_headers(self, headers) -> dict[str, str]:
-        return {key: value for key, value in headers.items() if key.lower() not in HOP_BY_HOP_HEADERS and key.lower() != 'content-length'}
+    def _response_headers(self, headers, *, project_id: str, upstream_port: int, request_host: str, request_scheme: str) -> dict[str, str]:
+        resolved = {key: value for key, value in headers.items() if key.lower() not in HOP_BY_HOP_HEADERS and key.lower() != 'content-length'}
+        for key in ('location', 'Location'):
+            value = resolved.get(key)
+            if value:
+                resolved[key] = self._rewrite_location(
+                    value,
+                    project_id=project_id,
+                    upstream_port=upstream_port,
+                    request_host=request_host,
+                    request_scheme=request_scheme,
+                )
+        return resolved
+
+    @staticmethod
+    def _rewrite_location(location: str, *, project_id: str, upstream_port: int, request_host: str, request_scheme: str) -> str:
+        prefix = f'/p/{project_id}'
+        if location.startswith('http://127.0.0.1:') or location.startswith('http://localhost:'):
+            parsed = urlsplit(location)
+            if parsed.port == upstream_port and parsed.path:
+                path = parsed.path if parsed.path.startswith(prefix) else f'{prefix}{parsed.path if parsed.path.startswith("/") else "/" + parsed.path}'
+                return urlunsplit(('', '', path, parsed.query, parsed.fragment))
+        if request_host:
+            parsed = urlsplit(location)
+            if parsed.scheme == request_scheme and parsed.netloc == request_host and parsed.path and not parsed.path.startswith(prefix):
+                path = f'{prefix}{parsed.path if parsed.path.startswith("/") else "/" + parsed.path}'
+                return urlunsplit(('', '', path, parsed.query, parsed.fragment))
+        if location.startswith('/') and not location.startswith(prefix):
+            return f'{prefix}{location}'
+        return location
+
 
     async def _bridge_websocket(self, websocket: WebSocket, upstream: Any) -> None:
         from fastapi import WebSocketDisconnect

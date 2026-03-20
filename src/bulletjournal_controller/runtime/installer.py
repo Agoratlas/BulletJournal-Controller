@@ -32,7 +32,7 @@ class InstallerRunner:
             image,
             'sh',
             '-lc',
-            'uv lock --project /project && uv sync --project /project --locked',
+            'uv lock --project /project && uv sync --project /project --locked --no-install-project',
         ]
         if gpu_enabled:
             options = ['--gpus', 'all'] + options

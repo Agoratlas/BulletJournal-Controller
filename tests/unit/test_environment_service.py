@@ -11,14 +11,13 @@ from bulletjournal_controller.services.environment_service import EnvironmentSer
 
 
 class DummyRuntimeConfigService:
-    def __init__(self, default_dependencies_file: Path | None = None, local_bulletjournal_source: Path | None = None):
+    def __init__(self, default_dependencies_file: Path | None = None):
         self._default_dependencies_file = default_dependencies_file
         self.runtime_config = type(
-            'RuntimeConfig',
+            "RuntimeConfig",
             (),
             {
-                'runtime_image_name': 'bulletjournal-runtime:local',
-                'local_bulletjournal_source': local_bulletjournal_source,
+                "runtime_image_name": "bulletjournal-runtime:local",
             },
         )()
 
@@ -45,7 +44,7 @@ class DummyProjectPaths:
 
 
 class FakeResult:
-    def __init__(self, *, returncode: int, stdout: str = '', stderr: str = ''):
+    def __init__(self, *, returncode: int, stdout: str = "", stderr: str = ""):
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
@@ -58,11 +57,11 @@ class RetryingInstaller:
 
     def build_install_command(self, **kwargs):
         _ = kwargs
-        return ['docker', 'run', 'test']
+        return ["docker", "run", "test"]
 
     def build_mark_stale_command(self, **kwargs):
         _ = kwargs
-        return ['docker', 'run', 'mark-stale']
+        return ["docker", "run", "mark-stale"]
 
     def run(self, command):
         _ = command
@@ -72,8 +71,10 @@ class RetryingInstaller:
 
 
 def test_parse_default_dependencies_and_merge_precedence(tmp_path: Path) -> None:
-    default_file = tmp_path / 'deps.txt'
-    default_file.write_text('# comment\nbulletjournal==0.1.0\nalpha==1\nbeta\n', encoding='utf-8')
+    default_file = tmp_path / "deps.txt"
+    default_file.write_text(
+        "# comment\nbulletjournal==0.1.0\nalpha==1\nbeta\n", encoding="utf-8"
+    )
     config = default_instance_config()
     config = replace(config, default_dependencies_file=str(default_file))
     service = EnvironmentService(
@@ -82,14 +83,14 @@ def test_parse_default_dependencies_and_merge_precedence(tmp_path: Path) -> None
         runtime_config_service=DummyRuntimeConfigService(default_file),
     )
     merged = service.merge_dependency_lines(
-        bulletjournal_version='0.2.0',
-        custom_requirements_text='beta==2\ngamma @ git+ssh://example/repo.git@abc123\n',
+        bulletjournal_version="0.2.0",
+        custom_requirements_text="beta==2\ngamma @ git+ssh://example/repo.git@abc123\n",
     )
     assert merged == [
-        'bulletjournal==0.2.0',
-        'alpha==1',
-        'beta==2',
-        'gamma @ git+ssh://example/repo.git@abc123',
+        "bulletjournal==0.2.0",
+        "alpha==1",
+        "beta==2",
+        "gamma @ git+ssh://example/repo.git@abc123",
     ]
 
 
@@ -99,23 +100,16 @@ def test_render_pyproject_contains_expected_fields() -> None:
         installer=InstallerRunner(DockerAdapter()),
         runtime_config_service=DummyRuntimeConfigService(),
     )
-    rendered = service.render_pyproject(project_id='study-a', python_version='3.11', dependencies=['bulletjournal==0.1.0', 'alpha'])
+    rendered = service.render_pyproject(
+        project_id="study-a",
+        python_version="3.11",
+        dependencies=["bulletjournal==0.1.0", "alpha"],
+    )
     assert 'name = "bulletjournal-project-study-a"' in rendered
     assert 'requires-python = "==3.11.*"' in rendered
-    assert 'schema_version = 1' in rendered
+    assert "schema_version = 1" in rendered
     assert 'build-backend = "setuptools.build_meta"' in rendered
-    assert 'packages = []' in rendered
-
-
-def test_render_pyproject_includes_local_source_when_configured(tmp_path: Path) -> None:
-    service = EnvironmentService(
-        instance_config=default_instance_config(),
-        installer=InstallerRunner(DockerAdapter()),
-        runtime_config_service=DummyRuntimeConfigService(local_bulletjournal_source=tmp_path / 'BulletJournal'),
-    )
-    rendered = service.render_pyproject(project_id='study-a', python_version='3.11', dependencies=['bulletjournal', 'alpha'])
-    assert '[tool.uv.sources]' in rendered
-    assert '/opt/bulletjournal/local-source/BulletJournal' in rendered
+    assert "packages = []" in rendered
 
 
 def test_parse_dependency_config_supports_index_shorthand() -> None:
@@ -124,10 +118,12 @@ def test_parse_dependency_config_supports_index_shorthand() -> None:
         installer=InstallerRunner(DockerAdapter()),
         runtime_config_service=DummyRuntimeConfigService(),
     )
-    config = service.parse_dependency_config('cugraph-cu13 @ https://pypi.nvidia.com\npandas\n')
-    assert config.dependency_lines == ['cugraph-cu13', 'pandas']
-    assert config.extra_index_urls == ['https://pypi.nvidia.com']
-    assert config.source_indexes == {'cugraph-cu13': 'https://pypi.nvidia.com'}
+    config = service.parse_dependency_config(
+        "cugraph-cu13 @ https://pypi.nvidia.com\npandas\n"
+    )
+    assert config.dependency_lines == ["cugraph-cu13", "pandas"]
+    assert config.extra_index_urls == ["https://pypi.nvidia.com"]
+    assert config.source_indexes == {"cugraph-cu13": "https://pypi.nvidia.com"}
 
 
 def test_parse_dependency_config_supports_inline_index_comment() -> None:
@@ -136,10 +132,12 @@ def test_parse_dependency_config_supports_inline_index_comment() -> None:
         installer=InstallerRunner(DockerAdapter()),
         runtime_config_service=DummyRuntimeConfigService(),
     )
-    config = service.parse_dependency_config('cugraph-cu13 # index-url: https://pypi.nvidia.com\npandas\n')
-    assert config.dependency_lines == ['cugraph-cu13', 'pandas']
-    assert config.extra_index_urls == ['https://pypi.nvidia.com']
-    assert config.source_indexes == {'cugraph-cu13': 'https://pypi.nvidia.com'}
+    config = service.parse_dependency_config(
+        "cugraph-cu13 # index-url: https://pypi.nvidia.com\npandas\n"
+    )
+    assert config.dependency_lines == ["cugraph-cu13", "pandas"]
+    assert config.extra_index_urls == ["https://pypi.nvidia.com"]
+    assert config.source_indexes == {"cugraph-cu13": "https://pypi.nvidia.com"}
 
 
 def test_render_pyproject_emits_uv_index_sources_for_shorthand_index() -> None:
@@ -149,22 +147,24 @@ def test_render_pyproject_emits_uv_index_sources_for_shorthand_index() -> None:
         runtime_config_service=DummyRuntimeConfigService(),
     )
     rendered = service.render_pyproject(
-        project_id='study-a',
-        python_version='3.11',
-        dependencies=['cugraph-cu13', 'pandas'],
-        extra_index_urls=['https://pypi.nvidia.com'],
-        source_indexes={'cugraph-cu13': 'https://pypi.nvidia.com'},
+        project_id="study-a",
+        python_version="3.11",
+        dependencies=["cugraph-cu13", "pandas"],
+        extra_index_urls=["https://pypi.nvidia.com"],
+        source_indexes={"cugraph-cu13": "https://pypi.nvidia.com"},
     )
-    assert '[[tool.uv.index]]' in rendered
+    assert "[[tool.uv.index]]" in rendered
     assert 'url = "https://pypi.nvidia.com"' in rendered
     assert 'cugraph-cu13 = { index = "extra_index_1" }' in rendered
 
 
-def test_default_dependency_text_reloads_from_runtime_config_service(tmp_path: Path) -> None:
-    defaults_a = tmp_path / 'defaults-a.txt'
-    defaults_b = tmp_path / 'defaults-b.txt'
-    defaults_a.write_text('bulletjournal==0.1.0\nalpha==1\n', encoding='utf-8')
-    defaults_b.write_text('bulletjournal==0.1.0\nbeta==2\n', encoding='utf-8')
+def test_default_dependency_text_reloads_from_runtime_config_service(
+    tmp_path: Path,
+) -> None:
+    defaults_a = tmp_path / "defaults-a.txt"
+    defaults_b = tmp_path / "defaults-b.txt"
+    defaults_a.write_text("bulletjournal==0.1.0\nalpha==1\n", encoding="utf-8")
+    defaults_b.write_text("bulletjournal==0.1.0\nbeta==2\n", encoding="utf-8")
 
     class MutableRuntimeConfigService(DummyRuntimeConfigService):
         def __init__(self, path: Path):
@@ -181,29 +181,37 @@ def test_default_dependency_text_reloads_from_runtime_config_service(tmp_path: P
         runtime_config_service=runtime_config_service,
     )
 
-    assert 'alpha==1' in service.default_dependency_text()
+    assert "alpha==1" in service.default_dependency_text()
     runtime_config_service.path = defaults_b
-    assert 'beta==2' in service.default_dependency_text()
+    assert "beta==2" in service.default_dependency_text()
 
 
 def test_default_dependency_text_preserves_comments_for_ui(tmp_path: Path) -> None:
-    defaults = tmp_path / 'defaults.txt'
-    defaults.write_text('# comment\ncugraph-cu13 # index-url: https://pypi.nvidia.com\n', encoding='utf-8')
+    defaults = tmp_path / "defaults.txt"
+    defaults.write_text(
+        "# comment\ncugraph-cu13 # index-url: https://pypi.nvidia.com\n",
+        encoding="utf-8",
+    )
     service = EnvironmentService(
         instance_config=default_instance_config(),
         installer=InstallerRunner(DockerAdapter()),
         runtime_config_service=DummyRuntimeConfigService(defaults),
     )
     rendered = service.default_dependency_text()
-    assert '# comment' in rendered
-    assert '# index-url: https://pypi.nvidia.com' in rendered
-    assert 'bulletjournal==' in rendered
+    assert "# comment" in rendered
+    assert "# index-url: https://pypi.nvidia.com" in rendered
+    assert "bulletjournal==" in rendered
 
 
-def test_write_project_environment_does_not_create_placeholder_lockfile(tmp_path: Path) -> None:
-    project_root = tmp_path / 'project'
+def test_write_project_environment_does_not_create_placeholder_lockfile(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
     project_root.mkdir(parents=True)
-    project_paths = DummyProjectPaths(pyproject_path=project_root / 'pyproject.toml', uv_lock_path=project_root / 'uv.lock')
+    project_paths = DummyProjectPaths(
+        pyproject_path=project_root / "pyproject.toml",
+        uv_lock_path=project_root / "uv.lock",
+    )
     service = EnvironmentService(
         instance_config=default_instance_config(),
         installer=InstallerRunner(DockerAdapter()),
@@ -211,24 +219,31 @@ def test_write_project_environment_does_not_create_placeholder_lockfile(tmp_path
     )
     service.write_project_environment(
         project_paths=project_paths,
-        project_id='study-a',
-        python_version='3.11',
-        bulletjournal_version='0.1.0',
-        custom_requirements_text='',
+        project_id="study-a",
+        python_version="3.11",
+        bulletjournal_version="0.1.0",
+        custom_requirements_text="",
     )
     assert project_paths.pyproject_path.is_file()
     assert not project_paths.uv_lock_path.exists()
 
 
-def test_install_environment_retries_transient_missing_bind_mount(tmp_path: Path) -> None:
-    project_root = tmp_path / 'project'
+def test_install_environment_retries_transient_missing_bind_mount(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
     project_root.mkdir(parents=True)
-    lock_path = project_root / 'uv.lock'
-    lock_path.write_text('lock = true\n', encoding='utf-8')
-    project_paths = type('ProjectPaths', (), {'root': project_root, 'uv_lock_path': lock_path})()
+    lock_path = project_root / "uv.lock"
+    lock_path.write_text("lock = true\n", encoding="utf-8")
+    project_paths = type(
+        "ProjectPaths", (), {"root": project_root, "uv_lock_path": lock_path}
+    )()
     installer = RetryingInstaller(
         [
-            FakeResult(returncode=1, stderr='docker: Error response from daemon: invalid mount config for type "bind": bind source path does not exist'),
+            FakeResult(
+                returncode=1,
+                stderr='docker: Error response from daemon: invalid mount config for type "bind": bind source path does not exist',
+            ),
             FakeResult(returncode=0),
         ],
     )
@@ -238,82 +253,98 @@ def test_install_environment_retries_transient_missing_bind_mount(tmp_path: Path
         runtime_config_service=DummyRuntimeConfigService(),
     )
 
-    project = type('ProjectRecord', (), {'gpu_enabled': False})()
+    project = type("ProjectRecord", (), {"gpu_enabled": False})()
     logs: list[str] = []
-    service.compute_lock_sha256 = lambda _path: 'lock-sha'  # type: ignore[method-assign]
+    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
 
     result = service.install_environment(
         project=project,
         project_paths=project_paths,
         log_writer=logs.append,
         mark_all_artifacts_stale=False,
-        reason='test',
+        reason="test",
     )
 
-    assert result == 'lock-sha'
+    assert result == "lock-sha"
     assert installer.calls == 2
-    assert any('retrying' in entry for entry in logs)
+    assert any("retrying" in entry for entry in logs)
 
 
-def test_install_environment_uses_extended_retry_budget_for_mount_visibility(tmp_path: Path) -> None:
-    project_root = tmp_path / 'project'
+def test_install_environment_uses_extended_retry_budget_for_mount_visibility(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
     project_root.mkdir(parents=True)
-    lock_path = project_root / 'uv.lock'
-    lock_path.write_text('lock = true\n', encoding='utf-8')
-    project_paths = type('ProjectPaths', (), {'root': project_root, 'uv_lock_path': lock_path})()
-    installer = RetryingInstaller([
-        FakeResult(returncode=1, stderr='bind source path does not exist')
-        for _ in range(6)
-    ] + [FakeResult(returncode=0)])
+    lock_path = project_root / "uv.lock"
+    lock_path.write_text("lock = true\n", encoding="utf-8")
+    project_paths = type(
+        "ProjectPaths", (), {"root": project_root, "uv_lock_path": lock_path}
+    )()
+    installer = RetryingInstaller(
+        [
+            FakeResult(returncode=1, stderr="bind source path does not exist")
+            for _ in range(6)
+        ]
+        + [FakeResult(returncode=0)]
+    )
     service = EnvironmentService(
         instance_config=default_instance_config(),
         installer=installer,
         runtime_config_service=DummyRuntimeConfigService(),
     )
-    service.compute_lock_sha256 = lambda _path: 'lock-sha'  # type: ignore[method-assign]
-    project = type('ProjectRecord', (), {'gpu_enabled': False})()
+    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+    project = type("ProjectRecord", (), {"gpu_enabled": False})()
 
     result = service.install_environment(
         project=project,
         project_paths=project_paths,
         log_writer=lambda _message: None,
         mark_all_artifacts_stale=False,
-        reason='test',
+        reason="test",
     )
 
-    assert result == 'lock-sha'
+    assert result == "lock-sha"
     assert installer.calls == 7
 
 
-def test_install_environment_retries_when_additional_mount_is_not_immediately_visible(tmp_path: Path) -> None:
-    project_root = tmp_path / 'project'
+def test_install_environment_retries_when_additional_mount_is_not_immediately_visible(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
     project_root.mkdir(parents=True)
-    ssh_root = tmp_path / 'ssh'
+    ssh_root = tmp_path / "ssh"
     ssh_root.mkdir(parents=True)
-    lock_path = project_root / 'uv.lock'
-    lock_path.write_text('lock = true\n', encoding='utf-8')
-    project_paths = type('ProjectPaths', (), {'root': project_root, 'uv_lock_path': lock_path})()
+    lock_path = project_root / "uv.lock"
+    lock_path.write_text("lock = true\n", encoding="utf-8")
+    project_paths = type(
+        "ProjectPaths", (), {"root": project_root, "uv_lock_path": lock_path}
+    )()
     installer = RetryingInstaller(
         [
-            FakeResult(returncode=1, stderr='docker: Error response from daemon: invalid mount config for type "bind": bind source path does not exist'),
+            FakeResult(
+                returncode=1,
+                stderr='docker: Error response from daemon: invalid mount config for type "bind": bind source path does not exist',
+            ),
             FakeResult(returncode=0),
         ],
     )
     service = EnvironmentService(
         instance_config=default_instance_config(),
         installer=installer,
-        runtime_config_service=DummyRuntimeConfigServiceWithMounts([(ssh_root, '/root/.ssh', True)]),
+        runtime_config_service=DummyRuntimeConfigServiceWithMounts(
+            [(ssh_root, "/root/.ssh", True)]
+        ),
     )
-    service.compute_lock_sha256 = lambda _path: 'lock-sha'  # type: ignore[method-assign]
-    project = type('ProjectRecord', (), {'gpu_enabled': False})()
+    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+    project = type("ProjectRecord", (), {"gpu_enabled": False})()
 
     result = service.install_environment(
         project=project,
         project_paths=project_paths,
         log_writer=lambda _message: None,
         mark_all_artifacts_stale=False,
-        reason='test',
+        reason="test",
     )
 
-    assert result == 'lock-sha'
+    assert result == "lock-sha"
     assert installer.calls == 2

@@ -16,8 +16,7 @@ class RuntimeConfig:
     runtime_build_context: Path
     default_dependencies_file: Path | None
     ssh_dir: Path | None
-    private_assets_dir: Path | None
-    local_bulletjournal_source: Path | None
+    private_assets: Path | None
 
 
 class RuntimeConfigService:
@@ -31,11 +30,15 @@ class RuntimeConfigService:
     def additional_mounts(self) -> list[tuple[Path, str, bool]]:
         mounts: list[tuple[Path, str, bool]] = []
         if self.runtime_config.ssh_dir is not None:
-            mounts.append((self.runtime_config.ssh_dir, '/root/.ssh', True))
-        if self.runtime_config.private_assets_dir is not None:
-            mounts.append((self.runtime_config.private_assets_dir, '/opt/bulletjournal/private-assets', True))
-        if self.runtime_config.local_bulletjournal_source is not None:
-            mounts.append((self.runtime_config.local_bulletjournal_source, '/opt/bulletjournal/local-source/BulletJournal', True))
+            mounts.append((self.runtime_config.ssh_dir, "/root/.ssh", True))
+        if self.runtime_config.private_assets is not None:
+            mounts.append(
+                (
+                    self.runtime_config.private_assets,
+                    "/opt/bulletjournal/private_assets",
+                    True,
+                )
+            )
         return mounts
 
     def default_dependencies_file(self) -> Path | None:
@@ -48,45 +51,63 @@ class RuntimeConfigService:
             context_path=self.runtime_config.runtime_build_context,
         )
         if result.returncode != 0:
-            raise ConfigurationError(result.stderr.strip() or 'Failed to build local runtime image.')
+            raise ConfigurationError(
+                result.stderr.strip() or "Failed to build local runtime image."
+            )
 
     def _load_runtime_config(self) -> RuntimeConfig:
-        defaults_root = bundled_defaults_root()
+        defaults_root = bundled_defaults_root() / "runtime"
         configured_root = self.instance_paths.local_config_dir
-        runtime_json_path = configured_root / 'runtime.json'
+        runtime_json_path = configured_root / "runtime.json"
         if runtime_json_path.is_file():
-            data = json.loads(runtime_json_path.read_text(encoding='utf-8'))
+            data = json.loads(runtime_json_path.read_text(encoding="utf-8"))
         else:
-            data = json.loads((defaults_root / 'runtime.json').read_text(encoding='utf-8'))
+            data = json.loads(
+                (defaults_root / "runtime.json").read_text(encoding="utf-8")
+            )
         if not isinstance(data, dict):
-            raise ConfigurationError('runtime.json must contain a JSON object.')
+            raise ConfigurationError("runtime.json must contain a JSON object.")
 
-        runtime_image_name = _required_str(data, 'runtime_image_name')
-        runtime_dockerfile = self._resolve_path(configured_root, defaults_root, data.get('runtime_dockerfile'))
-        runtime_build_context = self._resolve_path(configured_root, defaults_root, data.get('runtime_build_context'))
-        default_dependencies_file = self._resolve_optional_path(configured_root, defaults_root, data.get('default_dependencies_file'))
-        ssh_dir = self._resolve_optional_path(configured_root, defaults_root, data.get('ssh_dir'))
-        private_assets_dir = self._resolve_optional_path(configured_root, defaults_root, data.get('private_assets_dir'))
-        local_bulletjournal_source = self._resolve_optional_path(configured_root, defaults_root, data.get('local_bulletjournal_source'))
+        runtime_image_name = _required_str(data, "runtime_image_name")
+        runtime_dockerfile = self._resolve_path(
+            configured_root, defaults_root, data.get("runtime_dockerfile")
+        )
+        runtime_build_context = self._resolve_path(
+            configured_root, defaults_root, data.get("runtime_build_context")
+        )
+        default_dependencies_file = self._resolve_optional_path(
+            configured_root, defaults_root, data.get("default_dependencies_file")
+        )
+        ssh_dir = self._resolve_optional_path(
+            configured_root, defaults_root, data.get("ssh_dir")
+        )
+        private_assets = self._resolve_optional_path(
+            configured_root,
+            defaults_root,
+            data.get("private_assets", data.get("private_assets_dir")),
+        )
         return RuntimeConfig(
             runtime_image_name=runtime_image_name,
             runtime_dockerfile=runtime_dockerfile,
             runtime_build_context=runtime_build_context,
             default_dependencies_file=default_dependencies_file,
             ssh_dir=ssh_dir,
-            private_assets_dir=private_assets_dir,
-            local_bulletjournal_source=local_bulletjournal_source,
+            private_assets=private_assets,
         )
 
     @staticmethod
     def _resolve_path(config_root: Path, defaults_root: Path, raw: object) -> Path:
-        candidate = RuntimeConfigService._resolve_optional_path(config_root, defaults_root, raw)
+        candidate = RuntimeConfigService._resolve_optional_path(
+            config_root, defaults_root, raw
+        )
         if candidate is None:
-            raise ConfigurationError('runtime.json is missing a required path value.')
+            raise ConfigurationError("runtime.json is missing a required path value.")
         return candidate
 
     @staticmethod
-    def _resolve_optional_path(config_root: Path, defaults_root: Path, raw: object) -> Path | None:
+    def _resolve_optional_path(
+        config_root: Path, defaults_root: Path, raw: object
+    ) -> Path | None:
         if raw is None:
             return None
         text = str(raw).strip()
@@ -103,7 +124,7 @@ class RuntimeConfigService:
 
 
 def _required_str(data: dict[str, object], key: str) -> str:
-    value = str(data.get(key, '')).strip()
+    value = str(data.get(key, "")).strip()
     if not value:
-        raise ConfigurationError(f'runtime.json field {key} is required.')
+        raise ConfigurationError(f"runtime.json field {key} is required.")
     return value

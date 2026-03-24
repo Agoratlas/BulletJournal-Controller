@@ -10,13 +10,22 @@ from bulletjournal_controller.services.job_service import JobService
 from bulletjournal_controller.services.project_service import ProjectService
 from bulletjournal_controller.services.proxy_service import ProxyService
 from bulletjournal_controller.services.reconcile_service import ReconcileService
-from bulletjournal_controller.services.runtime_config_service import RuntimeConfigService
+from bulletjournal_controller.services.runtime_config_service import (
+    RuntimeConfigService,
+)
 from bulletjournal_controller.services.runtime_service import RuntimeService
-from bulletjournal_controller.storage import InstancePaths, JobRepository, ProjectRepository, SessionRepository, StateDB, UserRepository
+from bulletjournal_controller.storage import (
+    InstancePaths,
+    JobRepository,
+    ProjectRepository,
+    SessionRepository,
+    StateDB,
+    UserRepository,
+)
 
 
-SYSTEM_USER_ID = 'user-system'
-SYSTEM_USERNAME = 'system'
+SYSTEM_USER_ID = "user-system"
+SYSTEM_USERNAME = "system"
 
 
 class ServiceContainer:
@@ -43,11 +52,15 @@ class ServiceContainer:
 
         self.docker_adapter = DockerAdapter(docker_host=server_config.docker_host)
         self.installer = InstallerRunner(self.docker_adapter)
-        self.runtime_config_service = RuntimeConfigService(instance_paths=instance_paths)
+        self.runtime_config_service = RuntimeConfigService(
+            instance_paths=instance_paths
+        )
         if ensure_runtime_image:
             self.runtime_config_service.ensure_runtime_image(self.installer)
 
-        self.auth_service = AuthService(users=self.users, sessions=self.sessions, server_config=server_config)
+        self.auth_service = AuthService(
+            users=self.users, sessions=self.sessions, server_config=server_config
+        )
         self.environment_service = EnvironmentService(
             instance_config=self.instance_config,
             installer=self.installer,
@@ -78,14 +91,19 @@ class ServiceContainer:
             runtime_service=self.runtime_service,
             system_user_id=SYSTEM_USER_ID,
         )
-        self.proxy_service = ProxyService(project_service=self.project_service, job_service=self.job_service)
+        self.proxy_service = ProxyService(
+            project_service=self.project_service, job_service=self.job_service
+        )
         self.reconcile_service = ReconcileService(
             project_service=self.project_service,
             runtime_service=self.runtime_service,
+            idle_timeout_seconds=self.instance_config.idle_timeout_seconds,
         )
 
     def start(self) -> None:
-        self.runtime_service.reconcile_instance_projects(projects=self.project_service.list_projects(), projects_repo=self.projects)
+        self.runtime_service.reconcile_instance_projects(
+            projects=self.project_service.list_projects(), projects_repo=self.projects
+        )
         self.job_service.start()
         self.reconcile_service.start()
 
@@ -95,14 +113,14 @@ class ServiceContainer:
 
     def system_info(self) -> dict[str, object]:
         return {
-            'instance_id': self.instance_config.instance_id,
-            'title': self.instance_config.title,
-            'default_python_version': self.instance_config.default_python_version,
-            'default_bulletjournal_version': self.instance_config.default_bulletjournal_version,
-            'default_dependencies_text': self.environment_service.default_dependency_text(),
-            'runtime_image_name': self.runtime_config_service.runtime_config.runtime_image_name,
-            'config_dir': str(self.instance_paths.local_config_dir),
-            'project_count': len(self.project_service.list_projects()),
+            "instance_id": self.instance_config.instance_id,
+            "title": self.instance_config.title,
+            "default_python_version": self.instance_config.default_python_version,
+            "default_bulletjournal_version": self.instance_config.default_bulletjournal_version,
+            "default_dependencies_text": self.environment_service.default_dependency_text(),
+            "runtime_image_name": self.runtime_config_service.runtime_config.runtime_image_name,
+            "config_dir": str(self.instance_paths.local_config_dir),
+            "project_count": len(self.project_service.list_projects()),
         }
 
     def _ensure_system_user(self) -> None:
@@ -111,7 +129,7 @@ class ServiceContainer:
         self.users.create(
             user_id=SYSTEM_USER_ID,
             username=SYSTEM_USERNAME,
-            display_name='System',
-            password_hash='!',
+            display_name="System",
+            password_hash="!",
             is_active=False,
         )

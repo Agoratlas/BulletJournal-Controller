@@ -16,66 +16,89 @@ from bulletjournal_controller.cli.start import start_server
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog='bulletjournal-controller', description='BulletJournal multi-project controller')
-    subparsers = parser.add_subparsers(dest='command')
+    parser = argparse.ArgumentParser(
+        prog="bulletjournal-controller",
+        description="BulletJournal multi-project controller",
+    )
+    subparsers = parser.add_subparsers(dest="command")
 
-    init_parser = subparsers.add_parser('init-instance', help='Initialize a controller instance root')
-    init_parser.add_argument('path')
+    init_parser = subparsers.add_parser(
+        "init-instance", help="Initialize a controller instance root"
+    )
+    init_parser.add_argument("path")
 
-    start_parser = subparsers.add_parser('start', help='Start the controller server')
-    start_parser.add_argument('instance_root')
+    start_parser = subparsers.add_parser("start", help="Start the controller server")
+    start_parser.add_argument("instance_root")
 
-    dev_parser = subparsers.add_parser('dev', help='Start the controller server in development mode')
-    dev_parser.add_argument('instance_root')
+    dev_parser = subparsers.add_parser(
+        "dev", help="Start the controller server in development mode"
+    )
+    dev_parser.add_argument("instance_root")
 
-    doctor_parser = subparsers.add_parser('doctor', help='Validate controller instance state')
-    doctor_parser.add_argument('instance_root')
+    doctor_parser = subparsers.add_parser(
+        "doctor", help="Validate controller instance state"
+    )
+    doctor_parser.add_argument("instance_root")
 
-    user_parser = subparsers.add_parser('create-user', help='Create an authenticated controller user')
-    user_parser.add_argument('instance_root')
-    user_parser.add_argument('--username', required=True)
-    user_parser.add_argument('--display-name', required=True)
-    user_parser.add_argument('--password', default=None)
+    user_parser = subparsers.add_parser(
+        "create-user", help="Create an authenticated controller user"
+    )
+    user_parser.add_argument("instance_root")
+    user_parser.add_argument("--username", required=True)
+    user_parser.add_argument("--display-name", required=True)
+    user_parser.add_argument("--password", default=None)
+    user_parser.add_argument("--password-hash", default=None)
 
-    build_runtime_parser = subparsers.add_parser('build-runtime', help='Build the local runtime image from the configured Dockerfile')
-    build_runtime_parser.add_argument('instance_root')
+    build_runtime_parser = subparsers.add_parser(
+        "build-runtime",
+        help="Build the local runtime image from the configured Dockerfile",
+    )
+    build_runtime_parser.add_argument("instance_root")
 
-    cleanup_instance_parser = subparsers.add_parser('cleanup-instance', help='Remove controller-managed containers for an instance')
-    cleanup_instance_parser.add_argument('instance_root')
+    cleanup_instance_parser = subparsers.add_parser(
+        "cleanup-instance", help="Remove controller-managed containers for an instance"
+    )
+    cleanup_instance_parser.add_argument("instance_root")
 
-    export_parser = subparsers.add_parser('export-project', help='Export a managed project as a zip archive')
-    export_parser.add_argument('instance_root')
-    export_parser.add_argument('project_id')
-    export_parser.add_argument('archive')
-    export_parser.add_argument('--without-artifacts', action='store_true')
+    export_parser = subparsers.add_parser(
+        "export-project", help="Export a managed project as a zip archive"
+    )
+    export_parser.add_argument("instance_root")
+    export_parser.add_argument("project_id")
+    export_parser.add_argument("archive")
+    export_parser.add_argument("--without-artifacts", action="store_true")
 
-    import_parser = subparsers.add_parser('import-project', help='Import a managed project from a zip archive')
-    import_parser.add_argument('instance_root')
-    import_parser.add_argument('archive')
-    import_parser.add_argument('--project-id', default=None)
-    import_parser.add_argument('--install', action='store_true')
+    import_parser = subparsers.add_parser(
+        "import-project", help="Import a managed project from a zip archive"
+    )
+    import_parser.add_argument("instance_root")
+    import_parser.add_argument("archive")
+    import_parser.add_argument("--project-id", default=None)
+    import_parser.add_argument("--install", action="store_true")
 
-    reconcile_parser = subparsers.add_parser('reconcile', help='Run one idle/runtime reconciliation pass')
-    reconcile_parser.add_argument('instance_root')
+    reconcile_parser = subparsers.add_parser(
+        "reconcile", help="Run one idle/runtime reconciliation pass"
+    )
+    reconcile_parser.add_argument("instance_root")
     return parser
 
 
 def app() -> None:
     parser = build_parser()
     args = parser.parse_args()
-    if args.command == 'init-instance':
+    if args.command == "init-instance":
         print(init_instance(args.path))
         return
-    if args.command == 'start':
+    if args.command == "start":
         start_server(args.instance_root)
         return
-    if args.command == 'dev':
+    if args.command == "dev":
         dev_server(args.instance_root)
         return
-    if args.command == 'doctor':
+    if args.command == "doctor":
         print(json.dumps(doctor(args.instance_root), indent=2, sort_keys=True))
         return
-    if args.command == 'create-user':
+    if args.command == "create-user":
         print(
             json.dumps(
                 create_user(
@@ -83,19 +106,22 @@ def app() -> None:
                     username=args.username,
                     display_name=args.display_name,
                     password=args.password,
+                    password_hash=args.password_hash,
                 ),
                 indent=2,
                 sort_keys=True,
             )
         )
         return
-    if args.command == 'build-runtime':
+    if args.command == "build-runtime":
         print(json.dumps(build_runtime(args.instance_root), indent=2, sort_keys=True))
         return
-    if args.command == 'cleanup-instance':
-        print(json.dumps(cleanup_instance(args.instance_root), indent=2, sort_keys=True))
+    if args.command == "cleanup-instance":
+        print(
+            json.dumps(cleanup_instance(args.instance_root), indent=2, sort_keys=True)
+        )
         return
-    if args.command == 'export-project':
+    if args.command == "export-project":
         print(
             json.dumps(
                 export_project(
@@ -109,7 +135,7 @@ def app() -> None:
             )
         )
         return
-    if args.command == 'import-project':
+    if args.command == "import-project":
         print(
             json.dumps(
                 import_project(
@@ -123,7 +149,7 @@ def app() -> None:
             )
         )
         return
-    if args.command == 'reconcile':
+    if args.command == "reconcile":
         print(json.dumps(reconcile(args.instance_root), indent=2, sort_keys=True))
         return
     parser.print_help()

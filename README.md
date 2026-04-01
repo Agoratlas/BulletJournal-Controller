@@ -104,6 +104,12 @@ export BULLETJOURNAL_COOKIE_SECURE=false
 bulletjournal-controller create-user ./instance --username admin --display-name Admin
 ```
 
+For automation, you can also provide a precomputed Argon2 hash instead of a plaintext password:
+
+```bash
+bulletjournal-controller create-user ./instance --username admin --display-name Admin --password-hash '$argon2id$...'
+```
+
 6. Build the local runtime image:
 
 ```bash

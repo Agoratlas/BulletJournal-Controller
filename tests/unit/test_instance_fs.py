@@ -21,6 +21,7 @@ def test_init_instance_root_creates_required_layout(tmp_path: Path) -> None:
     assert paths.local_ssh_dir.is_dir()
     assert paths.local_private_assets_dir.is_dir()
     assert paths.local_runtime_dockerfile_path.is_file()
+    assert paths.local_runtime_env_file_path.is_file()
     assert paths.local_runtime_json_path.is_file()
     assert paths.local_ssh_readme_path.is_file()
     assert paths.local_private_assets_readme_path.is_file()
@@ -47,6 +48,7 @@ def test_init_instance_root_scaffolds_runtime_json_with_ssh_mount_enabled(
     runtime_config = json.loads(
         paths.local_runtime_json_path.read_text(encoding="utf-8")
     )
+    assert runtime_config["env_file"] == ".env"
     assert runtime_config["ssh_dir"] == "ssh"
     assert runtime_config["private_assets"] == "private_assets"
 
@@ -65,6 +67,7 @@ def test_init_instance_root_scaffolds_runtime_readmes(tmp_path: Path) -> None:
 
 def test_bundled_defaults_runtime_layout_mirrors_instance_runtime_layout() -> None:
     runtime_defaults_root = bundled_defaults_root() / "runtime"
+    assert (runtime_defaults_root / ".env").is_file()
     assert (runtime_defaults_root / "runtime.json").is_file()
     assert (runtime_defaults_root / "default-dependencies.txt").is_file()
     assert (runtime_defaults_root / "ssh" / "README.md").is_file()

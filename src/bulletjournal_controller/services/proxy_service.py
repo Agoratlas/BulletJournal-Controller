@@ -33,6 +33,19 @@ class ProxyService:
 
     def require_running_project(self, project_id: str):
         project = self.project_service.get_project(project_id)
+        container_name = getattr(project, "container_name", None)
+        runtime_service = getattr(self.project_service, "runtime_service", None)
+        if (
+            project.status == ProjectStatus.RUNNING.value
+            and container_name
+            and runtime_service is not None
+            and runtime_service.inspect_container(container_name) is None
+        ):
+            capture = getattr(runtime_service, "write_crash_diagnostics", None)
+            if capture is not None:
+                capture(project=project, container_name=container_name)
+            self.project_service.mark_runtime_crashed(project_id)
+            project = self.project_service.get_project(project_id)
         if (
             project.status != ProjectStatus.RUNNING.value
             or project.container_port is None

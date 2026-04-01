@@ -3,7 +3,7 @@ from __future__ import annotations
 
 MIGRATIONS: list[tuple[str, str]] = [
     (
-        '001_initial',
+        "001_initial",
         """
         CREATE TABLE IF NOT EXISTS schema_migrations (
             name TEXT PRIMARY KEY,
@@ -36,6 +36,7 @@ MIGRATIONS: list[tuple[str, str]] = [
 
         CREATE TABLE IF NOT EXISTS projects (
             project_id TEXT PRIMARY KEY,
+            controller_status_token TEXT NOT NULL,
             status TEXT NOT NULL,
             status_reason TEXT,
             root_path TEXT UNIQUE NOT NULL,
@@ -87,14 +88,14 @@ MIGRATIONS: list[tuple[str, str]] = [
         """,
     ),
     (
-        '002_project_activity_columns',
+        "002_project_activity_columns",
         """
         ALTER TABLE projects ADD COLUMN last_graph_edit_at TEXT;
         ALTER TABLE projects ADD COLUMN last_notebook_edit_at TEXT;
         """,
     ),
     (
-        '003_jobs_without_project_fk',
+        "003_jobs_without_project_fk",
         """
         CREATE TABLE jobs_new (
             job_id TEXT PRIMARY KEY,
@@ -126,6 +127,15 @@ MIGRATIONS: list[tuple[str, str]] = [
 
         CREATE INDEX IF NOT EXISTS idx_jobs_project_id ON jobs(project_id);
         CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+        """,
+    ),
+    (
+        "004_project_controller_status_token",
+        """
+        ALTER TABLE projects ADD COLUMN controller_status_token TEXT;
+        UPDATE projects
+        SET controller_status_token = hex(randomblob(32))
+        WHERE controller_status_token IS NULL OR controller_status_token = '';
         """,
     ),
 ]

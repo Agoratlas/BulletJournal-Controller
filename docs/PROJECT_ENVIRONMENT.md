@@ -10,8 +10,9 @@ The controller owns managed project environments.
 ## Configurable Defaults
 
 - default dependency text can come from the built-in defaults bundle or the instance-local runtime config directory
-- the instance-local runtime config directory can also provide a runtime Dockerfile, SSH keys, private assets, and a local BulletJournal source checkout
+- the instance-local runtime config directory can also provide a runtime Dockerfile, a `.env` file, SSH keys, private assets, and a local BulletJournal source checkout
 - when `local_bulletjournal_source` is configured, managed projects use a `[tool.uv.sources]` entry pointing to the mounted local source inside the container
+- when `env_file` is configured in `runtime.json`, Docker loads it for install jobs and runtime containers so the variables are available inside the BulletJournal runtime
 
 The controller re-reads these defaults when creating new projects, so changing `instance_root/config/runtime/default-dependencies.txt` or `instance_root/config/runtime/runtime.json` affects future project creation without a restart.
 

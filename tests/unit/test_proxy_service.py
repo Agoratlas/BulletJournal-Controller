@@ -134,3 +134,44 @@ def test_require_running_project_rejects_stopped_project() -> None:
 
     with pytest.raises(Exception, match="Project runtime is unavailable"):
         service.require_running_project("test")
+
+
+def test_require_running_project_marks_crashed_container_unavailable() -> None:
+    class DummyProjectService:
+        def __init__(self):
+            self.calls = 0
+            self.marked = []
+            self.captured = []
+            self.runtime_service = SimpleNamespace(
+                inspect_container=lambda _container_name: None,
+                write_crash_diagnostics=lambda **kwargs: self.captured.append(kwargs),
+            )
+
+        def get_project(self, _project_id):
+            self.calls += 1
+            if self.calls == 1:
+                return SimpleNamespace(
+                    status="running",
+                    container_name="bulletjournal-main-test",
+                    container_port=8765,
+                )
+            return SimpleNamespace(
+                status="error",
+                container_name=None,
+                container_port=None,
+            )
+
+        def mark_runtime_crashed(self, project_id: str):
+            self.marked.append(project_id)
+
+    project_service = DummyProjectService()
+    service = ProxyService(
+        project_service=project_service,
+        job_service=SimpleNamespace(),
+    )
+
+    with pytest.raises(Exception, match="Project runtime is unavailable"):
+        service.require_running_project("test")
+
+    assert project_service.marked == ["test"]
+    assert len(project_service.captured) == 1

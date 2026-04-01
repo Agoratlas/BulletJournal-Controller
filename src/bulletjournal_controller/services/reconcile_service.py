@@ -39,7 +39,12 @@ class ReconcileService:
                 or project.container_port is None
             ):
                 continue
-            status = self.runtime_service.fetch_project_status(project=project)
+            try:
+                status = self.runtime_service.fetch_project_status(project=project)
+            except Exception:
+                if self._mark_project_unavailable(project):
+                    continue
+                raise
             self.project_service.apply_runtime_status(
                 project_id=project.project_id, status_payload=status
             )
@@ -68,3 +73,16 @@ class ReconcileService:
                 self.run_once()
             except Exception:
                 time.sleep(1.0)
+
+    def _mark_project_unavailable(self, project) -> bool:
+        container_name = project.container_name
+        if not container_name:
+            return False
+        runtime = self.runtime_service.inspect_container(container_name)
+        if runtime is not None:
+            return False
+        capture = getattr(self.runtime_service, "write_crash_diagnostics", None)
+        if capture is not None:
+            capture(project=project, container_name=container_name)
+        self.project_service.mark_runtime_crashed(project.project_id)
+        return True

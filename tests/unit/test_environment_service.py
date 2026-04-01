@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from dataclasses import replace
 from pathlib import Path
+from typing import Any, cast
 
 from bulletjournal_controller.config import default_instance_config
 from bulletjournal_controller.runtime.installer import InstallerRunner
@@ -11,8 +12,13 @@ from bulletjournal_controller.services.environment_service import EnvironmentSer
 
 
 class DummyRuntimeConfigService:
-    def __init__(self, default_dependencies_file: Path | None = None):
+    def __init__(
+        self,
+        default_dependencies_file: Path | None = None,
+        env_file: Path | None = None,
+    ):
         self._default_dependencies_file = default_dependencies_file
+        self._env_file = env_file
         self.runtime_config = type(
             "RuntimeConfig",
             (),
@@ -23,6 +29,9 @@ class DummyRuntimeConfigService:
 
     def default_dependencies_file(self) -> Path | None:
         return self._default_dependencies_file
+
+    def env_file(self) -> Path | None:
+        return self._env_file
 
     def additional_mounts(self) -> list[tuple[Path, str, bool]]:
         return []
@@ -68,6 +77,27 @@ class RetryingInstaller:
         result = self.results[self.calls]
         self.calls += 1
         return result
+
+
+@dataclass
+class DummyProjectRecord:
+    project_id: str = "study-a"
+    python_version: str = "3.11"
+    bulletjournal_version: str = "0.1.0"
+    custom_requirements_text: str = ""
+    gpu_enabled: bool = False
+
+
+def make_project_paths(project_root: Path) -> Any:
+    return type(
+        "ProjectPaths",
+        (),
+        {
+            "root": project_root,
+            "pyproject_path": project_root / "pyproject.toml",
+            "uv_lock_path": project_root / "uv.lock",
+        },
+    )()
 
 
 def test_parse_default_dependencies_and_merge_precedence(tmp_path: Path) -> None:
@@ -203,6 +233,25 @@ def test_default_dependency_text_preserves_comments_for_ui(tmp_path: Path) -> No
     assert "bulletjournal==" in rendered
 
 
+def test_floating_vcs_dependency_names_only_selects_non_pinned_refs() -> None:
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=InstallerRunner(DockerAdapter()),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+
+    packages = service.floating_vcs_dependency_names(
+        [
+            "fastreport @ git+ssh://github-fastreport/Agoratlas/FastReport@main",
+            "snapshot @ git+ssh://example/repo.git@a1b2c3d4",
+            "plain-package==1.0.0",
+            "branchless @ git+ssh://example/repo.git",
+        ]
+    )
+
+    assert packages == ["fastreport", "branchless"]
+
+
 def test_write_project_environment_does_not_create_placeholder_lockfile(
     tmp_path: Path,
 ) -> None:
@@ -218,7 +267,7 @@ def test_write_project_environment_does_not_create_placeholder_lockfile(
         runtime_config_service=DummyRuntimeConfigService(),
     )
     service.write_project_environment(
-        project_paths=project_paths,
+        project_paths=cast(Any, project_paths),
         project_id="study-a",
         python_version="3.11",
         bulletjournal_version="0.1.0",
@@ -233,11 +282,8 @@ def test_install_environment_retries_transient_missing_bind_mount(
 ) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir(parents=True)
-    lock_path = project_root / "uv.lock"
-    lock_path.write_text("lock = true\n", encoding="utf-8")
-    project_paths = type(
-        "ProjectPaths", (), {"root": project_root, "uv_lock_path": lock_path}
-    )()
+    project_paths = make_project_paths(project_root)
+    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
     installer = RetryingInstaller(
         [
             FakeResult(
@@ -249,17 +295,17 @@ def test_install_environment_retries_transient_missing_bind_mount(
     )
     service = EnvironmentService(
         instance_config=default_instance_config(),
-        installer=installer,
+        installer=cast(Any, installer),
         runtime_config_service=DummyRuntimeConfigService(),
     )
 
-    project = type("ProjectRecord", (), {"gpu_enabled": False})()
+    project = DummyProjectRecord()
     logs: list[str] = []
     service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
 
     result = service.install_environment(
-        project=project,
-        project_paths=project_paths,
+        project=cast(Any, project),
+        project_paths=cast(Any, project_paths),
         log_writer=logs.append,
         mark_all_artifacts_stale=False,
         reason="test",
@@ -275,11 +321,8 @@ def test_install_environment_uses_extended_retry_budget_for_mount_visibility(
 ) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir(parents=True)
-    lock_path = project_root / "uv.lock"
-    lock_path.write_text("lock = true\n", encoding="utf-8")
-    project_paths = type(
-        "ProjectPaths", (), {"root": project_root, "uv_lock_path": lock_path}
-    )()
+    project_paths = make_project_paths(project_root)
+    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
     installer = RetryingInstaller(
         [
             FakeResult(returncode=1, stderr="bind source path does not exist")
@@ -289,15 +332,15 @@ def test_install_environment_uses_extended_retry_budget_for_mount_visibility(
     )
     service = EnvironmentService(
         instance_config=default_instance_config(),
-        installer=installer,
+        installer=cast(Any, installer),
         runtime_config_service=DummyRuntimeConfigService(),
     )
     service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
-    project = type("ProjectRecord", (), {"gpu_enabled": False})()
+    project = DummyProjectRecord()
 
     result = service.install_environment(
-        project=project,
-        project_paths=project_paths,
+        project=cast(Any, project),
+        project_paths=cast(Any, project_paths),
         log_writer=lambda _message: None,
         mark_all_artifacts_stale=False,
         reason="test",
@@ -314,11 +357,8 @@ def test_install_environment_retries_when_additional_mount_is_not_immediately_vi
     project_root.mkdir(parents=True)
     ssh_root = tmp_path / "ssh"
     ssh_root.mkdir(parents=True)
-    lock_path = project_root / "uv.lock"
-    lock_path.write_text("lock = true\n", encoding="utf-8")
-    project_paths = type(
-        "ProjectPaths", (), {"root": project_root, "uv_lock_path": lock_path}
-    )()
+    project_paths = make_project_paths(project_root)
+    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
     installer = RetryingInstaller(
         [
             FakeResult(
@@ -330,17 +370,17 @@ def test_install_environment_retries_when_additional_mount_is_not_immediately_vi
     )
     service = EnvironmentService(
         instance_config=default_instance_config(),
-        installer=installer,
+        installer=cast(Any, installer),
         runtime_config_service=DummyRuntimeConfigServiceWithMounts(
             [(ssh_root, "/root/.ssh", True)]
         ),
     )
     service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
-    project = type("ProjectRecord", (), {"gpu_enabled": False})()
+    project = DummyProjectRecord()
 
     result = service.install_environment(
-        project=project,
-        project_paths=project_paths,
+        project=cast(Any, project),
+        project_paths=cast(Any, project_paths),
         log_writer=lambda _message: None,
         mark_all_artifacts_stale=False,
         reason="test",
@@ -348,3 +388,125 @@ def test_install_environment_retries_when_additional_mount_is_not_immediately_vi
 
     assert result == "lock-sha"
     assert installer.calls == 2
+
+
+def test_install_environment_passes_runtime_env_file_to_installer(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    env_file = tmp_path / ".env"
+    env_file.write_text("OPENAI_API_KEY=test\n", encoding="utf-8")
+    project_paths = make_project_paths(project_root)
+    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
+
+    class RecordingInstaller(RetryingInstaller):
+        def __init__(self):
+            super().__init__([FakeResult(returncode=0)])
+            self.install_kwargs = None
+
+        def build_install_command(self, **kwargs):
+            self.install_kwargs = kwargs
+            return ["docker", "run", "test"]
+
+    installer = RecordingInstaller()
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=cast(Any, installer),
+        runtime_config_service=DummyRuntimeConfigService(env_file=env_file),
+    )
+    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+    project = DummyProjectRecord()
+
+    result = service.install_environment(
+        project=cast(Any, project),
+        project_paths=cast(Any, project_paths),
+        log_writer=lambda _message: None,
+        mark_all_artifacts_stale=False,
+        reason="test",
+    )
+
+    assert result == "lock-sha"
+    assert installer.install_kwargs is not None
+    assert installer.install_kwargs["env_file"] == env_file
+
+
+def test_install_environment_requests_upgrades_for_floating_vcs_dependencies(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    project_paths = make_project_paths(project_root)
+    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
+
+    class RecordingInstaller(RetryingInstaller):
+        def __init__(self):
+            super().__init__([FakeResult(returncode=0)])
+            self.install_kwargs = None
+
+        def build_install_command(self, **kwargs):
+            self.install_kwargs = kwargs
+            return ["docker", "run", "test"]
+
+    installer = RecordingInstaller()
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=cast(Any, installer),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+
+    service.install_environment(
+        project=cast(
+            Any,
+            DummyProjectRecord(
+                custom_requirements_text=(
+                    "fastreport @ git+ssh://github-fastreport/Agoratlas/FastReport@main\n"
+                    "snapshot @ git+ssh://example/repo.git@a1b2c3d4\n"
+                ),
+            ),
+        ),
+        project_paths=cast(Any, project_paths),
+        log_writer=lambda _message: None,
+        mark_all_artifacts_stale=False,
+        reason="test",
+    )
+
+    assert installer.install_kwargs is not None
+    assert installer.install_kwargs["upgrade_packages"] == ["fastreport"]
+
+
+def test_install_environment_rewrites_pyproject_before_locking(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    pyproject_path = project_root / "pyproject.toml"
+    pyproject_path.write_text("stale = true\n", encoding="utf-8")
+    lock_path = project_root / "uv.lock"
+    lock_path.write_text("lock = true\n", encoding="utf-8")
+    project_paths = make_project_paths(project_root)
+    installer = RetryingInstaller([FakeResult(returncode=0)])
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=cast(Any, installer),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+
+    service.install_environment(
+        project=cast(
+            Any,
+            DummyProjectRecord(
+                bulletjournal_version="0.2.0",
+                custom_requirements_text="alpha==1\n",
+            ),
+        ),
+        project_paths=cast(Any, project_paths),
+        log_writer=lambda _message: None,
+        mark_all_artifacts_stale=False,
+        reason="test",
+    )
+
+    rendered = pyproject_path.read_text(encoding="utf-8")
+    assert 'requires-python = "==3.11.*"' in rendered
+    assert '"bulletjournal==0.2.0"' in rendered
+    assert '"alpha==1"' in rendered

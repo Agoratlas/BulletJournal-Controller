@@ -9,10 +9,39 @@ from bulletjournal_controller.runtime.installer import InstallerRunner
 def test_install_command_uses_no_install_project_flag() -> None:
     runner = InstallerRunner(DockerAdapter())
     command = runner.build_install_command(
-        image='bulletjournal-runtime:local',
-        project_root=Path('/srv/project'),
-        network_mode='bridge',
+        image="bulletjournal-runtime:local",
+        project_root=Path("/srv/project"),
+        network_mode="bridge",
         gpu_enabled=False,
     )
-    joined = ' '.join(command)
-    assert 'uv sync --project /project --locked --no-install-project' in joined
+    joined = " ".join(command)
+    assert "uv sync --project /project --locked --no-install-project" in joined
+
+
+def test_install_command_supports_runtime_env_file() -> None:
+    runner = InstallerRunner(DockerAdapter())
+    command = runner.build_install_command(
+        image="bulletjournal-runtime:local",
+        project_root=Path("/srv/project"),
+        network_mode="bridge",
+        gpu_enabled=False,
+        env_file=Path("/srv/instance/config/runtime/.env"),
+    )
+    joined = " ".join(command)
+    assert "--env-file /srv/instance/config/runtime/.env" in joined
+
+
+def test_install_command_upgrades_selected_packages_during_lock() -> None:
+    runner = InstallerRunner(DockerAdapter())
+    command = runner.build_install_command(
+        image="bulletjournal-runtime:local",
+        project_root=Path("/srv/project"),
+        network_mode="bridge",
+        gpu_enabled=False,
+        upgrade_packages=["fastreport", "bulletjournal"],
+    )
+    joined = " ".join(command)
+    assert (
+        "uv lock --project /project --upgrade-package fastreport --upgrade-package bulletjournal"
+        in joined
+    )

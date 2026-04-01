@@ -7,6 +7,7 @@ instance_root/
 |- config/
 |  `- instance.json
 |  `- runtime/
+|     |- .env
 |     |- runtime.json
 |     |- default-dependencies.txt
 |     |- runtime/
@@ -44,3 +45,11 @@ Canonical non-secret instance configuration:
 ```
 
 Secrets are never written into this file.
+
+## `config/runtime/.env`
+
+Optional per-instance runtime environment variables.
+
+- loaded into installer containers and project runtime containers via Docker `--env-file`
+- available to BulletJournal runtime code in Marimo and orchestrated execution paths
+- intended for per-instance secrets or service configuration that should not live in git

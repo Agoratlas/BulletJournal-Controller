@@ -15,6 +15,7 @@ class RuntimeConfig:
     runtime_dockerfile: Path
     runtime_build_context: Path
     default_dependencies_file: Path | None
+    env_file: Path | None
     ssh_dir: Path | None
     private_assets: Path | None
 
@@ -43,6 +44,9 @@ class RuntimeConfigService:
 
     def default_dependencies_file(self) -> Path | None:
         return self.runtime_config.default_dependencies_file
+
+    def env_file(self) -> Path | None:
+        return self.runtime_config.env_file
 
     def ensure_runtime_image(self, installer) -> None:
         result = installer.build_image(
@@ -78,6 +82,9 @@ class RuntimeConfigService:
         default_dependencies_file = self._resolve_optional_path(
             configured_root, defaults_root, data.get("default_dependencies_file")
         )
+        env_file = self._resolve_optional_path(
+            configured_root, defaults_root, data.get("env_file")
+        )
         ssh_dir = self._resolve_optional_path(
             configured_root, defaults_root, data.get("ssh_dir")
         )
@@ -91,6 +98,7 @@ class RuntimeConfigService:
             runtime_dockerfile=runtime_dockerfile,
             runtime_build_context=runtime_build_context,
             default_dependencies_file=default_dependencies_file,
+            env_file=env_file,
             ssh_dir=ssh_dir,
             private_assets=private_assets,
         )

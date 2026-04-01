@@ -174,6 +174,10 @@ class InstancePaths:
         return self.local_config_dir / "default-dependencies.txt"
 
     @property
+    def local_runtime_env_file_path(self) -> Path:
+        return self.local_config_dir / ".env"
+
+    @property
     def local_runtime_json_path(self) -> Path:
         return self.local_config_dir / "runtime.json"
 
@@ -331,6 +335,12 @@ def _seed_local_config(paths: InstancePaths, config: InstanceConfig) -> None:
                 paths.local_default_dependencies_path,
                 source.read_text(encoding="utf-8"),
             )
+    defaults_env_file = defaults_runtime_root / ".env"
+    if defaults_env_file.is_file() and not paths.local_runtime_env_file_path.exists():
+        atomic_write_text(
+            paths.local_runtime_env_file_path,
+            defaults_env_file.read_text(encoding="utf-8"),
+        )
     if config.runtime_dockerfile:
         source = Path(config.runtime_dockerfile)
         if source.is_file() and not paths.local_runtime_dockerfile_path.exists():

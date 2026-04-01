@@ -25,6 +25,9 @@ INDEX_DIRECT_URL_PATTERN = re.compile(
 INLINE_INDEX_COMMENT_PATTERN = re.compile(
     r"^(?P<dependency>.+?)\s+#\s*index-url:\s*(?P<index_url>https?://\S+)\s*$"
 )
+VCS_DEPENDENCY_PATTERN = re.compile(
+    r"^\s*(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)\s*@\s*(?P<url>(?:git|hg|svn|bzr)\+\S+)\s*$"
+)
 MISSING_BIND_MOUNT_PATTERN = re.compile(
     r"bind source path does not exist", re.IGNORECASE
 )
@@ -134,6 +137,18 @@ class EnvironmentService:
             return normalize_package_name(line.strip())
         token = match.group(1)
         return normalize_package_name(token)
+
+    def floating_vcs_dependency_names(self, lines: list[str]) -> list[str]:
+        packages: list[str] = []
+        for line in lines:
+            match = VCS_DEPENDENCY_PATTERN.match(line.strip())
+            if match is None:
+                continue
+            url = match.group("url").strip()
+            if not self._vcs_url_has_floating_ref(url):
+                continue
+            packages.append(normalize_package_name(match.group("name")))
+        return self._dedupe(packages)
 
     def merge_dependency_lines(
         self, *, bulletjournal_version: str, custom_requirements_text: str
@@ -259,12 +274,27 @@ class EnvironmentService:
         mark_all_artifacts_stale: bool,
         reason: str,
     ) -> str:
+        self.write_project_environment(
+            project_paths=project_paths,
+            project_id=project.project_id,
+            python_version=project.python_version,
+            bulletjournal_version=project.bulletjournal_version,
+            custom_requirements_text=project.custom_requirements_text,
+        )
+        dependency_config = self.merge_dependency_config(
+            bulletjournal_version=project.bulletjournal_version,
+            custom_requirements_text=project.custom_requirements_text,
+        )
         command = self.installer.build_install_command(
             image=self.runtime_config_service.runtime_config.runtime_image_name,
             project_root=project_paths.root,
             network_mode=self.instance_config.docker_network_mode,
             gpu_enabled=project.gpu_enabled,
+            env_file=self.runtime_config_service.env_file(),
             additional_mounts=self.runtime_config_service.additional_mounts(),
+            upgrade_packages=self.floating_vcs_dependency_names(
+                dependency_config.dependency_lines
+            ),
         )
         log_writer(f"install command: {' '.join(command)}")
         result = self._run_with_mount_retry(
@@ -286,6 +316,7 @@ class EnvironmentService:
                 project_root=project_paths.root,
                 network_mode=self.instance_config.docker_network_mode,
                 reason=reason,
+                env_file=self.runtime_config_service.env_file(),
                 additional_mounts=self.runtime_config_service.additional_mounts(),
             )
             log_writer(f"mark stale command: {' '.join(stale_command)}")
@@ -412,3 +443,10 @@ class EnvironmentService:
         dependency_name = match.group("dependency").strip()
         index_url = match.group("index_url").strip()
         return dependency_name, index_url
+
+    @staticmethod
+    def _vcs_url_has_floating_ref(url: str) -> bool:
+        ref = url.rsplit("@", 1)[-1].strip() if "@" in url else ""
+        if not ref:
+            return True
+        return not re.fullmatch(r"[0-9a-fA-F]{7,40}", ref)

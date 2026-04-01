@@ -24,6 +24,7 @@ Example instance-local runtime config layout:
 
 ```text
 instance_root/config/runtime/
+|- .env
 |- runtime.json
 |- default-dependencies.txt
 |- runtime/
@@ -44,6 +45,7 @@ Minimal `runtime.json`:
   "runtime_dockerfile": "runtime/Dockerfile",
   "runtime_build_context": ".",
   "default_dependencies_file": "default-dependencies.txt",
+  "env_file": ".env",
   "ssh_dir": "ssh",
   "private_assets_dir": "private-assets",
   "local_bulletjournal_source": "/absolute/path/to/BulletJournal"
@@ -53,6 +55,8 @@ Minimal `runtime.json`:
 The controller reads this directory each time it needs runtime defaults, so edits there take effect for newly created projects without restarting the controller.
 
 The controller mounts `ssh_dir` read-only at `/root/.ssh` for installer and runtime containers so private GitHub dependencies can be resolved.
+
+If `env_file` is configured, the controller passes it to Docker with `--env-file` for both install jobs and runtime containers, so the variables are available to Marimo sessions and orchestrated runs.
 
 ## Repository Layout
 

@@ -110,6 +110,12 @@ For automation, you can also provide a precomputed Argon2 hash instead of a plai
 bulletjournal-controller create-user ./instance --username admin --display-name Admin --password-hash '$argon2id$...'
 ```
 
+Or read the hash from standard input and update an existing user in place during password rotation:
+
+```bash
+printf '%s' '$argon2id$...' | bulletjournal-controller create-user ./instance --username admin --display-name Admin --password-hash-stdin --update
+```
+
 6. Build the local runtime image:
 
 ```bash

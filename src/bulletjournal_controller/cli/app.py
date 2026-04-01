@@ -48,6 +48,8 @@ def build_parser() -> argparse.ArgumentParser:
     user_parser.add_argument("--display-name", required=True)
     user_parser.add_argument("--password", default=None)
     user_parser.add_argument("--password-hash", default=None)
+    user_parser.add_argument("--password-hash-stdin", action="store_true")
+    user_parser.add_argument("--update", action="store_true")
 
     build_runtime_parser = subparsers.add_parser(
         "build-runtime",
@@ -107,6 +109,8 @@ def app() -> None:
                     display_name=args.display_name,
                     password=args.password,
                     password_hash=args.password_hash,
+                    password_hash_stdin=args.password_hash_stdin,
+                    update=args.update,
                 ),
                 indent=2,
                 sort_keys=True,

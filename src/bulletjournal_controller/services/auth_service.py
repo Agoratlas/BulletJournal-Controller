@@ -7,7 +7,11 @@ from bulletjournal_controller.config import (
     DEFAULT_SESSION_LIFETIME_SECONDS,
     ServerConfig,
 )
-from bulletjournal_controller.domain.errors import AuthenticationError, ValidationError
+from bulletjournal_controller.domain.errors import (
+    AuthenticationError,
+    ConflictError,
+    ValidationError,
+)
 from bulletjournal_controller.domain.models import SessionRecord, UserRecord
 from bulletjournal_controller.storage.repositories import (
     SessionRepository,
@@ -61,21 +65,44 @@ class AuthService:
     def create_user_with_password_hash(
         self, *, username: str, display_name: str, password_hash: str
     ) -> UserRecord:
-        normalized_password_hash = password_hash.strip()
-        if not normalized_password_hash:
-            raise ValidationError("Password hash must not be empty.")
-        try:
-            self.password_hasher.check_needs_rehash(normalized_password_hash)
-        except self._invalid_hash_error as exc:
-            raise ValidationError("Password hash is not a valid Argon2 hash.") from exc
+        normalized_username = self._normalize_username(username)
+        normalized_display_name = self._normalize_display_name(display_name)
+        normalized_password_hash = self._normalize_password_hash(password_hash)
+        if self.users.get_by_username(normalized_username) is not None:
+            raise ConflictError(f"User {normalized_username} already exists.")
         user_id = f"user-{random_token(bytes_length=12)}"
         return self.users.create(
             user_id=user_id,
-            username=username.strip(),
-            display_name=display_name.strip(),
+            username=normalized_username,
+            display_name=normalized_display_name,
             password_hash=normalized_password_hash,
             is_active=True,
         )
+
+    def create_or_update_user_with_password_hash(
+        self, *, username: str, display_name: str, password_hash: str
+    ) -> tuple[UserRecord, bool]:
+        normalized_username = self._normalize_username(username)
+        normalized_display_name = self._normalize_display_name(display_name)
+        normalized_password_hash = self._normalize_password_hash(password_hash)
+        existing = self.users.get_by_username(normalized_username)
+        if existing is None:
+            return (
+                self.create_user_with_password_hash(
+                    username=normalized_username,
+                    display_name=normalized_display_name,
+                    password_hash=normalized_password_hash,
+                ),
+                True,
+            )
+        updated = self.users.update(
+            existing.user_id,
+            display_name=normalized_display_name,
+            password_hash=normalized_password_hash,
+            is_active=True,
+        )
+        self.sessions.delete_for_user(existing.user_id)
+        return updated, False
 
     def verify_password(self, password_hash: str, password: str) -> bool:
         try:
@@ -96,6 +123,30 @@ class AuthService:
         if refreshed is None:
             raise AuthenticationError("User disappeared during login.")
         return refreshed
+
+    @staticmethod
+    def _normalize_username(username: str) -> str:
+        normalized_username = username.strip()
+        if not normalized_username:
+            raise ValidationError("Username must not be empty.")
+        return normalized_username
+
+    @staticmethod
+    def _normalize_display_name(display_name: str) -> str:
+        normalized_display_name = display_name.strip()
+        if not normalized_display_name:
+            raise ValidationError("Display name must not be empty.")
+        return normalized_display_name
+
+    def _normalize_password_hash(self, password_hash: str) -> str:
+        normalized_password_hash = password_hash.strip()
+        if not normalized_password_hash:
+            raise ValidationError("Password hash must not be empty.")
+        try:
+            self.password_hasher.check_needs_rehash(normalized_password_hash)
+        except self._invalid_hash_error as exc:
+            raise ValidationError("Password hash is not a valid Argon2 hash.") from exc
+        return normalized_password_hash
 
     def create_session(
         self, *, user: UserRecord, user_agent: str, remote_addr: str

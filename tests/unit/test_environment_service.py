@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from dataclasses import replace
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Any, cast
 
@@ -24,6 +25,8 @@ class DummyRuntimeConfigService:
             (),
             {
                 "runtime_image_name": "bulletjournal-runtime:local",
+                "container_uid": None,
+                "container_gid": None,
             },
         )()
 
@@ -372,7 +375,7 @@ def test_install_environment_retries_when_additional_mount_is_not_immediately_vi
         instance_config=default_instance_config(),
         installer=cast(Any, installer),
         runtime_config_service=DummyRuntimeConfigServiceWithMounts(
-            [(ssh_root, "/root/.ssh", True)]
+            [(ssh_root, "/home/bulletjournal/.ssh", True)]
         ),
     )
     service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
@@ -429,6 +432,56 @@ def test_install_environment_passes_runtime_env_file_to_installer(
     assert result == "lock-sha"
     assert installer.install_kwargs is not None
     assert installer.install_kwargs["env_file"] == env_file
+
+
+def test_install_environment_passes_controller_uid_gid_to_installer(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    project_paths = make_project_paths(project_root)
+    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
+
+    class RecordingInstaller(RetryingInstaller):
+        def __init__(self):
+            super().__init__([FakeResult(returncode=0)])
+            self.install_kwargs = None
+
+        def build_install_command(self, **kwargs):
+            self.install_kwargs = kwargs
+            return ["docker", "run", "test"]
+
+    installer = RecordingInstaller()
+    runtime_config_service = SimpleNamespace(
+        runtime_config=SimpleNamespace(
+            runtime_image_name="bulletjournal-runtime:local",
+            container_uid=1000,
+            container_gid=1000,
+        ),
+        default_dependencies_file=lambda: None,
+        env_file=lambda: None,
+        additional_mounts=lambda: [],
+    )
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=cast(Any, installer),
+        runtime_config_service=runtime_config_service,
+    )
+    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+    project = DummyProjectRecord()
+
+    result = service.install_environment(
+        project=cast(Any, project),
+        project_paths=cast(Any, project_paths),
+        log_writer=lambda _message: None,
+        mark_all_artifacts_stale=False,
+        reason="test",
+    )
+
+    assert result == "lock-sha"
+    assert installer.install_kwargs is not None
+    assert installer.install_kwargs["user_uid"] == 1000
+    assert installer.install_kwargs["user_gid"] == 1000
 
 
 def test_install_environment_requests_upgrades_for_floating_vcs_dependencies(

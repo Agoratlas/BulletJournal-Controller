@@ -145,7 +145,11 @@ def test_start_project_passes_runtime_env_file_to_adapter(monkeypatch) -> None:
         server_config=ServerConfig(session_secret="secret", cookie_secure=False),
         adapter=cast(Any, adapter),
         runtime_config_service=SimpleNamespace(
-            runtime_config=SimpleNamespace(runtime_image_name="img"),
+            runtime_config=SimpleNamespace(
+                runtime_image_name="img",
+                container_uid=None,
+                container_gid=None,
+            ),
             env_file=lambda: env_file,
             additional_mounts=lambda: [],
         ),
@@ -175,6 +179,52 @@ def test_start_project_passes_runtime_env_file_to_adapter(monkeypatch) -> None:
     assert adapter.run_kwargs is not None
     assert adapter.run_kwargs["env_file"] == env_file
     assert adapter.run_kwargs["controller_token"] == "project-token"
+
+
+def test_start_project_passes_controller_uid_gid_to_adapter(monkeypatch) -> None:
+    adapter = FakeAdapter(
+        [SimpleNamespace(returncode=0, stdout="container-id\n", stderr="")]
+    )
+    runtime_config = SimpleNamespace(
+        runtime_image_name="img",
+        container_uid=1000,
+        container_gid=1000,
+    )
+    service = RuntimeService(
+        instance_config=_instance_config(),
+        server_config=ServerConfig(session_secret="secret", cookie_secure=False),
+        adapter=cast(Any, adapter),
+        runtime_config_service=SimpleNamespace(
+            runtime_config=runtime_config,
+            env_file=lambda: None,
+            additional_mounts=lambda: [],
+        ),
+    )
+    monkeypatch.setattr(
+        "bulletjournal_controller.services.runtime_service.wait_for_project_health",
+        lambda **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        service,
+        "remove_container_by_name",
+        lambda _container_name: None,
+    )
+    project = SimpleNamespace(
+        project_id="study-a",
+        controller_status_token="project-token",
+        cpu_limit_millis=1000,
+        memory_limit_bytes=1024,
+        gpu_enabled=False,
+    )
+    project_paths = SimpleNamespace(root="/srv/projects/study-a")
+
+    service.start_project(
+        project=cast(Any, project), project_paths=cast(Any, project_paths)
+    )
+
+    assert adapter.run_kwargs is not None
+    assert adapter.run_kwargs["user_uid"] == 1000
+    assert adapter.run_kwargs["user_gid"] == 1000
 
 
 def test_fetch_project_status_uses_project_scoped_token(monkeypatch) -> None:

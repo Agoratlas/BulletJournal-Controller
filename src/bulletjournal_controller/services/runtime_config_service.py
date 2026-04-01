@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +19,8 @@ class RuntimeConfig:
     env_file: Path | None
     ssh_dir: Path | None
     private_assets: Path | None
+    container_uid: int | None
+    container_gid: int | None
 
 
 class RuntimeConfigService:
@@ -31,7 +34,9 @@ class RuntimeConfigService:
     def additional_mounts(self) -> list[tuple[Path, str, bool]]:
         mounts: list[tuple[Path, str, bool]] = []
         if self.runtime_config.ssh_dir is not None:
-            mounts.append((self.runtime_config.ssh_dir, "/root/.ssh", True))
+            mounts.append(
+                (self.runtime_config.ssh_dir, "/home/bulletjournal/.ssh", True)
+            )
         if self.runtime_config.private_assets is not None:
             mounts.append(
                 (
@@ -53,6 +58,8 @@ class RuntimeConfigService:
             image_name=self.runtime_config.runtime_image_name,
             dockerfile_path=self.runtime_config.runtime_dockerfile,
             context_path=self.runtime_config.runtime_build_context,
+            user_uid=self.runtime_config.container_uid,
+            user_gid=self.runtime_config.container_gid,
         )
         if result.returncode != 0:
             raise ConfigurationError(
@@ -93,6 +100,8 @@ class RuntimeConfigService:
             defaults_root,
             data.get("private_assets", data.get("private_assets_dir")),
         )
+        container_uid = self._current_uid()
+        container_gid = self._current_gid()
         return RuntimeConfig(
             runtime_image_name=runtime_image_name,
             runtime_dockerfile=runtime_dockerfile,
@@ -101,7 +110,23 @@ class RuntimeConfigService:
             env_file=env_file,
             ssh_dir=ssh_dir,
             private_assets=private_assets,
+            container_uid=container_uid,
+            container_gid=container_gid,
         )
+
+    @staticmethod
+    def _current_uid() -> int | None:
+        getter = getattr(os, "getuid", None)
+        if getter is None:
+            return None
+        return int(getter())
+
+    @staticmethod
+    def _current_gid() -> int | None:
+        getter = getattr(os, "getgid", None)
+        if getter is None:
+            return None
+        return int(getter())
 
     @staticmethod
     def _resolve_path(config_root: Path, defaults_root: Path, raw: object) -> Path:

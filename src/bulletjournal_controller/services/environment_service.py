@@ -292,6 +292,8 @@ class EnvironmentService:
             gpu_enabled=project.gpu_enabled,
             env_file=self.runtime_config_service.env_file(),
             additional_mounts=self.runtime_config_service.additional_mounts(),
+            user_uid=self.runtime_config_service.runtime_config.container_uid,
+            user_gid=self.runtime_config_service.runtime_config.container_gid,
             upgrade_packages=self.floating_vcs_dependency_names(
                 dependency_config.dependency_lines
             ),
@@ -318,6 +320,8 @@ class EnvironmentService:
                 reason=reason,
                 env_file=self.runtime_config_service.env_file(),
                 additional_mounts=self.runtime_config_service.additional_mounts(),
+                user_uid=self.runtime_config_service.runtime_config.container_uid,
+                user_gid=self.runtime_config_service.runtime_config.container_gid,
             )
             log_writer(f"mark stale command: {' '.join(stale_command)}")
             stale_result = self.installer.run(stale_command)

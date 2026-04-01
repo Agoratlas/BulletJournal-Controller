@@ -73,6 +73,8 @@ class RuntimeService:
             network_mode=self.instance_config.docker_network_mode,
             env_file=self.runtime_config_service.env_file(),
             additional_mounts=self.runtime_config_service.additional_mounts(),
+            user_uid=self.runtime_config_service.runtime_config.container_uid,
+            user_gid=self.runtime_config_service.runtime_config.container_gid,
         )
         result = self.adapter.run(command, timeout=180)
         if result.returncode != 0:

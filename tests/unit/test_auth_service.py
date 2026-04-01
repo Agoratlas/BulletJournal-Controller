@@ -149,3 +149,33 @@ def test_create_or_update_user_with_password_hash_revokes_existing_sessions(
     )
 
     assert service.resolve_session(bundle.cookie_value) is None
+
+
+def test_create_or_update_user_with_same_password_hash_keeps_existing_sessions(
+    instance_root, server_config
+) -> None:
+    db = StateDB(instance_root / "metadata" / "state.db")
+    service = AuthService(
+        users=UserRepository(db),
+        sessions=SessionRepository(db),
+        server_config=server_config,
+    )
+    password_hash = service.password_hasher.hash("secret-pass")
+    user = service.create_user_with_password_hash(
+        username="admin",
+        display_name="Admin",
+        password_hash=password_hash,
+    )
+    bundle = service.create_session(
+        user=user, user_agent="pytest", remote_addr="127.0.0.1"
+    )
+
+    updated, created = service.create_or_update_user_with_password_hash(
+        username="admin",
+        display_name="Administrator",
+        password_hash=password_hash,
+    )
+
+    assert created is False
+    assert updated.display_name == "Administrator"
+    assert service.resolve_session(bundle.cookie_value) is not None

@@ -15,16 +15,27 @@ class DockerAdapter:
         return command
 
     def build_image_command(
-        self, *, image_name: str, dockerfile_path: Path, context_path: Path
+        self,
+        *,
+        image_name: str,
+        dockerfile_path: Path,
+        context_path: Path,
+        user_uid: int | None = None,
+        user_gid: int | None = None,
     ) -> list[str]:
-        return self.docker_base_command() + [
+        command = self.docker_base_command() + [
             "build",
             "--tag",
             image_name,
             "--file",
             str(dockerfile_path),
-            str(context_path),
         ]
+        if user_uid is not None:
+            command.extend(["--build-arg", f"BULLETJOURNAL_UID={user_uid}"])
+        if user_gid is not None:
+            command.extend(["--build-arg", f"BULLETJOURNAL_GID={user_gid}"])
+        command.append(str(context_path))
+        return command
 
     def build_run_command(
         self,
@@ -43,6 +54,8 @@ class DockerAdapter:
         network_mode: str,
         env_file: Path | None = None,
         additional_mounts: list[tuple[Path, str, bool]] | None = None,
+        user_uid: int | None = None,
+        user_gid: int | None = None,
     ) -> list[str]:
         server_bootstrap = self._build_server_bootstrap(base_path=base_path)
         options = [
@@ -77,6 +90,13 @@ class DockerAdapter:
         ]
         if env_file is not None:
             options = ["--env-file", str(env_file)] + options
+        if user_uid is not None and user_gid is not None:
+            options = [
+                "--user",
+                f"{user_uid}:{user_gid}",
+                "--env",
+                "HOME=/home/bulletjournal",
+            ] + options
         if controller_token:
             options = [
                 "--env",

@@ -59,7 +59,7 @@ def test_init_instance_root_scaffolds_runtime_readmes(tmp_path: Path) -> None:
     private_assets_readme = paths.local_private_assets_readme_path.read_text(
         encoding="utf-8"
     )
-    assert "/root/.ssh" in ssh_readme
+    assert "/home/bulletjournal/.ssh" in ssh_readme
     assert "deploy" in ssh_readme.lower()
     assert "/opt/bulletjournal/private_assets" in private_assets_readme
     assert ".env" in private_assets_readme

@@ -101,7 +101,8 @@ class AuthService:
             password_hash=normalized_password_hash,
             is_active=True,
         )
-        self.sessions.delete_for_user(existing.user_id)
+        if existing.password_hash != normalized_password_hash:
+            self.sessions.delete_for_user(existing.user_id)
         return updated, False
 
     def verify_password(self, password_hash: str, password: str) -> bool:

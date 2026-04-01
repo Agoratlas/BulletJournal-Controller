@@ -21,16 +21,20 @@ def test_docker_command_construction_has_labels_and_mounts() -> None:
         gpu_enabled=False,
         network_mode="bridge",
         env_file=Path("/srv/runtime/.env"),
-        additional_mounts=[(Path("/srv/ssh"), "/root/.ssh", True)],
+        additional_mounts=[(Path("/srv/ssh"), "/home/bulletjournal/.ssh", True)],
+        user_uid=1000,
+        user_gid=1000,
     )
     joined = " ".join(command)
     assert "-H unix:///var/run/docker.sock" in joined
     assert "--env-file /srv/runtime/.env" in joined
+    assert "--user 1000:1000" in joined
+    assert "HOME=/home/bulletjournal" in joined
     assert "BULLETJOURNAL_CONTROLLER_TOKEN=project-secret" in joined
     assert "bulletjournal.project_id=study-a" in joined
     assert "bulletjournal.instance_id=main" in joined
     assert "type=bind,src=/srv/projects/study-a,dst=/project" in joined
-    assert "type=bind,src=/srv/ssh,dst=/root/.ssh,readonly" in joined
+    assert "type=bind,src=/srv/ssh,dst=/home/bulletjournal/.ssh,readonly" in joined
     assert "127.0.0.1:49152:8765" in joined
     assert "/project/.runtime/venv/bin/python -X faulthandler -u -c" in joined
     assert "/project/.runtime/logs/server.log" in joined
@@ -55,6 +59,8 @@ def test_docker_build_command_uses_local_dockerfile() -> None:
         image_name="bulletjournal-runtime:local",
         dockerfile_path=Path("/config/runtime/Dockerfile"),
         context_path=Path("/config"),
+        user_uid=1000,
+        user_gid=1000,
     )
     assert command == [
         "docker",
@@ -63,6 +69,10 @@ def test_docker_build_command_uses_local_dockerfile() -> None:
         "bulletjournal-runtime:local",
         "--file",
         "/config/runtime/Dockerfile",
+        "--build-arg",
+        "BULLETJOURNAL_UID=1000",
+        "--build-arg",
+        "BULLETJOURNAL_GID=1000",
         "/config",
     ]
 

@@ -54,7 +54,7 @@ Minimal `runtime.json`:
 
 The controller reads this directory each time it needs runtime defaults, so edits there take effect for newly created projects without restarting the controller.
 
-The controller mounts `ssh_dir` read-only at `/root/.ssh` for installer and runtime containers so private GitHub dependencies can be resolved.
+The controller mounts `ssh_dir` read-only at `/home/bulletjournal/.ssh` for installer and runtime containers and runs those containers as the same uid/gid as the host controller process, so private GitHub dependencies can be resolved without root-owned SSH material.
 
 If `env_file` is configured, the controller passes it to Docker with `--env-file` for both install jobs and runtime containers, so the variables are available to Marimo sessions and orchestrated runs.
 

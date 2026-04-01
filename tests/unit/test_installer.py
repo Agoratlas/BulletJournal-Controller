@@ -31,6 +31,21 @@ def test_install_command_supports_runtime_env_file() -> None:
     assert "--env-file /srv/instance/config/runtime/.env" in joined
 
 
+def test_install_command_runs_as_supplied_uid_gid() -> None:
+    runner = InstallerRunner(DockerAdapter())
+    command = runner.build_install_command(
+        image="bulletjournal-runtime:local",
+        project_root=Path("/srv/project"),
+        network_mode="bridge",
+        gpu_enabled=False,
+        user_uid=1000,
+        user_gid=1000,
+    )
+    joined = " ".join(command)
+    assert "--user 1000:1000" in joined
+    assert "HOME=/home/bulletjournal" in joined
+
+
 def test_install_command_upgrades_selected_packages_during_lock() -> None:
     runner = InstallerRunner(DockerAdapter())
     command = runner.build_install_command(

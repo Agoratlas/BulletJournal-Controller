@@ -18,8 +18,9 @@ RUN apt-get update \
 
 RUN python -m pip install --no-cache-dir --upgrade pip uv
 
-RUN groupadd --gid "${BULLETJOURNAL_GID}" bulletjournal \
+RUN groupadd --non-unique --gid "${BULLETJOURNAL_GID}" bulletjournal \
     && useradd \
+        --non-unique \
         --uid "${BULLETJOURNAL_UID}" \
         --gid "${BULLETJOURNAL_GID}" \
         --create-home \

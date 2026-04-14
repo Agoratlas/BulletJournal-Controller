@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import json
+from pathlib import Path
 
 from bulletjournal_controller.config import bundled_defaults_root, load_instance_config
 from bulletjournal_controller.storage import (
@@ -63,6 +63,19 @@ def test_init_instance_root_scaffolds_runtime_readmes(tmp_path: Path) -> None:
     assert "deploy" in ssh_readme.lower()
     assert "/opt/bulletjournal/private_assets" in private_assets_readme
     assert ".env" in private_assets_readme
+
+
+def test_init_instance_root_scaffolds_runtime_dockerfile_with_non_unique_ids(
+    tmp_path: Path,
+) -> None:
+    paths = init_instance_root(tmp_path / "instance")
+    dockerfile = paths.local_runtime_dockerfile_path.read_text(encoding="utf-8")
+    assert (
+        'groupadd --non-unique --gid "${BULLETJOURNAL_GID}" bulletjournal' in dockerfile
+    )
+    assert "useradd" in dockerfile
+    assert "--non-unique" in dockerfile
+    assert '--uid "${BULLETJOURNAL_UID}"' in dockerfile
 
 
 def test_bundled_defaults_runtime_layout_mirrors_instance_runtime_layout() -> None:

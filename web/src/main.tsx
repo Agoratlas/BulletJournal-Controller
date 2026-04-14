@@ -186,6 +186,9 @@ style.textContent = `
     border: 1px solid var(--line);
     box-shadow: var(--shadow);
   }
+  :root[data-theme='dark'] .brand-card {
+    background: linear-gradient(145deg, rgba(40, 41, 36, 0.96), rgba(28, 29, 26, 0.92));
+  }
   .eyebrow {
     display: inline-flex;
     align-items: center;

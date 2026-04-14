@@ -52,6 +52,40 @@ def ensure_directory(path: Path) -> Path:
     return path
 
 
+def path_size_bytes(path: Path, *, exclude: tuple[Path, ...] = ()) -> int:
+    try:
+        if not path.exists():
+            return 0
+        excluded = {excluded_path.resolve() for excluded_path in exclude}
+        resolved_path = path.resolve()
+        if resolved_path in excluded:
+            return 0
+        if path.is_file():
+            return int(path.stat().st_size)
+        total = 0
+        for root, dirnames, filenames in os.walk(path):
+            root_path = Path(root)
+            resolved_root = root_path.resolve()
+            dirnames[:] = [
+                dirname
+                for dirname in dirnames
+                if (root_path / dirname).resolve() not in excluded
+            ]
+            if resolved_root in excluded:
+                dirnames[:] = []
+                continue
+            for filename in filenames:
+                child = root_path / filename
+                try:
+                    if child.is_file():
+                        total += int(child.stat().st_size)
+                except OSError:
+                    continue
+        return total
+    except OSError:
+        return 0
+
+
 def read_text_if_exists(path: Path) -> str | None:
     if not path.is_file():
         return None

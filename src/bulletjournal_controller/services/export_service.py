@@ -193,6 +193,7 @@ class ExportService:
                 f"{line}\n" for line in custom_requirements
             ),
             lock_sha256=lock_sha256,
+            runtime_venv_size_bytes=None,
             install_status=InstallStatus.PENDING.value
             if not include_install
             else InstallStatus.READY.value,

@@ -48,6 +48,7 @@ class ProjectRecord:
     bulletjournal_version: str
     custom_requirements_text: str
     lock_sha256: str | None
+    runtime_venv_size_bytes: int | None
     install_status: str
     last_install_at: str | None
     cpu_limit_millis: int | None

@@ -54,6 +54,7 @@ def test_repository_crud_behaves_deterministically(instance_root) -> None:
         bulletjournal_version="0.1.0",
         custom_requirements_text="",
         lock_sha256=None,
+        runtime_venv_size_bytes=None,
         install_status="pending",
         last_install_at=None,
         cpu_limit_millis=1000,

@@ -4,9 +4,16 @@ import json
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from bulletjournal_controller.domain.models import ProjectRecord
+from bulletjournal_controller.utils import path_size_bytes
+
+
+PROJECT_DISK_USAGE_TTL_SECONDS = 15.0
+DOCKER_STATS_TTL_SECONDS = 5.0
+CONTAINER_RW_SIZE_TTL_SECONDS = 15.0
 
 
 class MetricsService:
@@ -22,6 +29,13 @@ class MetricsService:
         self.docker_adapter = docker_adapter
         self.runtime_config_service = runtime_config_service
         self.jobs = jobs
+        self._project_disk_usage_cache: dict[
+            str, tuple[str, int | None, float, int]
+        ] = {}
+        self._docker_stats_cache: dict[
+            tuple[str, ...], tuple[float, dict[str, dict[str, object]]]
+        ] = {}
+        self._container_rw_size_cache: dict[str, tuple[float, int | None]] = {}
 
     def system_metrics(self) -> dict[str, object]:
         disk = shutil.disk_usage(self.instance_paths.root)
@@ -66,9 +80,28 @@ class MetricsService:
         return self.project_metrics_map([project]).get(project.project_id, {})
 
     def _project_disk_usage(self, project: ProjectRecord) -> int:
-        total = self._path_size(Path(project.root_path))
+        cached = self._project_disk_usage_cache.get(project.project_id)
+        now = time.monotonic()
+        if cached is not None:
+            cached_root_path, cached_venv_size, deadline, cached_total = cached
+            if (
+                cached_root_path == project.root_path
+                and cached_venv_size == project.runtime_venv_size_bytes
+                and now < deadline
+            ):
+                return cached_total
+        total = path_size_bytes(
+            Path(project.root_path),
+            exclude=(Path(project.root_path) / ".runtime" / "venv",),
+        ) + int(project.runtime_venv_size_bytes or 0)
         for log_path_text in self.jobs.list_log_paths_for_project(project.project_id):
-            total += self._path_size(Path(log_path_text))
+            total += path_size_bytes(Path(log_path_text))
+        self._project_disk_usage_cache[project.project_id] = (
+            project.root_path,
+            project.runtime_venv_size_bytes,
+            now + PROJECT_DISK_USAGE_TTL_SECONDS,
+            total,
+        )
         return total
 
     def _docker_stats_by_container_name(
@@ -77,6 +110,13 @@ class MetricsService:
         resolved_names = [name for name in container_names if name]
         if not resolved_names:
             return {}
+        cache_key = tuple(sorted(resolved_names))
+        cached = self._docker_stats_cache.get(cache_key)
+        now = time.monotonic()
+        if cached is not None:
+            deadline, stats = cached
+            if now < deadline:
+                return stats
         command = self.docker_adapter.docker_base_command() + [
             "stats",
             "--no-stream",
@@ -112,9 +152,19 @@ class MetricsService:
                 "memory_used_bytes": memory_used_bytes,
                 "memory_limit_bytes": memory_limit_bytes,
             }
+        self._docker_stats_cache[cache_key] = (
+            now + DOCKER_STATS_TTL_SECONDS,
+            stats,
+        )
         return stats
 
     def _container_rw_size(self, container_name: str) -> int | None:
+        cached = self._container_rw_size_cache.get(container_name)
+        now = time.monotonic()
+        if cached is not None:
+            deadline, size_rw = cached
+            if now < deadline:
+                return size_rw
         command = self.docker_adapter.docker_base_command() + [
             "inspect",
             "--size",
@@ -137,6 +187,10 @@ class MetricsService:
             return None
         size_rw = record.get("SizeRw")
         if isinstance(size_rw, int):
+            self._container_rw_size_cache[container_name] = (
+                now + CONTAINER_RW_SIZE_TTL_SECONDS,
+                size_rw,
+            )
             return size_rw
         return None
 
@@ -181,24 +235,6 @@ class MetricsService:
                     "total_bytes": int(total),
                 }
         return self._linux_memory_metrics()
-
-    @staticmethod
-    def _path_size(path: Path) -> int:
-        try:
-            if path.is_file():
-                return int(path.stat().st_size)
-            if not path.exists():
-                return 0
-            total = 0
-            for child in path.rglob("*"):
-                try:
-                    if child.is_file():
-                        total += int(child.stat().st_size)
-                except OSError:
-                    continue
-            return total
-        except OSError:
-            return 0
 
     @staticmethod
     def _parse_percentage(value: str) -> float | None:

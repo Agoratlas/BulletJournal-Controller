@@ -50,6 +50,7 @@ MIGRATIONS: list[tuple[str, str]] = [
             bulletjournal_version TEXT NOT NULL,
             custom_requirements_text TEXT NOT NULL,
             lock_sha256 TEXT,
+            runtime_venv_size_bytes INTEGER,
             install_status TEXT NOT NULL,
             last_install_at TEXT,
             cpu_limit_millis INTEGER NOT NULL,
@@ -157,6 +158,7 @@ MIGRATIONS: list[tuple[str, str]] = [
             bulletjournal_version TEXT NOT NULL,
             custom_requirements_text TEXT NOT NULL,
             lock_sha256 TEXT,
+            runtime_venv_size_bytes INTEGER,
             install_status TEXT NOT NULL,
             last_install_at TEXT,
             cpu_limit_millis INTEGER,
@@ -175,14 +177,14 @@ MIGRATIONS: list[tuple[str, str]] = [
         INSERT INTO projects_new (
             project_id, controller_status_token, status, status_reason, root_path, created_by_user_id,
             created_at, updated_at, last_edit_at, last_run_finished_at, idle_shutdown_eligible_at,
-            python_version, bulletjournal_version, custom_requirements_text, lock_sha256, install_status,
+            python_version, bulletjournal_version, custom_requirements_text, lock_sha256, runtime_venv_size_bytes, install_status,
             last_install_at, cpu_limit_millis, memory_limit_bytes, gpu_enabled, container_name, container_id,
             container_port, runtime_started_at, runtime_stopped_at, last_graph_edit_at, last_notebook_edit_at
         )
         SELECT
             project_id, controller_status_token, status, status_reason, root_path, created_by_user_id,
             created_at, updated_at, last_edit_at, last_run_finished_at, idle_shutdown_eligible_at,
-            python_version, bulletjournal_version, custom_requirements_text, lock_sha256, install_status,
+            python_version, bulletjournal_version, custom_requirements_text, lock_sha256, NULL, install_status,
             last_install_at, cpu_limit_millis, memory_limit_bytes, gpu_enabled, container_name, container_id,
             container_port, runtime_started_at, runtime_stopped_at, last_graph_edit_at, last_notebook_edit_at
         FROM projects;
@@ -191,6 +193,12 @@ MIGRATIONS: list[tuple[str, str]] = [
         ALTER TABLE projects_new RENAME TO projects;
 
         CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+        """,
+    ),
+    (
+        "006_project_runtime_venv_size_bytes",
+        """
+        ALTER TABLE projects ADD COLUMN runtime_venv_size_bytes INTEGER;
         """,
     ),
 ]

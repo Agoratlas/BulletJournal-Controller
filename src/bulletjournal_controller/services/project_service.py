@@ -89,6 +89,7 @@ class ProjectService:
             bulletjournal_version=bulletjournal_version,
             custom_requirements_text=custom_requirements_text,
             lock_sha256=None,
+            runtime_venv_size_bytes=None,
             install_status=InstallStatus.PENDING.value,
             last_install_at=None,
             cpu_limit_millis=cpu_limit_millis,
@@ -152,12 +153,17 @@ class ProjectService:
         return self.projects.update(project_id, **updates)
 
     def mark_install_succeeded(
-        self, project_id: str, *, lock_sha256: str
+        self,
+        project_id: str,
+        *,
+        lock_sha256: str,
+        runtime_venv_size_bytes: int | None = None,
     ) -> ProjectRecord:
         project = self.get_project(project_id)
         updates = {
             "install_status": InstallStatus.READY.value,
             "lock_sha256": lock_sha256,
+            "runtime_venv_size_bytes": runtime_venv_size_bytes,
             "last_install_at": utc_now_iso(),
         }
         if project.status == ProjectStatus.INSTALLING.value:

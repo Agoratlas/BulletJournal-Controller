@@ -21,7 +21,12 @@ from bulletjournal_controller.domain.errors import (
 from bulletjournal_controller.domain.models import JobRecord
 from bulletjournal_controller.storage.instance_fs import InstancePaths
 from bulletjournal_controller.storage.repositories import JobRepository
-from bulletjournal_controller.utils import json_dumps, random_token, utc_now_iso
+from bulletjournal_controller.utils import (
+    json_dumps,
+    path_size_bytes,
+    random_token,
+    utc_now_iso,
+)
 
 
 class JobService:
@@ -178,7 +183,11 @@ class JobService:
                 reason="initial environment creation",
             )
             project = self.project_service.mark_install_succeeded(
-                project.project_id, lock_sha256=lock_sha
+                project.project_id,
+                lock_sha256=lock_sha,
+                runtime_venv_size_bytes=self._runtime_venv_size_bytes(
+                    project.project_id
+                ),
             )
             project = self.project_service.start_project(project.project_id)
             return {
@@ -200,7 +209,11 @@ class JobService:
                 reason=str(payload.get("reason") or "controller environment install"),
             )
             project = self.project_service.mark_install_succeeded(
-                project.project_id, lock_sha256=lock_sha
+                project.project_id,
+                lock_sha256=lock_sha,
+                runtime_venv_size_bytes=self._runtime_venv_size_bytes(
+                    project.project_id
+                ),
             )
             return {
                 "project_id": project.project_id,
@@ -249,7 +262,11 @@ class JobService:
                 reason="controller-managed environment update",
             )
             project = self.project_service.mark_install_succeeded(
-                project.project_id, lock_sha256=lock_sha
+                project.project_id,
+                lock_sha256=lock_sha,
+                runtime_venv_size_bytes=self._runtime_venv_size_bytes(
+                    project.project_id
+                ),
             )
             if was_running and restart_if_running:
                 project = self.project_service.start_project(project.project_id)
@@ -351,8 +368,16 @@ class JobService:
             reason=reason,
         )
         return self.project_service.mark_install_succeeded(
-            project_id, lock_sha256=lock_sha
+            project_id,
+            lock_sha256=lock_sha,
+            runtime_venv_size_bytes=self._runtime_venv_size_bytes(project_id),
         )
+
+    def _runtime_venv_size_bytes(self, project_id: str) -> int:
+        if self.project_service is None:
+            raise JobExecutionError("Job service is not fully bound.")
+        project_paths = self.project_service.project_paths(project_id)
+        return path_size_bytes(project_paths.runtime_venv_dir)
 
     def _apply_project_failure_state(self, job: JobRecord) -> None:
         if job.project_id is None or self.project_service is None:

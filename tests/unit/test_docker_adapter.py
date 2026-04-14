@@ -99,3 +99,24 @@ def test_docker_logs_command() -> None:
         "logs",
         "bulletjournal-main-study-a",
     ]
+
+
+def test_docker_run_command_omits_limit_flags_when_unset() -> None:
+    adapter = DockerAdapter()
+    command = adapter.build_run_command(
+        image="runtime:latest",
+        container_name="bulletjournal-study-a",
+        instance_id="main",
+        project_id="study-a",
+        project_root=Path("/srv/projects/study-a"),
+        host_port=49152,
+        base_path="/p/study-a",
+        controller_token=None,
+        cpu_limit_millis=None,
+        memory_limit_bytes=None,
+        gpu_enabled=False,
+        network_mode="bridge",
+    )
+    joined = " ".join(command)
+    assert " --cpus " not in f" {joined} "
+    assert " --memory " not in f" {joined} "

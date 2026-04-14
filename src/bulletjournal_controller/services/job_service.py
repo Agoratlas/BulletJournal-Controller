@@ -7,8 +7,17 @@ import time
 from pathlib import Path
 from typing import Any
 
-from bulletjournal_controller.domain.enums import JobStatus, JobType, ProjectStatus, ProjectStatusReason
-from bulletjournal_controller.domain.errors import ConflictError, JobExecutionError, NotFoundError
+from bulletjournal_controller.domain.enums import (
+    JobStatus,
+    JobType,
+    ProjectStatus,
+    ProjectStatusReason,
+)
+from bulletjournal_controller.domain.errors import (
+    ConflictError,
+    JobExecutionError,
+    NotFoundError,
+)
 from bulletjournal_controller.domain.models import JobRecord
 from bulletjournal_controller.storage.instance_fs import InstancePaths
 from bulletjournal_controller.storage.repositories import JobRepository
@@ -27,7 +36,9 @@ class JobService:
         self.runtime_service = None
         self.system_user_id: str | None = None
 
-    def bind_services(self, *, project_service, export_service, runtime_service, system_user_id: str) -> None:
+    def bind_services(
+        self, *, project_service, export_service, runtime_service, system_user_id: str
+    ) -> None:
         self.project_service = project_service
         self.export_service = export_service
         self.runtime_service = runtime_service
@@ -37,7 +48,9 @@ class JobService:
         if self._thread is not None:
             return
         self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run_loop, name='job-worker', daemon=True)
+        self._thread = threading.Thread(
+            target=self._run_loop, name="job-worker", daemon=True
+        )
         self._thread.start()
 
     def stop(self) -> None:
@@ -55,13 +68,22 @@ class JobService:
         project_id: str | None = None,
         reject_on_conflict: bool = True,
     ) -> JobRecord:
-        if reject_on_conflict and project_id is not None and self.jobs.has_active_mutation(project_id):
-            raise ConflictError(f'Project {project_id} already has a queued or running mutation.')
-        job_id = f'job-{random_token(bytes_length=12)}'
+        if (
+            reject_on_conflict
+            and project_id is not None
+            and self.jobs.has_active_mutation(project_id)
+        ):
+            raise ConflictError(
+                f"Project {project_id} already has a queued or running mutation."
+            )
+        job_id = f"job-{random_token(bytes_length=12)}"
         created_at = utc_now_iso()
-        log_path = self.instance_paths.job_logs_dir / f'{self._timestamp_for_filename(created_at)}__{job_id}.log'
+        log_path = (
+            self.instance_paths.job_logs_dir
+            / f"{self._timestamp_for_filename(created_at)}__{job_id}.log"
+        )
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.write_text('', encoding='utf-8')
+        log_path.write_text("", encoding="utf-8")
         job = self.jobs.create(
             job_id=job_id,
             project_id=project_id,
@@ -82,6 +104,19 @@ class JobService:
     def get_job(self, job_id: str) -> JobRecord | None:
         return self.jobs.get(job_id)
 
+    def read_job_log(self, job_id: str, *, lines: int = 200) -> str:
+        job = self.get_job(job_id)
+        if job is None:
+            raise NotFoundError(f"Job {job_id} was not found.")
+        path = Path(job.log_path)
+        if not path.exists():
+            return ""
+        content = path.read_text(encoding="utf-8")
+        log_lines = content.splitlines()
+        if len(log_lines) <= lines:
+            return content
+        return "\n".join(log_lines[-lines:]) + "\n"
+
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
             try:
@@ -94,15 +129,23 @@ class JobService:
             self._run_job(job)
 
     def _run_job(self, job: JobRecord) -> None:
-        self.jobs.update(job.job_id, status=JobStatus.RUNNING.value, started_at=utc_now_iso(), error_message=None)
+        self.jobs.update(
+            job.job_id,
+            status=JobStatus.RUNNING.value,
+            started_at=utc_now_iso(),
+            error_message=None,
+        )
         try:
             result = self._dispatch(job)
         except Exception as exc:
             try:
                 self._apply_project_failure_state(job)
             except Exception as state_exc:
-                self._log(Path(job.log_path), f'failed to apply project failure state: {state_exc}')
-            self._log(Path(job.log_path), f'job failed: {exc}')
+                self._log(
+                    Path(job.log_path),
+                    f"failed to apply project failure state: {state_exc}",
+                )
+            self._log(Path(job.log_path), f"job failed: {exc}")
             self.jobs.update(
                 job.job_id,
                 status=JobStatus.FAILED.value,
@@ -123,7 +166,7 @@ class JobService:
         log_path = Path(job.log_path)
         log_writer = lambda message: self._log(log_path, message)
         if self.project_service is None or self.export_service is None:
-            raise JobExecutionError('Job service is not fully bound.')
+            raise JobExecutionError("Job service is not fully bound.")
         if job.job_type == JobType.CREATE_PROJECT.value:
             project = self.project_service.mark_installing(job.project_id)
             project = self.project_service.get_project(project.project_id)
@@ -132,10 +175,17 @@ class JobService:
                 project_paths=self.project_service.project_paths(project.project_id),
                 log_writer=log_writer,
                 mark_all_artifacts_stale=False,
-                reason='initial environment creation',
+                reason="initial environment creation",
             )
-            project = self.project_service.mark_install_succeeded(project.project_id, lock_sha256=lock_sha)
-            return {'project_id': project.project_id, 'status': project.status, 'install_status': project.install_status}
+            project = self.project_service.mark_install_succeeded(
+                project.project_id, lock_sha256=lock_sha
+            )
+            project = self.project_service.start_project(project.project_id)
+            return {
+                "project_id": project.project_id,
+                "status": project.status,
+                "install_status": project.install_status,
+            }
         if job.job_type == JobType.INSTALL_ENVIRONMENT.value:
             project = self.project_service.get_project(job.project_id)
             self.project_service.mark_installing(project.project_id)
@@ -144,33 +194,50 @@ class JobService:
                 project=current,
                 project_paths=self.project_service.project_paths(project.project_id),
                 log_writer=log_writer,
-                mark_all_artifacts_stale=bool(payload.get('mark_all_artifacts_stale', False)),
-                reason=str(payload.get('reason') or 'controller environment install'),
+                mark_all_artifacts_stale=bool(
+                    payload.get("mark_all_artifacts_stale", False)
+                ),
+                reason=str(payload.get("reason") or "controller environment install"),
             )
-            project = self.project_service.mark_install_succeeded(project.project_id, lock_sha256=lock_sha)
-            return {'project_id': project.project_id, 'status': project.status, 'install_status': project.install_status}
+            project = self.project_service.mark_install_succeeded(
+                project.project_id, lock_sha256=lock_sha
+            )
+            return {
+                "project_id": project.project_id,
+                "status": project.status,
+                "install_status": project.install_status,
+            }
         if job.job_type == JobType.START_PROJECT.value:
             project = self.project_service.start_project(job.project_id)
-            return {'project_id': project.project_id, 'status': project.status}
+            return {"project_id": project.project_id, "status": project.status}
         if job.job_type == JobType.STOP_PROJECT.value:
             project = self.project_service.get_project(job.project_id)
             if project.status == ProjectStatus.STOPPED.value:
-                return {'project_id': project.project_id, 'status': project.status}
-            project = self.project_service.stop_project(job.project_id, reason=ProjectStatusReason.MANUAL_STOP.value)
-            return {'project_id': project.project_id, 'status': project.status}
-        if job.job_type in {JobType.UPDATE_ENVIRONMENT.value, JobType.REINSTALL_ENVIRONMENT.value}:
+                return {"project_id": project.project_id, "status": project.status}
+            project = self.project_service.stop_project(
+                job.project_id, reason=ProjectStatusReason.MANUAL_STOP.value
+            )
+            return {"project_id": project.project_id, "status": project.status}
+        if job.job_type in {
+            JobType.UPDATE_ENVIRONMENT.value,
+            JobType.REINSTALL_ENVIRONMENT.value,
+        }:
             project = self.project_service.get_project(job.project_id)
-            restart_if_running = bool(payload.get('restart_if_running', True))
-            mark_all_artifacts_stale = bool(payload.get('mark_all_artifacts_stale', True))
+            restart_if_running = bool(payload.get("restart_if_running", True))
+            mark_all_artifacts_stale = bool(
+                payload.get("mark_all_artifacts_stale", True)
+            )
             was_running = project.status == ProjectStatus.RUNNING.value
             if was_running:
-                self.project_service.stop_project(project.project_id, reason=ProjectStatusReason.MANUAL_STOP.value)
+                self.project_service.stop_project(
+                    project.project_id, reason=ProjectStatusReason.MANUAL_STOP.value
+                )
             if job.job_type == JobType.UPDATE_ENVIRONMENT.value:
                 project = self.project_service.update_environment_inputs(
                     project_id=project.project_id,
-                    python_version=str(payload['python_version']),
-                    bulletjournal_version=str(payload['bulletjournal_version']),
-                    custom_requirements_text=str(payload['custom_requirements_text']),
+                    python_version=str(payload["python_version"]),
+                    bulletjournal_version=str(payload["bulletjournal_version"]),
+                    custom_requirements_text=str(payload["custom_requirements_text"]),
                 )
             self.project_service.mark_installing(project.project_id)
             current = self.project_service.get_project(project.project_id)
@@ -179,51 +246,70 @@ class JobService:
                 project_paths=self.project_service.project_paths(project.project_id),
                 log_writer=log_writer,
                 mark_all_artifacts_stale=mark_all_artifacts_stale,
-                reason='controller-managed environment update',
+                reason="controller-managed environment update",
             )
-            project = self.project_service.mark_install_succeeded(project.project_id, lock_sha256=lock_sha)
+            project = self.project_service.mark_install_succeeded(
+                project.project_id, lock_sha256=lock_sha
+            )
             if was_running and restart_if_running:
                 project = self.project_service.start_project(project.project_id)
-            return {'project_id': project.project_id, 'status': project.status, 'install_status': project.install_status}
+            return {
+                "project_id": project.project_id,
+                "status": project.status,
+                "install_status": project.install_status,
+            }
         if job.job_type == JobType.EXPORT_PROJECT.value:
             project = self.project_service.get_project(job.project_id)
-            include_artifacts = bool(payload.get('include_artifacts', True))
-            archive_name = str(payload.get('archive_name') or f'{project.project_id}.zip')
+            include_artifacts = bool(payload.get("include_artifacts", True))
+            archive_name = str(
+                payload.get("archive_name") or f"{project.project_id}.zip"
+            )
             archive_path = self.instance_paths.exports_dir / archive_name
-            return self.export_service.export_project(project=project, archive_path=archive_path, include_artifacts=include_artifacts)
+            return self.export_service.export_project(
+                project=project,
+                archive_path=archive_path,
+                include_artifacts=include_artifacts,
+            )
         if job.job_type == JobType.IMPORT_PROJECT.value:
             imported = self.export_service.import_project(
-                archive_path=Path(str(payload['archive_path'])),
-                project_id_override=payload.get('project_id_override'),
-                include_install=bool(payload.get('include_install', False)),
+                archive_path=Path(str(payload["archive_path"])),
+                project_id_override=payload.get("project_id_override"),
+                include_install=bool(payload.get("include_install", False)),
             )
-            if bool(payload.get('include_install', False)):
-                imported_project_id = str(imported['project_id'])
+            if bool(payload.get("include_install", False)):
+                imported_project_id = str(imported["project_id"])
                 project = self._run_install_environment_job(
                     project_id=imported_project_id,
                     log_writer=log_writer,
                     mark_all_artifacts_stale=False,
-                    reason='project import install',
+                    reason="project import install",
                 )
-                imported['project'] = project.to_api()
+                imported["project"] = project.to_api()
             return imported
         if job.job_type == JobType.DELETE_PROJECT.value:
             self.project_service.delete_project(job.project_id)
-            return {'project_id': job.project_id, 'deleted': True}
-        raise JobExecutionError(f'Unsupported job type {job.job_type}.')
+            return {"project_id": job.project_id, "deleted": True}
+        raise JobExecutionError(f"Unsupported job type {job.job_type}.")
 
     def ensure_project_running_via_job(self, project_id: str) -> None:
-        if self.project_service is None or self.runtime_service is None or self.system_user_id is None:
-            raise JobExecutionError('Job service is not fully bound.')
+        if (
+            self.project_service is None
+            or self.runtime_service is None
+            or self.system_user_id is None
+        ):
+            raise JobExecutionError("Job service is not fully bound.")
         project = self.project_service.get_project(project_id)
-        if project.status == ProjectStatus.RUNNING.value and project.container_port is not None:
+        if (
+            project.status == ProjectStatus.RUNNING.value
+            and project.container_port is not None
+        ):
             return
         if project.status == ProjectStatus.STOPPED.value:
             try:
                 self.queue_job(
                     job_type=JobType.START_PROJECT.value,
                     requested_by_user_id=self.system_user_id,
-                    payload={'project_id': project_id, 'source': 'proxy_auto_start'},
+                    payload={"project_id": project_id, "source": "proxy_auto_start"},
                     project_id=project_id,
                 )
             except ConflictError:
@@ -231,16 +317,30 @@ class JobService:
         deadline = time.monotonic() + 90.0
         while time.monotonic() < deadline:
             current = self.project_service.get_project(project_id)
-            if current.status == ProjectStatus.RUNNING.value and current.container_port is not None:
+            if (
+                current.status == ProjectStatus.RUNNING.value
+                and current.container_port is not None
+            ):
                 return
             if current.status == ProjectStatus.ERROR.value:
-                raise JobExecutionError(f'Project {project_id} failed to start for proxy access.')
+                raise JobExecutionError(
+                    f"Project {project_id} failed to start for proxy access."
+                )
             time.sleep(0.5)
-        raise JobExecutionError(f'Project {project_id} did not become ready for proxy access within 90 seconds.')
+        raise JobExecutionError(
+            f"Project {project_id} did not become ready for proxy access within 90 seconds."
+        )
 
-    def _run_install_environment_job(self, *, project_id: str, log_writer, mark_all_artifacts_stale: bool, reason: str):
+    def _run_install_environment_job(
+        self,
+        *,
+        project_id: str,
+        log_writer,
+        mark_all_artifacts_stale: bool,
+        reason: str,
+    ):
         if self.project_service is None:
-            raise JobExecutionError('Job service is not fully bound.')
+            raise JobExecutionError("Job service is not fully bound.")
         self.project_service.mark_installing(project_id)
         project = self.project_service.get_project(project_id)
         lock_sha = self.project_service.environment_service.install_environment(
@@ -250,7 +350,9 @@ class JobService:
             mark_all_artifacts_stale=mark_all_artifacts_stale,
             reason=reason,
         )
-        return self.project_service.mark_install_succeeded(project_id, lock_sha256=lock_sha)
+        return self.project_service.mark_install_succeeded(
+            project_id, lock_sha256=lock_sha
+        )
 
     def _apply_project_failure_state(self, job: JobRecord) -> None:
         if job.project_id is None or self.project_service is None:
@@ -259,7 +361,10 @@ class JobService:
             project = self.project_service.get_project(job.project_id)
         except NotFoundError:
             return
-        if job.job_type == JobType.START_PROJECT.value and project.status == ProjectStatus.STARTING.value:
+        if (
+            job.job_type == JobType.START_PROJECT.value
+            and project.status == ProjectStatus.STARTING.value
+        ):
             self.project_service.set_status(
                 project_id=project.project_id,
                 status=ProjectStatus.ERROR.value,
@@ -271,9 +376,22 @@ class JobService:
             JobType.UPDATE_ENVIRONMENT.value,
             JobType.REINSTALL_ENVIRONMENT.value,
         }:
+            if (
+                job.job_type == JobType.CREATE_PROJECT.value
+                and project.status == ProjectStatus.STARTING.value
+            ):
+                self.project_service.set_status(
+                    project_id=project.project_id,
+                    status=ProjectStatus.ERROR.value,
+                    status_reason=ProjectStatusReason.START_FAILED.value,
+                )
+                return
             self.project_service.mark_install_failed(project.project_id)
             return
-        if job.job_type == JobType.STOP_PROJECT.value and project.status == ProjectStatus.STOPPING.value:
+        if (
+            job.job_type == JobType.STOP_PROJECT.value
+            and project.status == ProjectStatus.STOPPING.value
+        ):
             self.project_service.set_status(
                 project_id=project.project_id,
                 status=ProjectStatus.ERROR.value,
@@ -282,11 +400,11 @@ class JobService:
 
     @staticmethod
     def _log(path: Path, message: str) -> None:
-        with path.open('a', encoding='utf-8') as handle:
-            lines = message.splitlines() or ['']
+        with path.open("a", encoding="utf-8") as handle:
+            lines = message.splitlines() or [""]
             for line in lines:
-                handle.write(f'{utc_now_iso()} {line}\n')
+                handle.write(f"{utc_now_iso()} {line}\n")
 
     @staticmethod
     def _timestamp_for_filename(value: str) -> str:
-        return value.replace(':', '-')
+        return value.replace(":", "-")

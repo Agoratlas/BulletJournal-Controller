@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from importlib import import_module
+import sqlite3
 
 from bulletjournal_controller.config import (
     DEFAULT_SESSION_LIFETIME_SECONDS,
@@ -19,13 +21,16 @@ from bulletjournal_controller.storage.repositories import (
 )
 from bulletjournal_controller.utils import (
     iso_after,
+    parse_iso8601,
     random_token,
     sha256_text,
+    utc_now,
     utc_now_iso,
 )
 
 
 SESSION_COOKIE_NAME = "bulletjournal_session"
+SESSION_TOUCH_INTERVAL_SECONDS = 10
 
 
 @dataclass(slots=True, frozen=True)
@@ -192,14 +197,32 @@ class AuthService:
         user = self.users.get(session.user_id)
         if user is None or not user.is_active:
             return None
-        self.sessions.touch(
-            session_id, expires_at=iso_after(seconds=DEFAULT_SESSION_LIFETIME_SECONDS)
-        )
-        refreshed = self.sessions.get(session_id)
-        if refreshed is None:
-            return None
+        refreshed = session
+        if self._should_refresh_session(session):
+            try:
+                self.sessions.touch(
+                    session_id,
+                    expires_at=iso_after(seconds=DEFAULT_SESSION_LIFETIME_SECONDS),
+                    only_if_last_seen_at=session.last_seen_at,
+                )
+                refreshed = self.sessions.get(session_id)
+                if refreshed is None:
+                    return None
+            except sqlite3.OperationalError as exc:
+                if not _is_database_locked(exc):
+                    raise
         return SessionBundle(
             user=user, session=refreshed, cookie_value=f"{session_id}.{secret}"
+        )
+
+    @staticmethod
+    def _should_refresh_session(session: SessionRecord) -> bool:
+        last_seen_at = parse_iso8601(session.last_seen_at)
+        if last_seen_at is None:
+            return True
+        return (
+            last_seen_at + timedelta(seconds=SESSION_TOUCH_INTERVAL_SECONDS)
+            <= utc_now()
         )
 
     @staticmethod
@@ -214,3 +237,7 @@ class AuthService:
         if not session_id or not secret:
             return None
         return session_id, secret
+
+
+def _is_database_locked(exc: sqlite3.OperationalError) -> bool:
+    return "database is locked" in str(exc).lower()

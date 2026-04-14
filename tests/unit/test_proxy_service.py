@@ -175,3 +175,33 @@ def test_require_running_project_marks_crashed_container_unavailable() -> None:
 
     assert project_service.marked == ["test"]
     assert len(project_service.captured) == 1
+
+
+def test_require_running_project_caches_recent_runtime_check(monkeypatch) -> None:
+    inspections: list[str] = []
+    runtime_service = SimpleNamespace(
+        inspect_container=lambda container_name: (
+            inspections.append(container_name) or {"Name": container_name}
+        )
+    )
+    project = SimpleNamespace(
+        status="running",
+        container_name="bulletjournal-main-test",
+        container_port=8765,
+    )
+    service = ProxyService(
+        project_service=SimpleNamespace(
+            get_project=lambda _project_id: project,
+            runtime_service=runtime_service,
+        ),
+        job_service=SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "bulletjournal_controller.services.proxy_service.time.monotonic",
+        lambda: 100.0,
+    )
+
+    service.require_running_project("test")
+    service.require_running_project("test")
+
+    assert inspections == ["bulletjournal-main-test"]

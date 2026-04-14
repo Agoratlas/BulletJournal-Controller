@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class StrictModel(BaseModel):
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra="forbid")
 
 
 class LoginRequest(StrictModel):
@@ -25,16 +25,16 @@ class SessionResponse(StrictModel):
 
 
 class LimitsRequest(StrictModel):
-    cpu_limit_millis: int = Field(gt=0)
-    memory_limit_bytes: int = Field(gt=0)
+    cpu_limit_millis: int | None = Field(default=None, ge=1)
+    memory_limit_bytes: int | None = Field(default=None, ge=1)
     gpu_enabled: bool = False
 
 
 class CreateProjectRequest(LimitsRequest):
     project_id: str
-    python_version: str
-    bulletjournal_version: str
-    custom_requirements_text: str = ''
+    python_version: str | None = None
+    bulletjournal_version: str | None = None
+    custom_requirements_text: str = ""
 
 
 class UpdateProjectRequest(LimitsRequest):

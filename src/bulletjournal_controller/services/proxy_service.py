@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 from urllib.parse import urlencode
@@ -24,12 +25,15 @@ HOP_BY_HOP_HEADERS = {
     "upgrade",
 }
 EDITOR_SESSION_PATH_FRAGMENT = "/api/v1/edit/sessions/"
+RUNNING_PROJECT_CHECK_TTL_SECONDS = 1.0
 
 
 class ProxyService:
     def __init__(self, *, project_service, job_service):
         self.project_service = project_service
         self.job_service = job_service
+        self._http_client = None
+        self._running_project_check_deadlines: dict[str, tuple[str, float]] = {}
 
     def require_running_project(self, project_id: str):
         project = self.project_service.get_project(project_id)
@@ -39,19 +43,39 @@ class ProxyService:
             project.status == ProjectStatus.RUNNING.value
             and container_name
             and runtime_service is not None
-            and runtime_service.inspect_container(container_name) is None
         ):
-            capture = getattr(runtime_service, "write_crash_diagnostics", None)
-            if capture is not None:
-                capture(project=project, container_name=container_name)
-            self.project_service.mark_runtime_crashed(project_id)
-            project = self.project_service.get_project(project_id)
+            if self._should_refresh_running_project(project_id, container_name):
+                if runtime_service.inspect_container(container_name) is None:
+                    self._running_project_check_deadlines.pop(project_id, None)
+                    capture = getattr(runtime_service, "write_crash_diagnostics", None)
+                    if capture is not None:
+                        capture(project=project, container_name=container_name)
+                    self.project_service.mark_runtime_crashed(project_id)
+                    project = self.project_service.get_project(project_id)
+                else:
+                    self._running_project_check_deadlines[project_id] = (
+                        container_name,
+                        time.monotonic() + RUNNING_PROJECT_CHECK_TTL_SECONDS,
+                    )
+        else:
+            self._running_project_check_deadlines.pop(project_id, None)
         if (
             project.status != ProjectStatus.RUNNING.value
             or project.container_port is None
         ):
             raise RuntimeOperationError("Project runtime is unavailable.")
         return project
+
+    def _should_refresh_running_project(
+        self, project_id: str, container_name: str
+    ) -> bool:
+        cached = self._running_project_check_deadlines.get(project_id)
+        if cached is None:
+            return True
+        cached_container_name, deadline = cached
+        if cached_container_name != container_name:
+            return True
+        return time.monotonic() >= deadline
 
     async def proxy_http(
         self,
@@ -73,7 +97,10 @@ class ProxyService:
         if query:
             target = f"{target}?{query}"
         body = await request.body()
-        client = httpx.AsyncClient(timeout=None, follow_redirects=False)
+        client = self._http_client
+        if client is None:
+            client = httpx.AsyncClient(timeout=None, follow_redirects=False)
+            self._http_client = client
         try:
             upstream = client.build_request(
                 request.method,
@@ -90,7 +117,6 @@ class ProxyService:
             try:
                 response = await client.send(upstream, stream=True)
             except httpx.HTTPError as exc:
-                await client.aclose()
                 return Response(
                     status_code=502, content=f"Upstream proxy request failed: {exc}"
                 )
@@ -103,7 +129,6 @@ class ProxyService:
                     return
                 finally:
                     await response.aclose()
-                    await client.aclose()
 
             response_headers = self._response_headers(
                 response.headers,
@@ -119,8 +144,14 @@ class ProxyService:
                 media_type=response.headers.get("content-type"),
             )
         except Exception:
-            await client.aclose()
             raise
+
+    async def aclose(self) -> None:
+        client = self._http_client
+        if client is None:
+            return
+        self._http_client = None
+        await client.aclose()
 
     async def proxy_websocket(
         self,

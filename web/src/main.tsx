@@ -46,8 +46,8 @@ type Project = {
   install_status: string
   last_install_at: string | null
   limits: {
-    cpu_limit_millis: number
-    memory_limit_bytes: number
+    cpu_limit_millis: number | null
+    memory_limit_bytes: number | null
     gpu_enabled: boolean
   }
   runtime: {
@@ -56,6 +56,12 @@ type Project = {
     container_port: number | null
     runtime_started_at: string | null
     runtime_stopped_at: string | null
+  }
+  metrics: {
+    cpu_percent?: number | null
+    memory_used_bytes?: number | null
+    memory_limit_bytes?: number | null
+    disk_used_bytes?: number | null
   }
   recent_jobs?: JobRecord[]
 }
@@ -67,7 +73,20 @@ type SystemInfo = {
   default_bulletjournal_version: string
   default_dependencies_text: string
   project_count: number
+  metrics: {
+    cpu_percent: number | null
+    memory: {
+      used_bytes: number
+      total_bytes: number
+    } | null
+    disk: {
+      used_bytes: number
+      total_bytes: number
+    }
+  }
 }
+
+type ThemeMode = 'system' | 'light' | 'dark'
 
 type ProjectActionJobResponse = {
   job: JobRecord | null
@@ -81,6 +100,8 @@ type AppState = {
   sessionLoading: boolean
   refreshSession: () => Promise<void>
   signOut: () => Promise<void>
+  themeMode: ThemeMode
+  setThemeMode: React.Dispatch<React.SetStateAction<ThemeMode>>
 }
 
 const AppContext = React.createContext<AppState | null>(null)
@@ -108,6 +129,20 @@ style.textContent = `
     --radius-lg: 20px;
     --radius-md: 14px;
   }
+  :root[data-theme='dark'] {
+    --bg: #171714;
+    --bg-2: #21211d;
+    --paper: rgba(32, 33, 29, 0.88);
+    --paper-strong: rgba(28, 29, 26, 0.96);
+    --ink: #efe7d8;
+    --muted: #b7afa2;
+    --accent: #63c4b2;
+    --accent-soft: rgba(99, 196, 178, 0.14);
+    --warm: #d89063;
+    --warm-soft: rgba(216, 144, 99, 0.16);
+    --line: rgba(239, 231, 216, 0.12);
+    --shadow: 0 18px 54px rgba(0, 0, 0, 0.28);
+  }
   * { box-sizing: border-box; }
   html, body, #root { min-height: 100%; }
   body {
@@ -118,6 +153,12 @@ style.textContent = `
       radial-gradient(circle at 0% 0%, rgba(29, 123, 108, 0.2), transparent 28%),
       radial-gradient(circle at 100% 100%, rgba(184, 100, 53, 0.18), transparent 34%),
       linear-gradient(180deg, #f8f1e1, var(--bg));
+  }
+  :root[data-theme='dark'] body {
+    background:
+      radial-gradient(circle at 0% 0%, rgba(99, 196, 178, 0.12), transparent 28%),
+      radial-gradient(circle at 100% 100%, rgba(216, 144, 99, 0.14), transparent 34%),
+      linear-gradient(180deg, #1e1e1a, var(--bg));
   }
   button, input, textarea, select {
     font: inherit;
@@ -228,11 +269,33 @@ style.textContent = `
     color: var(--accent);
     border-color: rgba(29, 123, 108, 0.25);
   }
+  :root[data-theme='dark'] .pill-link.active {
+    border-color: rgba(99, 196, 178, 0.3);
+  }
   .button,
   .pill-button {
     background: linear-gradient(135deg, var(--accent), #14574d);
     color: white;
     box-shadow: 0 10px 20px rgba(29, 123, 108, 0.2);
+  }
+  .button-neutral,
+  .button-status-start,
+  .button-status-stop {
+    color: white;
+  }
+  .button-status-start {
+    background: linear-gradient(135deg, var(--accent), #14574d);
+    box-shadow: 0 10px 20px rgba(29, 123, 108, 0.2);
+  }
+  .button-status-stop {
+    background: linear-gradient(135deg, var(--warm), #8f4925);
+    box-shadow: 0 10px 20px rgba(184, 100, 53, 0.18);
+  }
+  .button-neutral {
+    background: rgba(98, 108, 108, 0.18);
+    border-color: var(--line);
+    color: var(--muted);
+    box-shadow: none;
   }
   .button-danger {
     background: linear-gradient(135deg, var(--warm), #8f4925);
@@ -339,6 +402,7 @@ style.textContent = `
   .badge.error { background: rgba(184, 100, 53, 0.14); color: var(--warm); }
   .badge.install-ready { background: rgba(29, 123, 108, 0.12); color: var(--accent); }
   .badge.install-failed { background: rgba(184, 100, 53, 0.14); color: var(--warm); }
+  .badge.neutral { background: rgba(98, 108, 108, 0.14); color: var(--muted); }
   .meta-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -400,6 +464,23 @@ style.textContent = `
     background: rgba(255, 255, 255, 0.78);
     color: var(--ink);
   }
+  :root[data-theme='dark'] input,
+  :root[data-theme='dark'] textarea,
+  :root[data-theme='dark'] select,
+  :root[data-theme='dark'] .checkbox-row,
+  :root[data-theme='dark'] .close-button,
+  :root[data-theme='dark'] .pill-link,
+  :root[data-theme='dark'] .button-secondary,
+  :root[data-theme='dark'] .project-card,
+  :root[data-theme='dark'] .stat-card,
+  :root[data-theme='dark'] .job-row,
+  :root[data-theme='dark'] .summary-block,
+  :root[data-theme='dark'] .hero-note,
+  :root[data-theme='dark'] .empty-state {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--ink);
+    border-color: var(--line);
+  }
   textarea {
     min-height: 180px;
     resize: vertical;
@@ -454,6 +535,7 @@ style.textContent = `
   .jobs-list {
     display: grid;
     gap: 12px;
+    align-content: start;
   }
   .job-row {
     display: grid;
@@ -473,6 +555,7 @@ style.textContent = `
     display: grid;
     gap: 20px;
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+    align-items: start;
   }
   .summary-grid {
     display: grid;
@@ -584,6 +667,87 @@ style.textContent = `
     border: 1px solid var(--line);
     box-shadow: var(--shadow);
   }
+  .theme-row {
+    display: grid;
+    gap: 8px;
+  }
+  .theme-select {
+    width: 100%;
+  }
+  .collapsible-panel {
+    display: grid;
+    gap: 16px;
+  }
+  .section-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.45);
+  }
+  .section-toggle strong {
+    display: block;
+  }
+  .loading-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .spinner {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 2px solid rgba(29, 123, 108, 0.18);
+    border-top-color: var(--accent);
+    animation: spin 1s linear infinite;
+  }
+  .spinner.large {
+    width: 48px;
+    height: 48px;
+    border-width: 4px;
+    margin: 0 auto;
+  }
+  .creation-status {
+    display: grid;
+    gap: 16px;
+    justify-items: start;
+  }
+  .creation-status-card {
+    padding: 18px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.45);
+  }
+  .status-stack {
+    display: grid;
+    gap: 6px;
+  }
+  .job-log-preview {
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.4);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 260px;
+    overflow: auto;
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  :root[data-theme='dark'] .section-toggle,
+  :root[data-theme='dark'] .creation-status-card {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--line);
+  }
   .subtle-link {
     color: var(--warm);
   }
@@ -673,6 +837,205 @@ function formatBytes(value: number): string {
   return `${current.toFixed(current >= 10 || index === 0 ? 0 : 1)} ${units[index]}`
 }
 
+function formatMemoryLimit(value: number | null | undefined): string {
+  if (!Number.isFinite(value) || !value || value <= 0) {
+    return 'No limit'
+  }
+  return `${(value / (1024 ** 3)).toFixed(value >= 10 * 1024 ** 3 ? 0 : 1)} GB`
+}
+
+function formatCpuLimit(value: number | null | undefined): string {
+  if (!Number.isFinite(value) || !value || value <= 0) {
+    return 'No limit'
+  }
+  const cpuCount = value / 1000
+  return `${cpuCount % 1 === 0 ? cpuCount.toFixed(0) : cpuCount.toFixed(1)} CPU`
+}
+
+function parseCpuInputToMillis(value: string): number | null {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null
+  }
+  return Math.round(parsed * 1000)
+}
+
+function parseMemoryInputToBytes(value: string): number | null {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null
+  }
+  return Math.round(parsed * 1024 ** 3)
+}
+
+function formatCpuInputValue(value: number | null | undefined): string {
+  if (!Number.isFinite(value) || !value || value <= 0) {
+    return ''
+  }
+  const cpuCount = value / 1000
+  return cpuCount % 1 === 0 ? cpuCount.toFixed(0) : cpuCount.toFixed(1)
+}
+
+function formatMemoryInputValue(value: number | null | undefined): string {
+  if (!Number.isFinite(value) || !value || value <= 0) {
+    return ''
+  }
+  const gb = value / (1024 ** 3)
+  return gb >= 10 || gb % 1 === 0 ? gb.toFixed(0) : gb.toFixed(1)
+}
+
+function formatPercentage(value: number | null | undefined): string {
+  if (!Number.isFinite(value)) {
+    return 'Not available'
+  }
+  return `${Number(value).toFixed(1)}%`
+}
+
+function formatDurationBetween(start: string | null | undefined, end?: string | null): string {
+  if (!start) {
+    return 'Not started'
+  }
+  const startedAt = new Date(start).getTime()
+  const endedAt = end ? new Date(end).getTime() : Date.now()
+  if (Number.isNaN(startedAt) || Number.isNaN(endedAt) || endedAt < startedAt) {
+    return 'Not available'
+  }
+  const totalSeconds = Math.floor((endedAt - startedAt) / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`
+  }
+  return `${seconds}s`
+}
+
+function jobLogUrl(jobId: string, lines = 200): string {
+  return `/api/v1/jobs/${jobId}/log?lines=${lines}`
+}
+
+function isProjectOpenable(project: Project): boolean {
+  return project.status === 'running' && project.runtime.container_port !== null
+}
+
+function projectStateLabel(project: Project): string {
+  if (project.status === 'error' && project.status_reason) {
+    return project.status_reason
+  }
+  if (project.status === 'stopped' && project.status_reason) {
+    return project.status_reason
+  }
+  return project.status
+}
+
+function projectStateTone(project: Project): string {
+  if (project.status === 'running') {
+    return 'running'
+  }
+  if (project.status === 'creating' || project.status === 'installing' || project.status === 'starting' || project.status === 'stopping') {
+    return 'neutral'
+  }
+  if (project.status === 'error' || project.status_reason === 'install_failed' || project.status_reason === 'start_failed' || project.status_reason === 'runtime_crashed') {
+    return 'error'
+  }
+  return 'stopped'
+}
+
+function projectActionState(project: Project): {
+  label: string
+  action: 'start' | 'stop' | null
+  className: string
+  disabled: boolean
+} {
+  if (project.status === 'running') {
+    return { label: 'Stop', action: 'stop', className: 'button-status-stop', disabled: false }
+  }
+  if (project.status === 'creating') {
+    return { label: 'Creating...', action: null, className: 'button-neutral', disabled: true }
+  }
+  if (project.status === 'installing') {
+    return { label: 'Installing...', action: null, className: 'button-neutral', disabled: true }
+  }
+  if (project.status === 'starting') {
+    return { label: 'Starting...', action: null, className: 'button-neutral', disabled: true }
+  }
+  if (project.status === 'stopping') {
+    return { label: 'Stopping...', action: null, className: 'button-neutral', disabled: true }
+  }
+  return { label: 'Start', action: 'start', className: 'button-status-start', disabled: false }
+}
+
+function projectCreationMessage(project: Project | null): string {
+  if (!project) {
+    return 'Preparing the new project. This can take a few minutes on a fresh dependency set.'
+  }
+  if (project.status === 'creating' || project.status === 'installing') {
+    return 'Installing dependencies and preparing the runtime environment. This can take several minutes.'
+  }
+  if (project.status === 'starting') {
+    return 'Starting the container and waiting for the project to become reachable.'
+  }
+  if (project.status === 'running') {
+    return 'Project is ready. Opening it now.'
+  }
+  return `Current state: ${projectStateLabel(project)}.`
+}
+
+function JobLogPreview({ job }: { job: JobRecord }) {
+  const [logText, setLogText] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadLog() {
+      try {
+        const response = await fetch(jobLogUrl(job.job_id, 160), { credentials: 'include' })
+        const text = await response.text()
+        if (!cancelled) {
+          setLogText(text.trim())
+        }
+      } catch {
+        if (!cancelled) {
+          setLogText('')
+        }
+      }
+    }
+
+    void loadLog()
+    if (job.status !== 'queued' && job.status !== 'running') {
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const id = window.setInterval(() => {
+      void loadLog()
+    }, 2000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [job.job_id, job.status])
+
+  if (!logText) {
+    return null
+  }
+
+  return <pre className="job-log-preview">{logText}</pre>
+}
+
 function useAppState(): AppState {
   const context = React.useContext(AppContext)
   if (!context) {
@@ -697,6 +1060,13 @@ function usePolling(callback: () => void | Promise<void>, delay: number | null, 
 function AppProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<SessionResponse | null>(null)
   const [sessionLoading, setSessionLoading] = useState(true)
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    const stored = window.localStorage.getItem('bulletjournal-controller-theme')
+    if (stored === 'light' || stored === 'dark' || stored === 'system') {
+      return stored
+    }
+    return 'system'
+  })
 
   const refreshSession = useCallback(async () => {
     try {
@@ -718,7 +1088,23 @@ function AppProvider({ children }: { children: React.ReactNode }) {
     void refreshSession()
   }, [refreshSession])
 
-  const value = useMemo(() => ({ session, sessionLoading, refreshSession, signOut }), [refreshSession, session, sessionLoading, signOut])
+  useEffect(() => {
+    const root = document.documentElement
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+
+    function applyTheme() {
+      const resolved = themeMode === 'system' ? (media.matches ? 'dark' : 'light') : themeMode
+      root.dataset.theme = resolved
+      root.style.colorScheme = resolved
+    }
+
+    applyTheme()
+    window.localStorage.setItem('bulletjournal-controller-theme', themeMode)
+    media.addEventListener('change', applyTheme)
+    return () => media.removeEventListener('change', applyTheme)
+  }, [themeMode])
+
+  const value = useMemo(() => ({ session, sessionLoading, refreshSession, signOut, themeMode, setThemeMode }), [refreshSession, session, sessionLoading, signOut, themeMode])
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }
 
@@ -829,7 +1215,7 @@ function LoginPage() {
 }
 
 function AppChrome({ children }: { children: React.ReactNode }) {
-  const { session, signOut } = useAppState()
+  const { session, signOut, themeMode, setThemeMode } = useAppState()
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -864,6 +1250,14 @@ function AppChrome({ children }: { children: React.ReactNode }) {
               </button>
             </div>
           </div>
+          <div className="mini-card theme-row">
+            <span className="muted">Theme</span>
+            <select className="theme-select" value={themeMode} onChange={(event) => setThemeMode(event.target.value as ThemeMode)} aria-label="Theme preference">
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </div>
         </aside>
       </header>
       {children}
@@ -878,8 +1272,11 @@ function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [activeJobIds, setActiveJobIds] = useState<string[]>([])
+  const [pendingDeletions, setPendingDeletions] = useState<Record<string, string>>({})
+  const [hiddenProjectIds, setHiddenProjectIds] = useState<string[]>([])
   const [showCreateModal, setShowCreateModal] = useState(false)
   const navigate = useNavigate()
+  const location = useLocation()
 
   const fetchDashboard = useCallback(async () => {
     try {
@@ -889,6 +1286,7 @@ function DashboardPage() {
       ])
       setProjects(nextProjects)
       setSystemInfo(nextSystemInfo)
+      setHiddenProjectIds((current) => current.filter((projectId) => nextProjects.some((project) => project.project_id === projectId)))
       setError(null)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Failed to load dashboard.')
@@ -900,6 +1298,23 @@ function DashboardPage() {
   usePolling(fetchDashboard, 5000, [fetchDashboard])
 
   useEffect(() => {
+    if (!location.state || typeof location.state !== 'object') {
+      return
+    }
+    const state = location.state as { deletedProjectId?: unknown; deleteJobId?: unknown }
+    const deletedProjectId = typeof state.deletedProjectId === 'string' ? state.deletedProjectId : null
+    const deleteJobId = typeof state.deleteJobId === 'string' ? state.deleteJobId : null
+    if (!deletedProjectId || !deleteJobId) {
+      return
+    }
+    setHiddenProjectIds((current) => Array.from(new Set([...current, deletedProjectId])))
+    setPendingDeletions((current) => ({ ...current, [deleteJobId]: deletedProjectId }))
+    setActiveJobIds((current) => Array.from(new Set([...current, deleteJobId])))
+    void fetchDashboard()
+    navigate(location.pathname, { replace: true, state: null })
+  }, [fetchDashboard, location.pathname, location.state, navigate])
+
+  useEffect(() => {
     if (activeJobIds.length === 0) {
       return
     }
@@ -907,22 +1322,50 @@ function DashboardPage() {
       const responses = await Promise.allSettled(activeJobIds.map((jobId) => request<JobRecord>(`/api/v1/jobs/${jobId}`)))
       const stillActive: string[] = []
       let shouldRefresh = false
+      const completedDeleteJobs: string[] = []
+      const failedDeleteJobs: Array<{ jobId: string; projectId: string; message: string }> = []
       for (const result of responses) {
         if (result.status === 'fulfilled') {
           if (result.value.status === 'queued' || result.value.status === 'running') {
             stillActive.push(result.value.job_id)
           } else {
             shouldRefresh = true
+            const deletedProjectId = pendingDeletions[result.value.job_id]
+            if (deletedProjectId) {
+              completedDeleteJobs.push(result.value.job_id)
+              if (result.value.status !== 'succeeded') {
+                failedDeleteJobs.push({
+                  jobId: result.value.job_id,
+                  projectId: deletedProjectId,
+                  message: result.value.error_message || `Failed to delete project ${deletedProjectId}.`,
+                })
+              }
+            }
           }
         }
       }
       setActiveJobIds(stillActive)
+      if (completedDeleteJobs.length > 0) {
+        setPendingDeletions((current) => {
+          const next = { ...current }
+          for (const jobId of completedDeleteJobs) {
+            delete next[jobId]
+          }
+          return next
+        })
+      }
+      if (failedDeleteJobs.length > 0) {
+        setHiddenProjectIds((current) => current.filter((projectId) => !failedDeleteJobs.some((entry) => entry.projectId === projectId)))
+        setActionError(failedDeleteJobs[0].message)
+      }
       if (shouldRefresh) {
         await fetchDashboard()
       }
     }, 2000)
     return () => window.clearInterval(id)
-  }, [activeJobIds, fetchDashboard])
+  }, [activeJobIds, fetchDashboard, pendingDeletions])
+
+  const visibleProjects = useMemo(() => projects.filter((project) => !hiddenProjectIds.includes(project.project_id)), [hiddenProjectIds, projects])
 
   const groupedProjects = useMemo(() => {
     const groups: Record<'Running' | 'Stopped' | 'Error', Project[]> = {
@@ -930,7 +1373,7 @@ function DashboardPage() {
       Stopped: [],
       Error: [],
     }
-    for (const project of projects) {
+    for (const project of visibleProjects) {
       if (project.status === 'running' || project.status === 'starting' || project.status === 'stopping') {
         groups.Running.push(project)
       } else if (project.status === 'error') {
@@ -940,7 +1383,7 @@ function DashboardPage() {
       }
     }
     return groups
-  }, [projects])
+  }, [visibleProjects])
 
   async function queueProjectAction(projectId: string, action: 'start' | 'stop') {
     try {
@@ -998,37 +1441,49 @@ function DashboardPage() {
                       <div className="empty-state">No projects currently in this group.</div>
                     ) : (
                       <div className="project-cards">
-                        {group.map((project) => (
-                          <article className="project-card" key={project.project_id}>
-                            <div className="project-card-top">
-                              <div>
-                                <h4>{project.project_id}</h4>
-                                <div className="badges">
-                                  <span className={classNames('badge', project.status === 'error' ? 'error' : project.status === 'running' ? 'running' : 'stopped')}>
-                                    {project.status}
-                                  </span>
-                                  {project.status_reason ? <span className="badge">{project.status_reason}</span> : null}
-                                  <span className={classNames('badge', project.install_status === 'ready' ? 'install-ready' : project.install_status === 'failed' ? 'install-failed' : undefined)}>
-                                    install {project.install_status}
-                                  </span>
+                        {group.map((project) => {
+                          const actionState = projectActionState(project)
+                          return (
+                            <article className="project-card" key={project.project_id}>
+                              <div className="project-card-top">
+                                <div>
+                                  <h4>{project.project_id}</h4>
+                                  <div className="badges">
+                                    <span className={classNames('badge', projectStateTone(project))}>
+                                      {projectStateLabel(project)}
+                                    </span>
+                                  </div>
                                 </div>
+                                <div className="muted">{project.bulletjournal_version}</div>
                               </div>
-                              <div className="muted">{project.bulletjournal_version}</div>
-                            </div>
-                            <div className="meta-grid">
-                              <div className="meta-item"><span>Python</span><strong>{project.python_version}</strong></div>
-                              <div className="meta-item"><span>Last edit</span><strong>{formatDateTime(project.last_edit_at)}</strong></div>
-                              <div className="meta-item"><span>Last run finished</span><strong>{formatDateTime(project.last_run_finished_at)}</strong></div>
-                              <div className="meta-item"><span>Runtime port</span><strong>{project.runtime.container_port ?? 'not running'}</strong></div>
-                            </div>
-                            <div className="quick-actions">
-                              <a className="button-secondary" href={`/p/${project.project_id}/`} target="_blank" rel="noreferrer">Open</a>
-                              <button className="button-secondary" type="button" onClick={() => queueProjectAction(project.project_id, 'start')}>Start</button>
-                              <button className="button-secondary" type="button" onClick={() => queueProjectAction(project.project_id, 'stop')}>Stop</button>
-                              <button className="button" type="button" onClick={() => navigate(`/projects/${project.project_id}`)}>Details</button>
-                            </div>
-                          </article>
-                        ))}
+                              <div className="meta-grid">
+                                <div className="meta-item"><span>Python</span><strong>{project.python_version}</strong></div>
+                                <div className="meta-item"><span>Last edit</span><strong>{formatDateTime(project.last_edit_at)}</strong></div>
+                                <div className="meta-item"><span>Last run finished</span><strong>{formatDateTime(project.last_run_finished_at)}</strong></div>
+                                <div className="meta-item"><span>Runtime port</span><strong>{project.runtime.container_port ?? 'not running'}</strong></div>
+                                <div className="meta-item"><span>Disk</span><strong>{formatBytes(project.metrics.disk_used_bytes ?? 0)}</strong></div>
+                                {typeof project.metrics.cpu_percent === 'number' ? <div className="meta-item"><span>CPU</span><strong>{formatPercentage(project.metrics.cpu_percent)}</strong></div> : null}
+                                {typeof project.metrics.memory_used_bytes === 'number' ? <div className="meta-item"><span>Memory</span><strong>{formatBytes(project.metrics.memory_used_bytes)}</strong></div> : null}
+                              </div>
+                              <div className="quick-actions">
+                                {isProjectOpenable(project) ? <a className="button-secondary" href={`/p/${project.project_id}/`} target="_blank" rel="noreferrer">Open</a> : null}
+                                <button
+                                  className={classNames('button-secondary', actionState.className)}
+                                  type="button"
+                                  disabled={actionState.disabled}
+                                  onClick={() => {
+                                    if (actionState.action) {
+                                      void queueProjectAction(project.project_id, actionState.action)
+                                    }
+                                  }}
+                                >
+                                  {actionState.label}
+                                </button>
+                                <button className="button-secondary" type="button" onClick={() => navigate(`/projects/${project.project_id}`)}>Details</button>
+                              </div>
+                            </article>
+                          )
+                        })}
                       </div>
                     )}
                   </section>
@@ -1039,6 +1494,27 @@ function DashboardPage() {
         </section>
 
         <aside className="layout-grid">
+          <section className="panel">
+            <div className="panel-head">
+              <div className="eyebrow">System metrics</div>
+              <h2>Current host usage</h2>
+            </div>
+            <div className="panel-body stats-grid">
+              <div className="stat-card">
+                <span className="muted">CPU in use</span>
+                <strong>{formatPercentage(systemInfo?.metrics.cpu_percent)}</strong>
+              </div>
+              <div className="stat-card">
+                <span className="muted">RAM in use</span>
+                <strong>{systemInfo?.metrics.memory ? `${formatBytes(systemInfo.metrics.memory.used_bytes)} / ${formatBytes(systemInfo.metrics.memory.total_bytes)}` : 'Loading...'}</strong>
+              </div>
+              <div className="stat-card">
+                <span className="muted">Disk in use</span>
+                <strong>{systemInfo?.metrics.disk ? `${formatBytes(systemInfo.metrics.disk.used_bytes)} / ${formatBytes(systemInfo.metrics.disk.total_bytes)}` : 'Loading...'}</strong>
+              </div>
+            </div>
+          </section>
+
           <section className="panel">
             <div className="panel-head">
               <div className="eyebrow">Instance defaults</div>
@@ -1059,7 +1535,7 @@ function DashboardPage() {
               </div>
               <div className="stat-card">
                 <span className="muted">Tracked projects</span>
-                <strong>{projects.length}</strong>
+                <strong>{visibleProjects.length}</strong>
               </div>
             </div>
           </section>
@@ -1081,8 +1557,7 @@ function DashboardPage() {
         <CreateProjectModal
           systemInfo={systemInfo}
           onClose={() => setShowCreateModal(false)}
-          onCreated={(jobId) => {
-            setShowCreateModal(false)
+          onJobQueued={(projectId, jobId) => {
             setActiveJobIds((current) => Array.from(new Set([...current, jobId])))
             void fetchDashboard()
           }}
@@ -1095,93 +1570,200 @@ function DashboardPage() {
 function CreateProjectModal({
   systemInfo,
   onClose,
-  onCreated,
+  onJobQueued,
 }: {
   systemInfo: SystemInfo
   onClose: () => void
-  onCreated: (jobId: string) => void
+  onJobQueued: (projectId: string, jobId: string) => void
 }) {
   const [form, setForm] = useState({
     project_id: '',
-    python_version: systemInfo.default_python_version,
-    bulletjournal_version: systemInfo.default_bulletjournal_version,
     custom_requirements_text: systemInfo.default_dependencies_text,
-    cpu_limit_millis: 2000,
-    memory_limit_bytes: 4294967296,
-    gpu_enabled: false,
+    cpu_limit_input: '',
+    memory_limit_input: '',
+    gpu_enabled: true,
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [creationJobId, setCreationJobId] = useState<string | null>(null)
+  const [creationJob, setCreationJob] = useState<JobRecord | null>(null)
+  const [createdProjectId, setCreatedProjectId] = useState<string | null>(null)
+  const [createdProject, setCreatedProject] = useState<Project | null>(null)
+  const [showLimitsForm, setShowLimitsForm] = useState(false)
+  const openedWindowRef = useRef<Window | null>(null)
+
+  const creationActive = creationJobId !== null && createdProjectId !== null
+
+  useEffect(() => {
+    if (!creationJobId || !createdProjectId) {
+      return
+    }
+
+    let cancelled = false
+    const id = window.setInterval(async () => {
+      try {
+        const [job, project] = await Promise.all([
+          request<JobRecord>(`/api/v1/jobs/${creationJobId}`),
+          request<Project>(`/api/v1/projects/${createdProjectId}`),
+        ])
+        if (cancelled) {
+          return
+        }
+        setCreationJob(job)
+        setCreatedProject(project)
+        if (isProjectOpenable(project)) {
+          if (openedWindowRef.current && !openedWindowRef.current.closed) {
+            openedWindowRef.current.location.href = `/p/${project.project_id}/`
+          } else {
+            window.open(`/p/${project.project_id}/`, '_blank', 'noreferrer')
+          }
+          onClose()
+          return
+        }
+        if (job.status === 'failed' || job.status === 'cancelled' || job.status === 'aborted_on_restart') {
+          setError(job.error_message || 'Failed to create project.')
+          if (openedWindowRef.current && !openedWindowRef.current.closed) {
+            openedWindowRef.current.close()
+          }
+          openedWindowRef.current = null
+          setCreationJobId(null)
+          setCreatedProjectId(null)
+        }
+      } catch (nextError) {
+        if (!cancelled) {
+          setError(nextError instanceof Error ? nextError.message : 'Failed to monitor project creation.')
+        }
+      }
+    }, 2000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [createdProjectId, creationJobId, onClose])
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSubmitting(true)
     setError(null)
     try {
+      openedWindowRef.current = window.open('', '_blank')
+      if (openedWindowRef.current && !openedWindowRef.current.closed) {
+        openedWindowRef.current.document.title = 'Preparing project'
+        openedWindowRef.current.document.body.innerHTML = '<main style="font-family: system-ui, sans-serif; padding: 24px; color: #1f2929;"><h1 style="margin: 0 0 12px; font-size: 20px;">Preparing your BulletJournal project</h1><p style="margin: 0; line-height: 1.6;">The controller is installing dependencies and starting the container. This tab will redirect automatically when the project is ready.</p></main>'
+      }
       const response = await request<{ project: { project_id: string }; job: { job_id: string } }>('/api/v1/projects', {
         method: 'POST',
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          project_id: form.project_id,
+          custom_requirements_text: form.custom_requirements_text,
+          cpu_limit_millis: parseCpuInputToMillis(form.cpu_limit_input),
+          memory_limit_bytes: parseMemoryInputToBytes(form.memory_limit_input),
+          gpu_enabled: form.gpu_enabled,
+        }),
       })
-      onCreated(response.job.job_id)
+      setCreatedProjectId(response.project.project_id)
+      setCreationJobId(response.job.job_id)
+      setCreationJob(null)
+      onJobQueued(response.project.project_id, response.job.job_id)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Failed to create project.')
+      if (openedWindowRef.current && !openedWindowRef.current.closed) {
+        openedWindowRef.current.close()
+      }
+      openedWindowRef.current = null
     } finally {
       setSubmitting(false)
     }
   }
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="modal-backdrop" role="presentation" onClick={() => {
+      if (!creationActive && !submitting) {
+        onClose()
+      }
+    }}>
       <section className="modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
         <div className="modal-head">
           <div>
             <div className="eyebrow">Create Project</div>
             <h2>Provision a managed BulletJournal runtime</h2>
-            <p className="section-copy">Project ids become both filesystem roots and runtime identifiers. Use the default dependency text as a starting point, then override as needed.</p>
+            <p className="section-copy">Project ids become both filesystem roots and runtime identifiers. Creation installs dependencies, starts the container, and opens the project when it is ready.</p>
           </div>
-          <button className="close-button" type="button" onClick={onClose} aria-label="Close dialog">×</button>
+          <button className="close-button" type="button" onClick={onClose} aria-label="Close dialog" disabled={creationActive || submitting}>×</button>
         </div>
         <div className="modal-body">
-          <form className="layout-grid" onSubmit={onSubmit}>
-            <div className="field-grid">
-              <div className="field">
-                <label htmlFor="create-project-id">Project id</label>
-                <input id="create-project-id" value={form.project_id} onChange={(event) => setForm((current) => ({ ...current, project_id: event.target.value }))} placeholder="study-a" required />
-              </div>
-              <div className="field">
-                <label htmlFor="create-python">Python version</label>
-                <input id="create-python" value={form.python_version} onChange={(event) => setForm((current) => ({ ...current, python_version: event.target.value }))} required />
-              </div>
-              <div className="field">
-                <label htmlFor="create-bulletjournal">BulletJournal version</label>
-                <input id="create-bulletjournal" value={form.bulletjournal_version} onChange={(event) => setForm((current) => ({ ...current, bulletjournal_version: event.target.value }))} required />
-              </div>
-              <div className="field">
-                <label htmlFor="create-cpu">CPU limit (millis)</label>
-                <input id="create-cpu" type="number" min={1} value={form.cpu_limit_millis} onChange={(event) => setForm((current) => ({ ...current, cpu_limit_millis: Number(event.target.value) }))} required />
-              </div>
-              <div className="field">
-                <label htmlFor="create-memory">Memory limit (bytes)</label>
-                <input id="create-memory" type="number" min={1} value={form.memory_limit_bytes} onChange={(event) => setForm((current) => ({ ...current, memory_limit_bytes: Number(event.target.value) }))} required />
-              </div>
-              <div className="field">
-                <label>GPU access</label>
-                <div className="checkbox-row">
-                  <input id="create-gpu" type="checkbox" checked={form.gpu_enabled} onChange={(event) => setForm((current) => ({ ...current, gpu_enabled: event.target.checked }))} />
-                  <label htmlFor="create-gpu">Enable GPU if supported on the host</label>
+          {creationActive ? (
+            <div className="creation-status">
+              <div className="loading-inline">
+                <span className="spinner large" aria-hidden="true" />
+                <div className="status-stack">
+                  <strong>Creating <code>{createdProjectId}</code></strong>
+                  <span className="muted">{projectCreationMessage(createdProject)}</span>
                 </div>
               </div>
-              <div className="field-full">
-                <label htmlFor="create-dependencies">Dependency text</label>
-                <textarea id="create-dependencies" value={form.custom_requirements_text} onChange={(event) => setForm((current) => ({ ...current, custom_requirements_text: event.target.value }))} />
+              <div className="creation-status-card status-stack">
+                <span className="muted">Current state</span>
+                <div className="badges">
+                  <span className={classNames('badge', createdProject ? projectStateTone(createdProject) : 'neutral')}>
+                    {createdProject ? projectStateLabel(createdProject) : 'creating'}
+                  </span>
+                </div>
+                <span className="muted">Keep this dialog open while the controller installs dependencies and starts the container.</span>
               </div>
+              {creationJob ? <JobLogPreview job={creationJob} /> : null}
+              {error ? <div className="error-banner">{error}</div> : null}
             </div>
-            {error ? <div className="error-banner">{error}</div> : null}
-            <div className="button-row">
-              <button className="button" type="submit" disabled={submitting}>{submitting ? 'Creating...' : 'Create Project'}</button>
-              <button className="button-secondary" type="button" onClick={onClose}>Cancel</button>
-            </div>
-          </form>
+          ) : (
+            <form className="layout-grid" onSubmit={onSubmit}>
+              <div className="field-grid">
+                <div className="field">
+                  <label htmlFor="create-project-id">Project id</label>
+                  <input id="create-project-id" value={form.project_id} onChange={(event) => setForm((current) => ({ ...current, project_id: event.target.value }))} placeholder="study-a" required />
+                </div>
+                <div className="field-full">
+                  <label htmlFor="create-dependencies">Dependency text</label>
+                  <textarea id="create-dependencies" value={form.custom_requirements_text} onChange={(event) => setForm((current) => ({ ...current, custom_requirements_text: event.target.value }))} />
+                  <span className="muted">Python and BulletJournal versions come from the controller defaults during creation. You can change them later from the project details page.</span>
+                </div>
+                <div className="field-full collapsible-panel">
+                  <button className="button-secondary section-toggle" type="button" onClick={() => setShowLimitsForm((current) => !current)}>
+                    <span className="status-stack">
+                      <strong>Runtime limits</strong>
+                      <span className="muted">CPU {formatCpuLimit(parseCpuInputToMillis(form.cpu_limit_input))} · Memory {formatMemoryLimit(parseMemoryInputToBytes(form.memory_limit_input))} · GPU {form.gpu_enabled ? 'On' : 'Off'}</span>
+                    </span>
+                    <span>{showLimitsForm ? 'Hide' : 'Edit'}</span>
+                  </button>
+                  {showLimitsForm ? (
+                    <div className="field-grid">
+                      <div className="field">
+                        <label htmlFor="create-cpu">CPU limit (CPUs)</label>
+                        <input id="create-cpu" type="number" min={0} step="0.1" value={form.cpu_limit_input} onChange={(event) => setForm((current) => ({ ...current, cpu_limit_input: event.target.value }))} placeholder="Unlimited" />
+                        <span className="muted">Leave blank for no CPU limit.</span>
+                      </div>
+                      <div className="field">
+                        <label htmlFor="create-memory">Memory limit (GB)</label>
+                        <input id="create-memory" type="number" min={0} step="0.5" value={form.memory_limit_input} onChange={(event) => setForm((current) => ({ ...current, memory_limit_input: event.target.value }))} placeholder="Unlimited" />
+                        <span className="muted">Leave blank for no memory limit.</span>
+                      </div>
+                      <div className="field-full">
+                        <label>GPU access</label>
+                        <div className="checkbox-row">
+                          <input id="create-gpu" type="checkbox" checked={form.gpu_enabled} onChange={(event) => setForm((current) => ({ ...current, gpu_enabled: event.target.checked }))} />
+                          <label htmlFor="create-gpu">Enable GPU if supported on the host</label>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+              {error ? <div className="error-banner">{error}</div> : null}
+              <div className="button-row">
+                <button className="button" type="submit" disabled={submitting}>{submitting ? 'Queueing...' : 'Create Project'}</button>
+                <button className="button-secondary" type="button" onClick={onClose}>Cancel</button>
+              </div>
+            </form>
+          )}
         </div>
       </section>
     </div>
@@ -1200,43 +1782,49 @@ function ProjectPage() {
     python_version: '',
     bulletjournal_version: '',
     custom_requirements_text: '',
-    mark_all_artifacts_stale: true,
     restart_if_running: true,
   })
   const [limitsForm, setLimitsForm] = useState({
-    cpu_limit_millis: 0,
-    memory_limit_bytes: 0,
+    cpu_limit_input: '',
+    memory_limit_input: '',
     gpu_enabled: false,
   })
   const [savingEnvironment, setSavingEnvironment] = useState(false)
   const [savingLimits, setSavingLimits] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [showLimitsEditor, setShowLimitsEditor] = useState(false)
+  const [environmentDirty, setEnvironmentDirty] = useState(false)
+  const [environmentSyncPending, setEnvironmentSyncPending] = useState(false)
+  const [limitsDirty, setLimitsDirty] = useState(false)
 
   const fetchProject = useCallback(async () => {
     try {
       const nextProject = await request<Project>(`/api/v1/projects/${projectId}`)
       setProject(nextProject)
-      setEnvironmentForm({
-        python_version: nextProject.python_version,
-        bulletjournal_version: nextProject.bulletjournal_version,
-        custom_requirements_text: nextProject.custom_requirements_text,
-        mark_all_artifacts_stale: true,
-        restart_if_running: true,
-      })
-      setLimitsForm({
-        cpu_limit_millis: nextProject.limits.cpu_limit_millis,
-        memory_limit_bytes: nextProject.limits.memory_limit_bytes,
-        gpu_enabled: nextProject.limits.gpu_enabled,
-      })
+      if (!environmentDirty && !environmentSyncPending) {
+        setEnvironmentForm((current) => ({
+          python_version: nextProject.python_version,
+          bulletjournal_version: nextProject.bulletjournal_version,
+          custom_requirements_text: nextProject.custom_requirements_text,
+          restart_if_running: current.restart_if_running,
+        }))
+      }
+      if (!limitsDirty) {
+        setLimitsForm({
+          cpu_limit_input: formatCpuInputValue(nextProject.limits.cpu_limit_millis),
+          memory_limit_input: formatMemoryInputValue(nextProject.limits.memory_limit_bytes),
+          gpu_enabled: nextProject.limits.gpu_enabled,
+        })
+      }
       setError(null)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Failed to load project.')
     } finally {
       setLoading(false)
     }
-  }, [projectId])
+  }, [environmentDirty, environmentSyncPending, limitsDirty, projectId])
 
-  usePolling(fetchProject, 5000, [fetchProject])
+  usePolling(fetchProject, environmentDirty || environmentSyncPending || limitsDirty ? null : 5000, [environmentDirty, environmentSyncPending, fetchProject, limitsDirty])
 
   useEffect(() => {
     if (activeJobIds.length === 0) {
@@ -1258,6 +1846,7 @@ function ProjectPage() {
       setActiveJobIds(stillActive)
       if (changed) {
         await fetchProject()
+        setEnvironmentSyncPending(false)
       }
     }, 2000)
     return () => window.clearInterval(id)
@@ -1265,7 +1854,7 @@ function ProjectPage() {
 
   async function queueAction(action: 'start' | 'stop' | 'reinstall-environment') {
     try {
-      const body = action === 'reinstall-environment' ? JSON.stringify({ mark_all_artifacts_stale: true, restart_if_running: true }) : undefined
+      const body = action === 'reinstall-environment' ? JSON.stringify({ restart_if_running: true }) : undefined
       const response = await request<ProjectActionJobResponse>(`/api/v1/projects/${projectId}/${action}`, {
         method: 'POST',
         body,
@@ -1299,6 +1888,8 @@ function ProjectPage() {
       const job = response.job
       setFlash(`Queued ${job.job_type}.`)
       setActiveJobIds((current) => Array.from(new Set([...current, job.job_id])))
+      setEnvironmentDirty(false)
+      setEnvironmentSyncPending(true)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Failed to queue environment update.')
     } finally {
@@ -1313,9 +1904,19 @@ function ProjectPage() {
     try {
       const nextProject = await request<Project>(`/api/v1/projects/${projectId}/limits`, {
         method: 'POST',
-        body: JSON.stringify(limitsForm),
+        body: JSON.stringify({
+          cpu_limit_millis: parseCpuInputToMillis(limitsForm.cpu_limit_input),
+          memory_limit_bytes: parseMemoryInputToBytes(limitsForm.memory_limit_input),
+          gpu_enabled: limitsForm.gpu_enabled,
+        }),
       })
       setProject(nextProject)
+      setLimitsForm({
+        cpu_limit_input: formatCpuInputValue(nextProject.limits.cpu_limit_millis),
+        memory_limit_input: formatMemoryInputValue(nextProject.limits.memory_limit_bytes),
+        gpu_enabled: nextProject.limits.gpu_enabled,
+      })
+      setLimitsDirty(false)
       setFlash('Updated runtime limits.')
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Failed to update limits.')
@@ -1335,7 +1936,7 @@ function ProjectPage() {
         setFlash(`Queued ${response.job.job_type}.`)
         setActiveJobIds((current) => Array.from(new Set([...current, response.job!.job_id])))
       }
-      navigate('/', { replace: true })
+      navigate('/', { replace: true, state: response.job ? { deletedProjectId: projectId, deleteJobId: response.job.job_id } : null })
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Failed to delete project.')
     } finally {
@@ -1359,6 +1960,8 @@ function ProjectPage() {
     )
   }
 
+  const actionState = projectActionState(project)
+
   return (
     <AppChrome>
       <div className="topbar">
@@ -1368,9 +1971,19 @@ function ProjectPage() {
           {activeJobIds.length > 0 ? <span className="badge">Polling {activeJobIds.length} active job{activeJobIds.length === 1 ? '' : 's'}</span> : null}
         </div>
         <div className="button-row">
-          <a className="button" href={`/p/${project.project_id}/`} target="_blank" rel="noreferrer">Open Project</a>
-          <button className="button-secondary" type="button" onClick={() => queueAction('start')}>Start</button>
-          <button className="button-secondary" type="button" onClick={() => queueAction('stop')}>Stop</button>
+          {isProjectOpenable(project) ? <a className="button-secondary" href={`/p/${project.project_id}/`} target="_blank" rel="noreferrer">Open Project</a> : null}
+          <button
+            className={classNames('button-secondary', actionState.className)}
+            type="button"
+            disabled={actionState.disabled}
+            onClick={() => {
+              if (actionState.action) {
+                void queueAction(actionState.action)
+              }
+            }}
+          >
+            {actionState.label}
+          </button>
         </div>
       </div>
 
@@ -1389,11 +2002,7 @@ function ProjectPage() {
               <div className="summary-block">
                 <h3>Status</h3>
                 <div className="badges">
-                  <span className={classNames('badge', project.status === 'error' ? 'error' : project.status === 'running' ? 'running' : 'stopped')}>{project.status}</span>
-                  {project.status_reason ? <span className="badge">{project.status_reason}</span> : null}
-                  <span className={classNames('badge', project.install_status === 'ready' ? 'install-ready' : project.install_status === 'failed' ? 'install-failed' : undefined)}>
-                    install {project.install_status}
-                  </span>
+                  <span className={classNames('badge', projectStateTone(project))}>{projectStateLabel(project)}</span>
                 </div>
                 <p className="section-copy">Last install: {formatDateTime(project.last_install_at)}</p>
               </div>
@@ -1414,6 +2023,7 @@ function ProjectPage() {
                 <p className="section-copy">Root path: <code>{project.root_path}</code></p>
                 <p className="section-copy">Created: {formatDateTime(project.created_at)}</p>
                 <p className="section-copy">Updated: {formatDateTime(project.updated_at)}</p>
+                <p className="section-copy">Disk in use: {formatBytes(project.metrics.disk_used_bytes ?? 0)}</p>
               </div>
             </div>
           </section>
@@ -1422,34 +2032,39 @@ function ProjectPage() {
             <div className="panel-head">
               <div className="eyebrow">Environment editor</div>
               <h2>Managed dependency inputs</h2>
-              <p className="section-copy">Saving environment changes rewrites `pyproject.toml`, queues install work, and can optionally mark all artifacts stale.</p>
+              <p className="section-copy">Saving environment changes rewrites `pyproject.toml` and queues install work. BulletJournal invalidates affected artifacts automatically.</p>
             </div>
             <div className="panel-body">
               <form className="layout-grid" onSubmit={onSaveEnvironment}>
                 <div className="field-grid">
                   <div className="field">
                     <label htmlFor="env-python">Python version</label>
-                    <input id="env-python" value={environmentForm.python_version} onChange={(event) => setEnvironmentForm((current) => ({ ...current, python_version: event.target.value }))} required />
+                    <input id="env-python" value={environmentForm.python_version} onChange={(event) => {
+                      setEnvironmentDirty(true)
+                      setEnvironmentForm((current) => ({ ...current, python_version: event.target.value }))
+                    }} required />
                   </div>
                   <div className="field">
                     <label htmlFor="env-bulletjournal">BulletJournal version</label>
-                    <input id="env-bulletjournal" value={environmentForm.bulletjournal_version} onChange={(event) => setEnvironmentForm((current) => ({ ...current, bulletjournal_version: event.target.value }))} required />
+                    <input id="env-bulletjournal" value={environmentForm.bulletjournal_version} onChange={(event) => {
+                      setEnvironmentDirty(true)
+                      setEnvironmentForm((current) => ({ ...current, bulletjournal_version: event.target.value }))
+                    }} required />
                   </div>
                   <div className="field-full">
                     <label htmlFor="env-custom">Custom requirements text</label>
-                    <textarea id="env-custom" value={environmentForm.custom_requirements_text} onChange={(event) => setEnvironmentForm((current) => ({ ...current, custom_requirements_text: event.target.value }))} />
-                  </div>
-                  <div className="field">
-                    <label>Artifact invalidation</label>
-                    <div className="checkbox-row">
-                      <input id="env-stale" type="checkbox" checked={environmentForm.mark_all_artifacts_stale} onChange={(event) => setEnvironmentForm((current) => ({ ...current, mark_all_artifacts_stale: event.target.checked }))} />
-                      <label htmlFor="env-stale">Mark all artifacts stale after install</label>
-                    </div>
+                    <textarea id="env-custom" value={environmentForm.custom_requirements_text} onChange={(event) => {
+                      setEnvironmentDirty(true)
+                      setEnvironmentForm((current) => ({ ...current, custom_requirements_text: event.target.value }))
+                    }} />
                   </div>
                   <div className="field">
                     <label>Restart behavior</label>
                     <div className="checkbox-row">
-                      <input id="env-restart" type="checkbox" checked={environmentForm.restart_if_running} onChange={(event) => setEnvironmentForm((current) => ({ ...current, restart_if_running: event.target.checked }))} />
+                      <input id="env-restart" type="checkbox" checked={environmentForm.restart_if_running} onChange={(event) => {
+                        setEnvironmentDirty(true)
+                        setEnvironmentForm((current) => ({ ...current, restart_if_running: event.target.checked }))
+                      }} />
                       <label htmlFor="env-restart">Restart automatically if currently running</label>
                     </div>
                   </div>
@@ -1481,6 +2096,12 @@ function ProjectPage() {
                 <p className="section-copy">Started: {formatDateTime(project.runtime.runtime_started_at)}</p>
                 <p className="section-copy">Stopped: {formatDateTime(project.runtime.runtime_stopped_at)}</p>
               </div>
+              <div className="summary-block">
+                <h3>Current usage</h3>
+                <p className="section-copy">Disk: {formatBytes(project.metrics.disk_used_bytes ?? 0)}</p>
+                {typeof project.metrics.cpu_percent === 'number' ? <p className="section-copy">CPU: {formatPercentage(project.metrics.cpu_percent)}</p> : null}
+                {typeof project.metrics.memory_used_bytes === 'number' ? <p className="section-copy">Memory: {formatBytes(project.metrics.memory_used_bytes)}{project.metrics.memory_limit_bytes ? ` / ${formatBytes(project.metrics.memory_limit_bytes)}` : ''}</p> : null}
+              </div>
             </div>
           </section>
 
@@ -1490,27 +2111,48 @@ function ProjectPage() {
               <h2>Adjust runtime constraints</h2>
             </div>
             <div className="panel-body">
-              <form className="layout-grid" onSubmit={onSaveLimits}>
-                <div className="field">
-                  <label htmlFor="limits-cpu">CPU limit (millis)</label>
-                  <input id="limits-cpu" type="number" min={1} value={limitsForm.cpu_limit_millis} onChange={(event) => setLimitsForm((current) => ({ ...current, cpu_limit_millis: Number(event.target.value) }))} required />
-                </div>
-                <div className="field">
-                  <label htmlFor="limits-memory">Memory limit</label>
-                  <input id="limits-memory" type="number" min={1} value={limitsForm.memory_limit_bytes} onChange={(event) => setLimitsForm((current) => ({ ...current, memory_limit_bytes: Number(event.target.value) }))} required />
-                  <span className="muted">Current display: {formatBytes(limitsForm.memory_limit_bytes)}</span>
-                </div>
-                <div className="field-full">
-                  <label>GPU access</label>
-                  <div className="checkbox-row">
-                    <input id="limits-gpu" type="checkbox" checked={limitsForm.gpu_enabled} onChange={(event) => setLimitsForm((current) => ({ ...current, gpu_enabled: event.target.checked }))} />
-                    <label htmlFor="limits-gpu">Enable GPU for this project when the host supports it</label>
-                  </div>
-                </div>
-                <div className="button-row">
-                  <button className="button" type="submit" disabled={savingLimits}>{savingLimits ? 'Saving...' : 'Save Limits'}</button>
-                </div>
-              </form>
+              <div className="collapsible-panel">
+                <button className="button-secondary section-toggle" type="button" onClick={() => setShowLimitsEditor((current) => !current)}>
+                  <span className="status-stack">
+                    <strong>Runtime limits</strong>
+                    <span className="muted">CPU {formatCpuLimit(parseCpuInputToMillis(limitsForm.cpu_limit_input))} · Memory {formatMemoryLimit(parseMemoryInputToBytes(limitsForm.memory_limit_input))} · GPU {limitsForm.gpu_enabled ? 'On' : 'Off'}</span>
+                  </span>
+                  <span>{showLimitsEditor ? 'Hide' : 'Edit'}</span>
+                </button>
+                {showLimitsEditor ? (
+                  <form className="layout-grid" onSubmit={onSaveLimits}>
+                    <div className="field">
+                      <label htmlFor="limits-cpu">CPU limit (CPUs)</label>
+                      <input id="limits-cpu" type="number" min={0} step="0.1" value={limitsForm.cpu_limit_input} onChange={(event) => {
+                        setLimitsDirty(true)
+                        setLimitsForm((current) => ({ ...current, cpu_limit_input: event.target.value }))
+                      }} placeholder="Unlimited" />
+                      <span className="muted">Leave blank for no CPU limit.</span>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="limits-memory">Memory limit (GB)</label>
+                      <input id="limits-memory" type="number" min={0} step="0.5" value={limitsForm.memory_limit_input} onChange={(event) => {
+                        setLimitsDirty(true)
+                        setLimitsForm((current) => ({ ...current, memory_limit_input: event.target.value }))
+                      }} placeholder="Unlimited" />
+                      <span className="muted">Current display: {formatMemoryLimit(parseMemoryInputToBytes(limitsForm.memory_limit_input))}</span>
+                    </div>
+                    <div className="field-full">
+                      <label>GPU access</label>
+                      <div className="checkbox-row">
+                        <input id="limits-gpu" type="checkbox" checked={limitsForm.gpu_enabled} onChange={(event) => {
+                          setLimitsDirty(true)
+                          setLimitsForm((current) => ({ ...current, gpu_enabled: event.target.checked }))
+                        }} />
+                        <label htmlFor="limits-gpu">Enable GPU for this project when the host supports it</label>
+                      </div>
+                    </div>
+                    <div className="button-row">
+                      <button className="button" type="submit" disabled={savingLimits}>{savingLimits ? 'Saving...' : 'Save Limits'}</button>
+                    </div>
+                  </form>
+                ) : null}
+              </div>
             </div>
           </section>
 
@@ -1530,6 +2172,8 @@ function ProjectPage() {
                     </div>
                     <span className="muted">{job.job_id}</span>
                     <span className="muted">Created {formatDateTime(job.created_at)}</span>
+                    <span className="muted">Duration {formatDurationBetween(job.started_at || job.created_at, job.finished_at)}</span>
+                    {job.job_type === 'create_project' || job.job_type === 'update_environment' || job.job_type === 'reinstall_environment' ? <JobLogPreview job={job} /> : null}
                     {job.error_message ? <div className="error-banner">{job.error_message}</div> : null}
                   </article>
                 ))}

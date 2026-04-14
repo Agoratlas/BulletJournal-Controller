@@ -7,6 +7,7 @@ from bulletjournal_controller.services.auth_service import AuthService
 from bulletjournal_controller.services.environment_service import EnvironmentService
 from bulletjournal_controller.services.export_service import ExportService
 from bulletjournal_controller.services.job_service import JobService
+from bulletjournal_controller.services.metrics_service import MetricsService
 from bulletjournal_controller.services.project_service import ProjectService
 from bulletjournal_controller.services.proxy_service import ProxyService
 from bulletjournal_controller.services.reconcile_service import ReconcileService
@@ -79,6 +80,12 @@ class ServiceContainer:
             environment_service=self.environment_service,
             runtime_service=self.runtime_service,
         )
+        self.metrics_service = MetricsService(
+            instance_paths=instance_paths,
+            docker_adapter=self.docker_adapter,
+            runtime_config_service=self.runtime_config_service,
+            jobs=self.jobs,
+        )
         self.export_service = ExportService(
             instance_paths=instance_paths,
             projects=self.projects,
@@ -111,6 +118,9 @@ class ServiceContainer:
         self.reconcile_service.stop()
         self.job_service.stop()
 
+    async def aclose(self) -> None:
+        await self.proxy_service.aclose()
+
     def system_info(self) -> dict[str, object]:
         return {
             "instance_id": self.instance_config.instance_id,
@@ -121,6 +131,7 @@ class ServiceContainer:
             "runtime_image_name": self.runtime_config_service.runtime_config.runtime_image_name,
             "config_dir": str(self.instance_paths.local_config_dir),
             "project_count": len(self.project_service.list_projects()),
+            "metrics": self.metrics_service.system_metrics(),
         }
 
     def _ensure_system_user(self) -> None:

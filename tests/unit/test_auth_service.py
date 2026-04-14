@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from bulletjournal_controller.domain.errors import ConflictError, ValidationError
@@ -179,3 +181,114 @@ def test_create_or_update_user_with_same_password_hash_keeps_existing_sessions(
     assert created is False
     assert updated.display_name == "Administrator"
     assert service.resolve_session(bundle.cookie_value) is not None
+
+
+def test_resolve_session_skips_touch_for_recent_activity(
+    instance_root, server_config, monkeypatch
+) -> None:
+    db = StateDB(instance_root / "metadata" / "state.db")
+    service = AuthService(
+        users=UserRepository(db),
+        sessions=SessionRepository(db),
+        server_config=server_config,
+    )
+    user = service.create_user(
+        username="admin", display_name="Admin", password="secret-pass"
+    )
+    bundle = service.create_session(
+        user=user, user_agent="pytest", remote_addr="127.0.0.1"
+    )
+    touches: list[str] = []
+    original_touch = service.sessions.touch
+
+    def spy_touch(
+        session_id: str, *, expires_at: str, only_if_last_seen_at: str | None = None
+    ) -> None:
+        touches.append(session_id)
+        original_touch(
+            session_id,
+            expires_at=expires_at,
+            only_if_last_seen_at=only_if_last_seen_at,
+        )
+
+    monkeypatch.setattr(service.sessions, "touch", spy_touch)
+
+    resolved = service.resolve_session(bundle.cookie_value)
+
+    assert resolved is not None
+    assert touches == []
+
+
+def test_resolve_session_refreshes_stale_activity(
+    instance_root, server_config, monkeypatch
+) -> None:
+    db = StateDB(instance_root / "metadata" / "state.db")
+    service = AuthService(
+        users=UserRepository(db),
+        sessions=SessionRepository(db),
+        server_config=server_config,
+    )
+    user = service.create_user(
+        username="admin", display_name="Admin", password="secret-pass"
+    )
+    bundle = service.create_session(
+        user=user, user_agent="pytest", remote_addr="127.0.0.1"
+    )
+    with db.transaction() as connection:
+        connection.execute(
+            "UPDATE sessions SET last_seen_at = ? WHERE session_id = ?",
+            ("2000-01-01T00:00:00Z", bundle.session.session_id),
+        )
+    touches: list[str] = []
+    original_touch = service.sessions.touch
+
+    def spy_touch(
+        session_id: str, *, expires_at: str, only_if_last_seen_at: str | None = None
+    ) -> None:
+        touches.append(session_id)
+        original_touch(
+            session_id,
+            expires_at=expires_at,
+            only_if_last_seen_at=only_if_last_seen_at,
+        )
+
+    monkeypatch.setattr(service.sessions, "touch", spy_touch)
+
+    resolved = service.resolve_session(bundle.cookie_value)
+
+    assert resolved is not None
+    assert touches == [bundle.session.session_id]
+
+
+def test_resolve_session_ignores_locked_touch_for_valid_session(
+    instance_root, server_config, monkeypatch
+) -> None:
+    db = StateDB(instance_root / "metadata" / "state.db")
+    service = AuthService(
+        users=UserRepository(db),
+        sessions=SessionRepository(db),
+        server_config=server_config,
+    )
+    user = service.create_user(
+        username="admin", display_name="Admin", password="secret-pass"
+    )
+    bundle = service.create_session(
+        user=user, user_agent="pytest", remote_addr="127.0.0.1"
+    )
+    with db.transaction() as connection:
+        connection.execute(
+            "UPDATE sessions SET last_seen_at = ? WHERE session_id = ?",
+            ("2000-01-01T00:00:00Z", bundle.session.session_id),
+        )
+
+    def locked_touch(
+        session_id: str, *, expires_at: str, only_if_last_seen_at: str | None = None
+    ) -> None:
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(service.sessions, "touch", locked_touch)
+
+    resolved = service.resolve_session(bundle.cookie_value)
+
+    assert resolved is not None
+    assert resolved.session.session_id == bundle.session.session_id

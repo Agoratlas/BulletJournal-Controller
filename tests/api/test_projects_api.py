@@ -94,6 +94,6 @@ def test_invalid_request_shape_returns_422(instance_root, server_config) -> None
         response = client.post(
             "/api/v1/projects",
             headers={"origin": "http://testserver"},
-            json={"project_id": "bad"},
+            json={"project_id": "bad", "unexpected": True},
         )
         assert response.status_code == 422

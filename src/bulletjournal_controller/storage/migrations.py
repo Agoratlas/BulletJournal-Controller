@@ -138,4 +138,59 @@ MIGRATIONS: list[tuple[str, str]] = [
         WHERE controller_status_token IS NULL OR controller_status_token = '';
         """,
     ),
+    (
+        "005_nullable_project_limits",
+        """
+        CREATE TABLE projects_new (
+            project_id TEXT PRIMARY KEY,
+            controller_status_token TEXT NOT NULL,
+            status TEXT NOT NULL,
+            status_reason TEXT,
+            root_path TEXT UNIQUE NOT NULL,
+            created_by_user_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_edit_at TEXT,
+            last_run_finished_at TEXT,
+            idle_shutdown_eligible_at TEXT,
+            python_version TEXT NOT NULL,
+            bulletjournal_version TEXT NOT NULL,
+            custom_requirements_text TEXT NOT NULL,
+            lock_sha256 TEXT,
+            install_status TEXT NOT NULL,
+            last_install_at TEXT,
+            cpu_limit_millis INTEGER,
+            memory_limit_bytes INTEGER,
+            gpu_enabled INTEGER NOT NULL,
+            container_name TEXT,
+            container_id TEXT,
+            container_port INTEGER,
+            runtime_started_at TEXT,
+            runtime_stopped_at TEXT,
+            last_graph_edit_at TEXT,
+            last_notebook_edit_at TEXT,
+            FOREIGN KEY(created_by_user_id) REFERENCES users(user_id)
+        );
+
+        INSERT INTO projects_new (
+            project_id, controller_status_token, status, status_reason, root_path, created_by_user_id,
+            created_at, updated_at, last_edit_at, last_run_finished_at, idle_shutdown_eligible_at,
+            python_version, bulletjournal_version, custom_requirements_text, lock_sha256, install_status,
+            last_install_at, cpu_limit_millis, memory_limit_bytes, gpu_enabled, container_name, container_id,
+            container_port, runtime_started_at, runtime_stopped_at, last_graph_edit_at, last_notebook_edit_at
+        )
+        SELECT
+            project_id, controller_status_token, status, status_reason, root_path, created_by_user_id,
+            created_at, updated_at, last_edit_at, last_run_finished_at, idle_shutdown_eligible_at,
+            python_version, bulletjournal_version, custom_requirements_text, lock_sha256, install_status,
+            last_install_at, cpu_limit_millis, memory_limit_bytes, gpu_enabled, container_name, container_id,
+            container_port, runtime_started_at, runtime_stopped_at, last_graph_edit_at, last_notebook_edit_at
+        FROM projects;
+
+        DROP TABLE projects;
+        ALTER TABLE projects_new RENAME TO projects;
+
+        CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+        """,
+    ),
 ]

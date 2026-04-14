@@ -324,6 +324,8 @@ class RuntimeService:
     def update_limits(self, *, project: ProjectRecord) -> None:
         if not project.container_name:
             return
+        if project.cpu_limit_millis is None and project.memory_limit_bytes is None:
+            return
         result = self.adapter.run(
             self.adapter.build_update_command(
                 container_name=project.container_name,

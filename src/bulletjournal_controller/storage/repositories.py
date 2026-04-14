@@ -147,13 +147,24 @@ class SessionRepository(BaseRepository[SessionRecord]):
             ).fetchone()
         return self._row_to_model(row)
 
-    def touch(self, session_id: str, *, expires_at: str) -> None:
+    def touch(
+        self,
+        session_id: str,
+        *,
+        expires_at: str,
+        only_if_last_seen_at: str | None = None,
+    ) -> None:
         now = utc_now_iso()
+        query = (
+            "UPDATE sessions SET last_seen_at = ?, expires_at = ? "
+            "WHERE session_id = ? AND revoked_at IS NULL"
+        )
+        params: list[str] = [now, expires_at, session_id]
+        if only_if_last_seen_at is not None:
+            query += " AND (last_seen_at IS NULL OR last_seen_at <= ?)"
+            params.append(only_if_last_seen_at)
         with self.db.transaction() as connection:
-            connection.execute(
-                "UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE session_id = ? AND revoked_at IS NULL",
-                (now, expires_at, session_id),
-            )
+            connection.execute(query, tuple(params))
 
     def revoke(self, session_id: str) -> None:
         with self.db.transaction() as connection:
@@ -285,6 +296,14 @@ class JobRepository(BaseRepository[JobRecord]):
                 (project_id, limit),
             ).fetchall()
         return [self._row_to_model(row) for row in rows if row is not None]  # type: ignore[list-item]
+
+    def list_log_paths_for_project(self, project_id: str) -> list[str]:
+        with self.db.transaction() as connection:
+            rows = connection.execute(
+                "SELECT log_path FROM jobs WHERE project_id = ? AND log_path IS NOT NULL",
+                (project_id,),
+            ).fetchall()
+        return [str(row[0]) for row in rows if row and row[0]]
 
     def has_active_mutation(self, project_id: str) -> bool:
         with self.db.transaction() as connection:

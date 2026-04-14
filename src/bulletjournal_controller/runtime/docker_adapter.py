@@ -48,8 +48,8 @@ class DockerAdapter:
         host_port: int,
         base_path: str,
         controller_token: str | None = None,
-        cpu_limit_millis: int,
-        memory_limit_bytes: int,
+        cpu_limit_millis: int | None,
+        memory_limit_bytes: int | None,
         gpu_enabled: bool,
         network_mode: str,
         env_file: Path | None = None,
@@ -76,10 +76,6 @@ class DockerAdapter:
             "/project",
             "--network",
             network_mode,
-            "--cpus",
-            str(max(cpu_limit_millis, 1) / 1000.0),
-            "--memory",
-            str(memory_limit_bytes),
             image,
             "/project/.runtime/venv/bin/python",
             "-X",
@@ -88,6 +84,10 @@ class DockerAdapter:
             "-c",
             server_bootstrap,
         ]
+        if cpu_limit_millis is not None:
+            options = ["--cpus", str(cpu_limit_millis / 1000.0)] + options
+        if memory_limit_bytes is not None:
+            options = ["--memory", str(memory_limit_bytes)] + options
         if env_file is not None:
             options = ["--env-file", str(env_file)] + options
         if user_uid is not None and user_gid is not None:
@@ -160,16 +160,19 @@ class DockerAdapter:
         ]
 
     def build_update_command(
-        self, *, container_name: str, cpu_limit_millis: int, memory_limit_bytes: int
+        self,
+        *,
+        container_name: str,
+        cpu_limit_millis: int | None,
+        memory_limit_bytes: int | None,
     ) -> list[str]:
-        return self.docker_base_command() + [
-            "update",
-            "--cpus",
-            str(max(cpu_limit_millis, 1) / 1000.0),
-            "--memory",
-            str(memory_limit_bytes),
-            container_name,
-        ]
+        options = ["update"]
+        if cpu_limit_millis is not None:
+            options.extend(["--cpus", str(cpu_limit_millis / 1000.0)])
+        if memory_limit_bytes is not None:
+            options.extend(["--memory", str(memory_limit_bytes)])
+        options.append(container_name)
+        return self.docker_base_command() + options
 
     def run(
         self, command: list[str], *, timeout: int = 120, capture_output: bool = True

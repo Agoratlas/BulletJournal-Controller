@@ -11,6 +11,11 @@ def system_info(request: Request):
     return request.app.state.container.system_info()
 
 
+@router.get("/metrics")
+def system_metrics(request: Request):
+    return request.app.state.container.metrics_service.system_metrics()
+
+
 @router.get("/config")
 def config_info(request: Request):
     runtime_config = request.app.state.container.runtime_config_service.runtime_config

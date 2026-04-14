@@ -55,8 +55,8 @@ class ProjectService:
         python_version: str,
         bulletjournal_version: str,
         custom_requirements_text: str,
-        cpu_limit_millis: int,
-        memory_limit_bytes: int,
+        cpu_limit_millis: int | None,
+        memory_limit_bytes: int | None,
         gpu_enabled: bool,
     ) -> ProjectRecord:
         resolved_project_id = validate_project_id(project_id)
@@ -125,8 +125,8 @@ class ProjectService:
         self,
         *,
         project_id: str,
-        cpu_limit_millis: int,
-        memory_limit_bytes: int,
+        cpu_limit_millis: int | None,
+        memory_limit_bytes: int | None,
         gpu_enabled: bool,
     ) -> ProjectRecord:
         project = self.projects.update(

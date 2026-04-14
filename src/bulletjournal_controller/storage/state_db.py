@@ -20,8 +20,10 @@ class StateDB:
     def connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=DB_TIMEOUT_SECONDS)
         connection.row_factory = sqlite3.Row
-        connection.execute('PRAGMA foreign_keys = ON')
-        connection.execute('PRAGMA journal_mode = WAL')
+        connection.execute(f"PRAGMA busy_timeout = {int(DB_TIMEOUT_SECONDS * 1000)}")
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute("PRAGMA synchronous = NORMAL")
         return connection
 
     @contextmanager
@@ -35,14 +37,17 @@ class StateDB:
 
     def _initialize(self) -> None:
         with self.transaction() as connection:
-            table_exists = connection.execute(
-                'SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?',
-                ('table', 'schema_migrations'),
-            ).fetchone() is not None
+            table_exists = (
+                connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?",
+                    ("table", "schema_migrations"),
+                ).fetchone()
+                is not None
+            )
             for name, sql in MIGRATIONS:
                 if table_exists:
                     applied = connection.execute(
-                        'SELECT 1 FROM schema_migrations WHERE name = ?',
+                        "SELECT 1 FROM schema_migrations WHERE name = ?",
                         (name,),
                     ).fetchone()
                     if applied is not None:
@@ -50,10 +55,10 @@ class StateDB:
                 try:
                     connection.executescript(sql)
                 except sqlite3.OperationalError as exc:
-                    if 'duplicate column name' not in str(exc).lower():
+                    if "duplicate column name" not in str(exc).lower():
                         raise
                 connection.execute(
-                    'INSERT OR IGNORE INTO schema_migrations (name, applied_at) VALUES (?, ?)',
+                    "INSERT OR IGNORE INTO schema_migrations (name, applied_at) VALUES (?, ?)",
                     (name, utc_now_iso()),
                 )
                 table_exists = True
@@ -61,11 +66,11 @@ class StateDB:
     def abort_inflight_jobs(self) -> None:
         with self.transaction() as connection:
             connection.execute(
-                'UPDATE jobs SET status = ?, finished_at = ?, error_message = ? WHERE status IN (?, ?)',
+                "UPDATE jobs SET status = ?, finished_at = ?, error_message = ? WHERE status IN (?, ?)",
                 (
                     JobStatus.ABORTED_ON_RESTART.value,
                     utc_now_iso(),
-                    'Controller restarted before job completion.',
+                    "Controller restarted before job completion.",
                     JobStatus.QUEUED.value,
                     JobStatus.RUNNING.value,
                 ),

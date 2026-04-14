@@ -50,8 +50,8 @@ class ProjectRecord:
     lock_sha256: str | None
     install_status: str
     last_install_at: str | None
-    cpu_limit_millis: int
-    memory_limit_bytes: int
+    cpu_limit_millis: int | None
+    memory_limit_bytes: int | None
     gpu_enabled: bool
     container_name: str | None
     container_id: str | None

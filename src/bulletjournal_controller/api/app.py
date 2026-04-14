@@ -27,8 +27,9 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
             yield
         finally:
             app.state.container.stop()
+            await app.state.container.aclose()
 
-    app = FastAPI(title='BulletJournal-Controller', version='0.1.0', lifespan=lifespan)
+    app = FastAPI(title="BulletJournal-Controller", version="0.1.0", lifespan=lifespan)
     app.state.server_config = server_config
     app.state.instance_paths = instance_paths
     app.state.container = ServiceContainer(
@@ -39,50 +40,56 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
     )
     install_error_handlers(app)
 
-    api_prefix = '/api/v1'
+    api_prefix = "/api/v1"
     app.include_router(auth.router, prefix=api_prefix)
-    app.include_router(system.router, prefix=api_prefix, dependencies=[Depends(get_current_user)])
+    app.include_router(
+        system.router, prefix=api_prefix, dependencies=[Depends(get_current_user)]
+    )
     app.include_router(projects.router, prefix=api_prefix)
-    app.include_router(jobs.router, prefix=api_prefix, dependencies=[Depends(get_current_user)])
+    app.include_router(
+        jobs.router, prefix=api_prefix, dependencies=[Depends(get_current_user)]
+    )
     app.include_router(proxy_router)
 
     web_root = bundled_web_root()
-    assets_dir = web_root / 'assets'
+    assets_dir = web_root / "assets"
     if assets_dir.exists():
-        app.mount('/assets', StaticFiles(directory=assets_dir), name='assets')
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
-    @app.get('/healthz')
+    @app.get("/healthz")
     def healthz():
-        return {'status': 'ok'}
+        return {"status": "ok"}
 
-    @app.get('/login')
+    @app.get("/login")
     def login_page(request: Request):
         if _session_bundle_from_request(request) is not None:
-            return RedirectResponse('/', status_code=302)
-        return _serve_spa(web_root, route='login')
+            return RedirectResponse("/", status_code=302)
+        return _serve_spa(web_root, route="login")
 
-    @app.get('/')
-    @app.get('/projects/{project_id}')
+    @app.get("/")
+    @app.get("/projects/{project_id}")
     def spa(request: Request, project_id: str | None = None):
         _ = project_id
         if _session_bundle_from_request(request) is None:
-            return RedirectResponse('/login', status_code=302)
+            return RedirectResponse("/login", status_code=302)
         return _serve_spa(web_root)
 
     return app
 
 
 def _serve_spa(web_root: Path, *, route: str | None = None):
-    if route == 'login':
-        candidate = web_root / 'login.html'
+    if route == "login":
+        candidate = web_root / "login.html"
         if candidate.exists():
-            return HTMLResponse(candidate.read_text(encoding='utf-8'))
-    index = web_root / 'index.html'
+            return HTMLResponse(candidate.read_text(encoding="utf-8"))
+    index = web_root / "index.html"
     if index.exists():
-        return HTMLResponse(index.read_text(encoding='utf-8'))
+        return HTMLResponse(index.read_text(encoding="utf-8"))
     return JSONResponse(
         status_code=503,
-        content={'detail': 'Frontend assets are not built yet. Use API endpoints directly or build the web app.'},
+        content={
+            "detail": "Frontend assets are not built yet. Use API endpoints directly or build the web app."
+        },
     )
 
 

@@ -60,7 +60,8 @@ If `env_file` is configured, the controller passes it to Docker with `--env-file
 
 ## Repository Layout
 
-The repository mirrors the structure used by `BulletJournal`:
+The repository mirrors the structure used by `BulletJournal`.
+The source repository path remains `Agoratlas/BulletJournal`.
 
 ```text
 src/bulletjournal_controller/

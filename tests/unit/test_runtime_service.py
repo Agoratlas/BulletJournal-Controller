@@ -414,7 +414,7 @@ def test_write_crash_diagnostics_persists_inspect_and_logs(tmp_path) -> None:
 
     content = crash_path.read_text(encoding="utf-8")
     assert crash_path.parent == project_root / ".runtime" / "logs"
-    assert "BulletJournal runtime crash diagnostics" in content
+    assert "bulletjournal-editor runtime crash diagnostics" in content
     assert '"ExitCode": 135' in content
     assert "== docker logs ==" in content
     assert "line one" in content

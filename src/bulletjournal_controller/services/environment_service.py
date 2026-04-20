@@ -6,7 +6,11 @@ import re
 import time
 from pathlib import Path
 
-from bulletjournal_controller.config import InstanceConfig
+from bulletjournal_controller.config import (
+    MANAGED_RUNTIME_PACKAGE_ALIASES,
+    MANAGED_RUNTIME_PACKAGE_NAME,
+    InstanceConfig,
+)
 from bulletjournal_controller.domain.models import ProjectRecord
 from bulletjournal_controller.runtime.installer import InstallerRunner
 from bulletjournal_controller.storage.atomic_write import atomic_write_text
@@ -70,9 +74,7 @@ class EnvironmentService:
         self.runtime_config_service = runtime_config_service
 
     def default_dependency_text(self) -> str:
-        required = (
-            f"bulletjournal=={self.instance_config.default_bulletjournal_version}"
-        )
+        required = f"{MANAGED_RUNTIME_PACKAGE_NAME}=={self.instance_config.default_bulletjournal_version}"
         runtime_defaults = self.runtime_config_service.default_dependencies_file()
         path = (
             str(runtime_defaults)
@@ -87,7 +89,7 @@ class EnvironmentService:
         rendered = text if text.endswith("\n") else f"{text}\n"
         config = self.parse_dependency_config(rendered)
         if not any(
-            self.dependency_identity(line) == "bulletjournal"
+            self.dependency_identity(line) in MANAGED_RUNTIME_PACKAGE_ALIASES
             for line in config.dependency_lines
         ):
             return f"{required}\n{rendered}"
@@ -156,12 +158,15 @@ class EnvironmentService:
         defaults = self.parse_dependency_config(self.default_dependency_text())
         default_lines = defaults.dependency_lines
         if not any(
-            self.dependency_identity(line) == "bulletjournal" for line in default_lines
+            self.dependency_identity(line) in MANAGED_RUNTIME_PACKAGE_ALIASES
+            for line in default_lines
         ):
-            default_lines.insert(0, f"bulletjournal=={bulletjournal_version}")
+            default_lines.insert(
+                0, f"{MANAGED_RUNTIME_PACKAGE_NAME}=={bulletjournal_version}"
+            )
         default_lines = [
-            f"bulletjournal=={bulletjournal_version}"
-            if self.dependency_identity(line) == "bulletjournal"
+            f"{MANAGED_RUNTIME_PACKAGE_NAME}=={bulletjournal_version}"
+            if self.dependency_identity(line) in MANAGED_RUNTIME_PACKAGE_ALIASES
             else line
             for line in default_lines
         ]

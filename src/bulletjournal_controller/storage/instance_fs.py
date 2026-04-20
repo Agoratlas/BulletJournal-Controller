@@ -85,10 +85,6 @@ class ProjectPaths:
         return self.runtime_dir / "venv"
 
     @property
-    def runtime_install_dir(self) -> Path:
-        return self.runtime_dir / "install"
-
-    @property
     def runtime_logs_dir(self) -> Path:
         return self.runtime_dir / "logs"
 
@@ -262,7 +258,6 @@ def create_project_root(
     ensure_directory(project_paths.checkpoints_dir)
     ensure_directory(project_paths.uploads_temp_dir)
     ensure_directory(project_paths.runtime_venv_dir)
-    ensure_directory(project_paths.runtime_install_dir)
     ensure_directory(project_paths.runtime_logs_dir)
     now = utc_now_iso()
     meta = {

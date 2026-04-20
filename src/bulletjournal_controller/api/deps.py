@@ -108,6 +108,7 @@ class ServiceContainer:
         )
 
     def start(self) -> None:
+        self.project_service.backfill_runtime_venv_size_bytes()
         self.runtime_service.reconcile_instance_projects(
             projects=self.project_service.list_projects(), projects_repo=self.projects
         )

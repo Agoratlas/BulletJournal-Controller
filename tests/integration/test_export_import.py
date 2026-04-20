@@ -39,3 +39,5 @@ def test_export_import_round_trip(instance_root) -> None:
     assert imported["project_id"] == "study-b"
     imported_project = container.project_service.get_project("study-b")
     assert imported_project.controller_status_token
+    assert imported_project.bulletjournal_version == "0.1.0"
+    assert imported_project.custom_requirements_text == ""

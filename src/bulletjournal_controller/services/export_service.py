@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import re
 import tomllib
 import zipfile
 from pathlib import Path
 from typing import cast
 
 from bulletjournal_controller import __version__
-from bulletjournal_controller.config import EXPORT_MANIFEST_VERSION
+from bulletjournal_controller.config import (
+    EXPORT_MANIFEST_VERSION,
+    MANAGED_RUNTIME_PACKAGE_ALIASES,
+)
 from bulletjournal_controller.domain.errors import ConflictError, ValidationError
 from bulletjournal_controller.domain.models import ProjectRecord
 from bulletjournal_controller.domain.enums import InstallStatus, ProjectStatus
@@ -16,7 +20,12 @@ from bulletjournal_controller.storage.instance_fs import (
     create_project_root,
 )
 from bulletjournal_controller.storage.repositories import ProjectRepository
-from bulletjournal_controller.utils import random_token, sha256_file, utc_now_iso
+from bulletjournal_controller.utils import (
+    normalize_package_name,
+    random_token,
+    sha256_file,
+    utc_now_iso,
+)
 
 
 EXPORTABLE_NAMES = [
@@ -29,6 +38,7 @@ EXPORTABLE_NAMES = [
     "pyproject.toml",
     "uv.lock",
 ]
+DEPENDENCY_NAME_PATTERN = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 
 
 class ExportService:
@@ -164,7 +174,7 @@ class ExportService:
         custom_requirements = [
             item
             for item in resolved_dependencies
-            if not item.strip().startswith("bulletjournal")
+            if self._dependency_identity(item) not in MANAGED_RUNTIME_PACKAGE_ALIASES
         ]
         now = utc_now_iso()
         lock_path = destination / "uv.lock"
@@ -232,9 +242,21 @@ class ExportService:
     @staticmethod
     def _resolve_bulletjournal_version(dependencies: list[str]) -> str | None:
         for line in dependencies:
-            if line.startswith("bulletjournal=="):
+            if (
+                ExportService._dependency_identity(line)
+                not in MANAGED_RUNTIME_PACKAGE_ALIASES
+            ):
+                continue
+            if "==" in line:
                 return line.split("==", 1)[1].strip()
         return None
+
+    @staticmethod
+    def _dependency_identity(line: str) -> str:
+        match = DEPENDENCY_NAME_PATTERN.match(line)
+        if match is None:
+            return normalize_package_name(line.strip())
+        return normalize_package_name(match.group(1))
 
     @staticmethod
     def _resolve_python_version(project_section: object) -> str | None:

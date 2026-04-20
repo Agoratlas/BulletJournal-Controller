@@ -22,7 +22,7 @@ from bulletjournal_controller.storage.repositories import (
     JobRepository,
     ProjectRepository,
 )
-from bulletjournal_controller.utils import random_token, utc_now_iso
+from bulletjournal_controller.utils import path_size_bytes, random_token, utc_now_iso
 
 
 class ProjectService:
@@ -43,6 +43,16 @@ class ProjectService:
 
     def list_projects(self) -> list[ProjectRecord]:
         return self.projects.list_all()
+
+    def backfill_runtime_venv_size_bytes(self) -> None:
+        for project in self.projects.list_all():
+            if project.runtime_venv_size_bytes is not None:
+                continue
+            project_paths = self.instance_paths.project_paths(project.project_id)
+            self.projects.update(
+                project.project_id,
+                runtime_venv_size_bytes=path_size_bytes(project_paths.runtime_venv_dir),
+            )
 
     def get_project(self, project_id: str) -> ProjectRecord:
         return self.projects.require(validate_project_id(project_id))

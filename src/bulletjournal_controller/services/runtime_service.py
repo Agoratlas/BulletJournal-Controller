@@ -259,7 +259,7 @@ class RuntimeService:
                 inspect_error = str(exc)
         logs_snapshot = self._logs_snapshot(resolved_container_name)
         lines = [
-            "BulletJournal runtime crash diagnostics",
+            "bulletjournal-editor runtime crash diagnostics",
             f"timestamp: {timestamp}",
             f"project_id: {project.project_id}",
             f"container_name: {resolved_container_name}",

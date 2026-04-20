@@ -123,7 +123,7 @@ class DockerAdapter:
             "log_path=pathlib.Path('/project/.runtime/logs/server.log'); "
             "log_path.parent.mkdir(parents=True, exist_ok=True); "
             "log=log_path.open('a', encoding='utf-8', buffering=1); "
-            "log.write(f'\\n=== BulletJournal server start {datetime.datetime.utcnow().isoformat()}Z ===\\n'); "
+            "log.write(f'\\n=== bulletjournal-editor server start {datetime.datetime.utcnow().isoformat()}Z ===\\n'); "
             f"proc=subprocess.Popen(['/project/.runtime/venv/bin/python','-X','faulthandler','-u','-c',{server_command!r}], "
             "stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1); "
             "stream=proc.stdout; "
@@ -132,7 +132,7 @@ class DockerAdapter:
             "for line in iter(stream.readline, '')), maxlen=0); "
             "stream.close(); "
             "returncode=proc.wait(); "
-            "log.write(f'=== BulletJournal server exit {datetime.datetime.utcnow().isoformat()}Z code={returncode} ===\\n'); "
+            "log.write(f'=== bulletjournal-editor server exit {datetime.datetime.utcnow().isoformat()}Z code={returncode} ===\\n'); "
             "log.flush(); log.close(); "
             "sys.exit(returncode if returncode >= 0 else 128 - returncode)"
         )

@@ -38,8 +38,8 @@ def test_docker_command_construction_has_labels_and_mounts() -> None:
     assert "127.0.0.1:49152:8765" in joined
     assert "/project/.runtime/venv/bin/python -X faulthandler -u -c" in joined
     assert "/project/.runtime/logs/server.log" in joined
-    assert "BulletJournal server start" in joined
-    assert "BulletJournal server exit" in joined
+    assert "bulletjournal-editor server start" in joined
+    assert "bulletjournal-editor server exit" in joined
     assert "subprocess.Popen" in joined
     assert "-X','faulthandler" in joined
     assert 'start_server("/project", host="0.0.0.0", port=8765' in joined
@@ -48,7 +48,7 @@ def test_docker_command_construction_has_labels_and_mounts() -> None:
 
 def test_build_server_bootstrap_appends_exit_code_marker() -> None:
     bootstrap = DockerAdapter._build_server_bootstrap(base_path="/p/study-a")
-    assert "BulletJournal server exit" in bootstrap
+    assert "bulletjournal-editor server exit" in bootstrap
     assert "code={returncode}" in bootstrap
     assert "faulthandler" in bootstrap
 

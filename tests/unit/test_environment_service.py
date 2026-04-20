@@ -106,7 +106,8 @@ def make_project_paths(project_root: Path) -> Any:
 def test_parse_default_dependencies_and_merge_precedence(tmp_path: Path) -> None:
     default_file = tmp_path / "deps.txt"
     default_file.write_text(
-        "# comment\nbulletjournal==0.1.0\nalpha==1\nbeta\n", encoding="utf-8"
+        "# comment\nbulletjournal-editor==0.1.0\nalpha==1\nbeta\n",
+        encoding="utf-8",
     )
     config = default_instance_config()
     config = replace(config, default_dependencies_file=str(default_file))
@@ -120,7 +121,7 @@ def test_parse_default_dependencies_and_merge_precedence(tmp_path: Path) -> None
         custom_requirements_text="beta==2\ngamma @ git+ssh://example/repo.git@abc123\n",
     )
     assert merged == [
-        "bulletjournal==0.2.0",
+        "bulletjournal-editor==0.2.0",
         "alpha==1",
         "beta==2",
         "gamma @ git+ssh://example/repo.git@abc123",
@@ -136,7 +137,7 @@ def test_render_pyproject_contains_expected_fields() -> None:
     rendered = service.render_pyproject(
         project_id="study-a",
         python_version="3.11",
-        dependencies=["bulletjournal==0.1.0", "alpha"],
+        dependencies=["bulletjournal-editor==0.1.0", "alpha"],
     )
     assert 'name = "bulletjournal-project-study-a"' in rendered
     assert 'requires-python = "==3.11.*"' in rendered
@@ -196,8 +197,8 @@ def test_default_dependency_text_reloads_from_runtime_config_service(
 ) -> None:
     defaults_a = tmp_path / "defaults-a.txt"
     defaults_b = tmp_path / "defaults-b.txt"
-    defaults_a.write_text("bulletjournal==0.1.0\nalpha==1\n", encoding="utf-8")
-    defaults_b.write_text("bulletjournal==0.1.0\nbeta==2\n", encoding="utf-8")
+    defaults_a.write_text("bulletjournal-editor==0.1.0\nalpha==1\n", encoding="utf-8")
+    defaults_b.write_text("bulletjournal-editor==0.1.0\nbeta==2\n", encoding="utf-8")
 
     class MutableRuntimeConfigService(DummyRuntimeConfigService):
         def __init__(self, path: Path):
@@ -233,7 +234,7 @@ def test_default_dependency_text_preserves_comments_for_ui(tmp_path: Path) -> No
     rendered = service.default_dependency_text()
     assert "# comment" in rendered
     assert "# index-url: https://pypi.nvidia.com" in rendered
-    assert "bulletjournal==" in rendered
+    assert "bulletjournal-editor==" in rendered
 
 
 def test_floating_vcs_dependency_names_only_selects_non_pinned_refs() -> None:
@@ -561,5 +562,5 @@ def test_install_environment_rewrites_pyproject_before_locking(tmp_path: Path) -
 
     rendered = pyproject_path.read_text(encoding="utf-8")
     assert 'requires-python = "==3.11.*"' in rendered
-    assert '"bulletjournal==0.2.0"' in rendered
+    assert '"bulletjournal-editor==0.2.0"' in rendered
     assert '"alpha==1"' in rendered

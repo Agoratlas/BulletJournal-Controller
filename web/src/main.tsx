@@ -95,6 +95,11 @@ type ProjectActionJobResponse = {
   already_stopped?: boolean
 }
 
+type OptimisticProjectAction = {
+  action: 'start' | 'stop'
+  jobId?: string
+}
+
 type AppState = {
   session: SessionResponse | null
   sessionLoading: boolean
@@ -425,6 +430,27 @@ style.textContent = `
     flex-wrap: wrap;
     gap: 10px;
   }
+  .inline-feedback {
+    display: inline-flex;
+    align-items: center;
+    min-height: 42px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-size: 0.92rem;
+    transition: opacity 160ms ease;
+  }
+  .inline-feedback.pending {
+    background: var(--accent-soft);
+    border-color: rgba(29, 123, 108, 0.18);
+    color: var(--accent);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  .inline-feedback.success {
+    background: rgba(29, 123, 108, 0.1);
+    border-color: rgba(29, 123, 108, 0.14);
+    color: #145b50;
+  }
   .stats-grid {
     display: grid;
     gap: 12px;
@@ -746,6 +772,10 @@ style.textContent = `
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
   }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.78; transform: translateY(0); }
+    50% { opacity: 1; transform: translateY(-1px); }
+  }
   :root[data-theme='dark'] .section-toggle,
   :root[data-theme='dark'] .creation-status-card {
     background: rgba(255, 255, 255, 0.05);
@@ -979,6 +1009,26 @@ function projectActionState(project: Project): {
   return { label: 'Start', action: 'start', className: 'button-status-start', disabled: false }
 }
 
+function projectWithOptimisticAction(project: Project, optimisticAction: OptimisticProjectAction | null, activeJobIds: string[]): Project {
+  if (!optimisticAction) {
+    return project
+  }
+  if (optimisticAction.jobId && !activeJobIds.includes(optimisticAction.jobId)) {
+    return project
+  }
+  if (optimisticAction.action === 'start' && project.status !== 'stopped' && project.status !== 'error') {
+    return project
+  }
+  if (optimisticAction.action === 'stop' && project.status !== 'running') {
+    return project
+  }
+  return {
+    ...project,
+    status: optimisticAction.action === 'start' ? 'starting' : 'stopping',
+    status_reason: null,
+  }
+}
+
 function projectCreationMessage(project: Project | null): string {
   if (!project) {
     return 'Preparing the new project. This can take a few minutes on a fresh dependency set.'
@@ -1173,9 +1223,9 @@ function LoginPage() {
       <div className="login-panel">
         <section className="hero-panel">
           <div className="eyebrow">Managed Runtime Control</div>
-          <h1>One controller, many BulletJournal projects.</h1>
+          <h1>One controller, many bulletjournal-editor projects.</h1>
           <p className="lede">
-            Sign in to create, start, stop, inspect, update, and proxy isolated BulletJournal runtimes through one authenticated origin.
+            Sign in to create, start, stop, inspect, update, and proxy isolated bulletjournal-editor runtimes through one authenticated origin.
           </p>
           <div className="hero-grid">
             <div className="hero-note">
@@ -1229,7 +1279,7 @@ function AppChrome({ children }: { children: React.ReactNode }) {
           <div className="eyebrow">BulletJournal Controller</div>
           <h1>Project control plane with authenticated proxy access.</h1>
           <p className="lede">
-            Provision managed environments, inspect job progress, and open isolated BulletJournal runtimes through one controller origin.
+            Provision managed environments, inspect job progress, and open isolated bulletjournal-editor runtimes through one controller origin.
           </p>
         </section>
         <aside className="masthead-side">
@@ -1275,6 +1325,7 @@ function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [activeJobIds, setActiveJobIds] = useState<string[]>([])
+  const [optimisticActions, setOptimisticActions] = useState<Record<string, OptimisticProjectAction>>({})
   const [pendingDeletions, setPendingDeletions] = useState<Record<string, string>>({})
   const [hiddenProjectIds, setHiddenProjectIds] = useState<string[]>([])
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -1368,7 +1419,19 @@ function DashboardPage() {
     return () => window.clearInterval(id)
   }, [activeJobIds, fetchDashboard, pendingDeletions])
 
-  const visibleProjects = useMemo(() => projects.filter((project) => !hiddenProjectIds.includes(project.project_id)), [hiddenProjectIds, projects])
+  useEffect(() => {
+    setOptimisticActions((current) => {
+      const nextEntries = Object.entries(current).filter(([, value]) => !value.jobId || activeJobIds.includes(value.jobId))
+      if (nextEntries.length === Object.keys(current).length) {
+        return current
+      }
+      return Object.fromEntries(nextEntries)
+    })
+  }, [activeJobIds])
+
+  const visibleProjects = useMemo(() => projects
+    .filter((project) => !hiddenProjectIds.includes(project.project_id))
+    .map((project) => projectWithOptimisticAction(project, optimisticActions[project.project_id] || null, activeJobIds)), [activeJobIds, hiddenProjectIds, optimisticActions, projects])
 
   const groupedProjects = useMemo(() => {
     const groups: Record<'Running' | 'Stopped' | 'Error', Project[]> = {
@@ -1389,22 +1452,45 @@ function DashboardPage() {
   }, [visibleProjects])
 
   async function queueProjectAction(projectId: string, action: 'start' | 'stop') {
+    setOptimisticActions((current) => ({ ...current, [projectId]: { action } }))
     try {
       setActionError(null)
       const response = await request<ProjectActionJobResponse>(`/api/v1/projects/${projectId}/${action}`, {
         method: 'POST',
       })
       if (response.job) {
+        setOptimisticActions((current) => ({ ...current, [projectId]: { action, jobId: response.job!.job_id } }))
         setActiveJobIds((current) => Array.from(new Set([...current, response.job!.job_id])))
+      } else {
+        setOptimisticActions((current) => {
+          const next = { ...current }
+          delete next[projectId]
+          return next
+        })
       }
       if (response.already_running) {
+        setOptimisticActions((current) => {
+          const next = { ...current }
+          delete next[projectId]
+          return next
+        })
         setActionError('Project is already running.')
       }
       if (response.already_stopped) {
+        setOptimisticActions((current) => {
+          const next = { ...current }
+          delete next[projectId]
+          return next
+        })
         setActionError('Project is already stopped.')
       }
       await fetchDashboard()
     } catch (nextError) {
+      setOptimisticActions((current) => {
+        const next = { ...current }
+        delete next[projectId]
+        return next
+      })
       setActionError(nextError instanceof Error ? nextError.message : `Failed to ${action} project.`)
     }
   }
@@ -1529,7 +1615,7 @@ function DashboardPage() {
                 <strong>{systemInfo?.instance_id || 'Loading...'}</strong>
               </div>
               <div className="stat-card">
-                <span className="muted">Default BulletJournal</span>
+                <span className="muted">Default bulletjournal-editor</span>
                 <strong>{systemInfo?.default_bulletjournal_version || 'Loading...'}</strong>
               </div>
               <div className="stat-card">
@@ -1653,7 +1739,7 @@ function CreateProjectModal({
       openedWindowRef.current = window.open('', '_blank')
       if (openedWindowRef.current && !openedWindowRef.current.closed) {
         openedWindowRef.current.document.title = 'Preparing project'
-        openedWindowRef.current.document.body.innerHTML = '<main style="font-family: system-ui, sans-serif; padding: 24px; color: #1f2929;"><h1 style="margin: 0 0 12px; font-size: 20px;">Preparing your BulletJournal project</h1><p style="margin: 0; line-height: 1.6;">The controller is installing dependencies and starting the container. This tab will redirect automatically when the project is ready.</p></main>'
+        openedWindowRef.current.document.body.innerHTML = '<main style="font-family: system-ui, sans-serif; padding: 24px; color: #1f2929;"><h1 style="margin: 0 0 12px; font-size: 20px;">Preparing your bulletjournal-editor project</h1><p style="margin: 0; line-height: 1.6;">The controller is installing dependencies and starting the container. This tab will redirect automatically when the project is ready.</p></main>'
       }
       const response = await request<{ project: { project_id: string }; job: { job_id: string } }>('/api/v1/projects', {
         method: 'POST',
@@ -1690,7 +1776,7 @@ function CreateProjectModal({
         <div className="modal-head">
           <div>
             <div className="eyebrow">Create Project</div>
-            <h2>Provision a managed BulletJournal runtime</h2>
+            <h2>Provision a managed bulletjournal-editor runtime</h2>
             <p className="section-copy">Project ids become both filesystem roots and runtime identifiers. Creation installs dependencies, starts the container, and opens the project when it is ready.</p>
           </div>
           <button className="close-button" type="button" onClick={onClose} aria-label="Close dialog" disabled={creationActive || submitting}>×</button>
@@ -1727,7 +1813,7 @@ function CreateProjectModal({
                 <div className="field-full">
                   <label htmlFor="create-dependencies">Dependency text</label>
                   <textarea id="create-dependencies" value={form.custom_requirements_text} onChange={(event) => setForm((current) => ({ ...current, custom_requirements_text: event.target.value }))} />
-                  <span className="muted">Python and BulletJournal versions come from the controller defaults during creation. You can change them later from the project details page.</span>
+                  <span className="muted">Python and bulletjournal-editor versions come from the controller defaults during creation. You can change them later from the project details page.</span>
                 </div>
                 <div className="field-full collapsible-panel">
                   <button className="button-secondary section-toggle" type="button" onClick={() => setShowLimitsForm((current) => !current)}>
@@ -1781,6 +1867,7 @@ function ProjectPage() {
   const [error, setError] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
   const [activeJobIds, setActiveJobIds] = useState<string[]>([])
+  const [optimisticAction, setOptimisticAction] = useState<OptimisticProjectAction | null>(null)
   const [environmentForm, setEnvironmentForm] = useState({
     python_version: '',
     bulletjournal_version: '',
@@ -1796,15 +1883,21 @@ function ProjectPage() {
   const [savingLimits, setSavingLimits] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [showLimitsEditor, setShowLimitsEditor] = useState(false)
-  const [environmentDirty, setEnvironmentDirty] = useState(false)
   const [environmentSyncPending, setEnvironmentSyncPending] = useState(false)
   const [limitsDirty, setLimitsDirty] = useState(false)
+  const [environmentActionFeedback, setEnvironmentActionFeedback] = useState<{ tone: 'pending' | 'success', message: string } | null>(null)
+
+  const environmentInputsDirty = !!project && (
+    environmentForm.python_version !== project.python_version
+    || environmentForm.bulletjournal_version !== project.bulletjournal_version
+    || environmentForm.custom_requirements_text !== project.custom_requirements_text
+  )
 
   const fetchProject = useCallback(async () => {
     try {
       const nextProject = await request<Project>(`/api/v1/projects/${projectId}`)
       setProject(nextProject)
-      if (!environmentDirty && !environmentSyncPending) {
+      if (!environmentInputsDirty && !environmentSyncPending) {
         setEnvironmentForm((current) => ({
           python_version: nextProject.python_version,
           bulletjournal_version: nextProject.bulletjournal_version,
@@ -1825,9 +1918,26 @@ function ProjectPage() {
     } finally {
       setLoading(false)
     }
-  }, [environmentDirty, environmentSyncPending, limitsDirty, projectId])
+  }, [environmentInputsDirty, environmentSyncPending, limitsDirty, projectId])
 
-  usePolling(fetchProject, environmentDirty || environmentSyncPending || limitsDirty ? null : 5000, [environmentDirty, environmentSyncPending, fetchProject, limitsDirty])
+  usePolling(fetchProject, environmentInputsDirty || environmentSyncPending || limitsDirty ? null : 5000, [environmentInputsDirty, environmentSyncPending, fetchProject, limitsDirty])
+
+  useEffect(() => {
+    if (!optimisticAction?.jobId || activeJobIds.includes(optimisticAction.jobId)) {
+      return
+    }
+    setOptimisticAction(null)
+  }, [activeJobIds, optimisticAction])
+
+  useEffect(() => {
+    if (environmentActionFeedback?.tone !== 'success') {
+      return
+    }
+    const id = window.setTimeout(() => {
+      setEnvironmentActionFeedback((current) => current?.tone === 'success' ? null : current)
+    }, 3500)
+    return () => window.clearTimeout(id)
+  }, [environmentActionFeedback])
 
   useEffect(() => {
     if (activeJobIds.length === 0) {
@@ -1855,23 +1965,28 @@ function ProjectPage() {
     return () => window.clearInterval(id)
   }, [activeJobIds, fetchProject])
 
-  async function queueAction(action: 'start' | 'stop' | 'reinstall-environment') {
+  async function queueAction(action: 'start' | 'stop') {
+    setOptimisticAction({ action })
     try {
-      const body = action === 'reinstall-environment' ? JSON.stringify({ restart_if_running: true }) : undefined
       const response = await request<ProjectActionJobResponse>(`/api/v1/projects/${projectId}/${action}`, {
         method: 'POST',
-        body,
       })
       if (response.job) {
+        setOptimisticAction({ action, jobId: response.job.job_id })
         setFlash(`Queued ${response.job.job_type}.`)
         setActiveJobIds((current) => Array.from(new Set([...current, response.job!.job_id])))
       } else if (response.already_running) {
+        setOptimisticAction(null)
         setFlash('Project is already running.')
       } else if (response.already_stopped) {
+        setOptimisticAction(null)
         setFlash('Project is already stopped.')
+      } else {
+        setOptimisticAction(null)
       }
       await fetchProject()
     } catch (nextError) {
+      setOptimisticAction(null)
       setError(nextError instanceof Error ? nextError.message : `Failed to ${action}.`)
     }
   }
@@ -1880,21 +1995,26 @@ function ProjectPage() {
     event.preventDefault()
     setSavingEnvironment(true)
     setError(null)
+    const shouldSaveAndReinstall = environmentInputsDirty
+    setEnvironmentActionFeedback({ tone: 'pending', message: shouldSaveAndReinstall ? 'Saving and queueing reinstall...' : 'Queueing reinstall...' })
     try {
-      const response = await request<ProjectActionJobResponse>(`/api/v1/projects/${projectId}/update-environment`, {
+      const response = await request<ProjectActionJobResponse>(`/api/v1/projects/${projectId}/${shouldSaveAndReinstall ? 'update-environment' : 'reinstall-environment'}`, {
         method: 'POST',
-        body: JSON.stringify(environmentForm),
+        body: JSON.stringify(shouldSaveAndReinstall ? environmentForm : { restart_if_running: environmentForm.restart_if_running }),
       })
       if (!response.job) {
-        throw new Error('Environment update did not return a queued job.')
+        throw new Error('Environment action did not return a queued job.')
       }
       const job = response.job
       setFlash(`Queued ${job.job_type}.`)
       setActiveJobIds((current) => Array.from(new Set([...current, job.job_id])))
-      setEnvironmentDirty(false)
-      setEnvironmentSyncPending(true)
+      if (shouldSaveAndReinstall) {
+        setEnvironmentSyncPending(true)
+      }
+      setEnvironmentActionFeedback({ tone: 'success', message: shouldSaveAndReinstall ? 'Save and reinstall queued.' : 'Reinstall queued.' })
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Failed to queue environment update.')
+      setEnvironmentActionFeedback(null)
+      setError(nextError instanceof Error ? nextError.message : 'Failed to queue environment action.')
     } finally {
       setSavingEnvironment(false)
     }
@@ -1963,7 +2083,10 @@ function ProjectPage() {
     )
   }
 
-  const actionState = projectActionState(project)
+  const displayProject = projectWithOptimisticAction(project, optimisticAction, activeJobIds)
+  const actionState = projectActionState(displayProject)
+  const environmentActionLabel = environmentInputsDirty ? 'Save and reinstall' : 'Reinstall environment'
+  const environmentActionPendingLabel = environmentInputsDirty ? 'Saving and reinstalling...' : 'Queueing reinstall...'
 
   return (
     <AppChrome>
@@ -1974,7 +2097,7 @@ function ProjectPage() {
           {activeJobIds.length > 0 ? <span className="badge">Polling {activeJobIds.length} active job{activeJobIds.length === 1 ? '' : 's'}</span> : null}
         </div>
         <div className="button-row">
-          {isProjectOpenable(project) ? <a className="button-secondary" href={`/p/${project.project_id}/`} target="_blank" rel="noreferrer">Open Project</a> : null}
+          {isProjectOpenable(displayProject) ? <a className="button-secondary" href={`/p/${displayProject.project_id}/`} target="_blank" rel="noreferrer">Open Project</a> : null}
           <button
             className={classNames('button-secondary', actionState.className)}
             type="button"
@@ -1998,35 +2121,35 @@ function ProjectPage() {
           <section className="panel">
             <div className="panel-head">
               <div className="eyebrow">Project summary</div>
-              <h2>{project.project_id}</h2>
+              <h2>{displayProject.project_id}</h2>
               <p className="section-copy">Controller metadata reflects project lifecycle state, recent runtime activity, lock ownership, and configured dependency inputs.</p>
             </div>
             <div className="panel-body summary-grid">
               <div className="summary-block">
                 <h3>Status</h3>
                 <div className="badges">
-                  <span className={classNames('badge', projectStateTone(project))}>{projectStateLabel(project)}</span>
+                  <span className={classNames('badge', projectStateTone(displayProject))}>{projectStateLabel(displayProject)}</span>
                 </div>
-                <p className="section-copy">Last install: {formatDateTime(project.last_install_at)}</p>
+                <p className="section-copy">Last install: {formatDateTime(displayProject.last_install_at)}</p>
               </div>
               <div className="summary-block">
                 <h3>Versions</h3>
-                <p className="section-copy">BulletJournal {project.bulletjournal_version}</p>
-                <p className="section-copy">Python {project.python_version}</p>
-                <p className="section-copy">Lock SHA: {project.lock_sha256 || 'Not recorded yet'}</p>
+                <p className="section-copy">bulletjournal-editor {displayProject.bulletjournal_version}</p>
+                <p className="section-copy">Python {displayProject.python_version}</p>
+                <p className="section-copy">Lock SHA: {displayProject.lock_sha256 || 'Not recorded yet'}</p>
               </div>
               <div className="summary-block">
                 <h3>Edits and runs</h3>
-                <p className="section-copy">Last edit: {formatDateTime(project.last_edit_at)}</p>
-                <p className="section-copy">Last run finished: {formatDateTime(project.last_run_finished_at)}</p>
-                <p className="section-copy">Idle eligible at: {formatDateTime(project.idle_shutdown_eligible_at)}</p>
+                <p className="section-copy">Last edit: {formatDateTime(displayProject.last_edit_at)}</p>
+                <p className="section-copy">Last run finished: {formatDateTime(displayProject.last_run_finished_at)}</p>
+                <p className="section-copy">Idle eligible at: {formatDateTime(displayProject.idle_shutdown_eligible_at)}</p>
               </div>
               <div className="summary-block">
                 <h3>Filesystem</h3>
-                <p className="section-copy">Root path: <code>{project.root_path}</code></p>
-                <p className="section-copy">Created: {formatDateTime(project.created_at)}</p>
-                <p className="section-copy">Updated: {formatDateTime(project.updated_at)}</p>
-                <p className="section-copy">Disk in use: {formatBytes(project.metrics.disk_used_bytes ?? 0)}</p>
+                <p className="section-copy">Root path: <code>{displayProject.root_path}</code></p>
+                <p className="section-copy">Created: {formatDateTime(displayProject.created_at)}</p>
+                <p className="section-copy">Updated: {formatDateTime(displayProject.updated_at)}</p>
+                <p className="section-copy">Disk in use: {formatBytes(displayProject.metrics.disk_used_bytes ?? 0)}</p>
               </div>
             </div>
           </section>
@@ -2035,7 +2158,7 @@ function ProjectPage() {
             <div className="panel-head">
               <div className="eyebrow">Environment editor</div>
               <h2>Managed dependency inputs</h2>
-              <p className="section-copy">Saving environment changes rewrites `pyproject.toml` and queues install work. BulletJournal invalidates affected artifacts automatically.</p>
+              <p className="section-copy">Reinstalling rebuilds the managed runtime. If you edit the dependency inputs first, the same action saves those changes before reinstalling.</p>
             </div>
             <div className="panel-body">
               <form className="layout-grid" onSubmit={onSaveEnvironment}>
@@ -2043,21 +2166,18 @@ function ProjectPage() {
                   <div className="field">
                     <label htmlFor="env-python">Python version</label>
                     <input id="env-python" value={environmentForm.python_version} onChange={(event) => {
-                      setEnvironmentDirty(true)
                       setEnvironmentForm((current) => ({ ...current, python_version: event.target.value }))
                     }} required />
                   </div>
                   <div className="field">
-                    <label htmlFor="env-bulletjournal">BulletJournal version</label>
+                    <label htmlFor="env-bulletjournal">bulletjournal-editor version</label>
                     <input id="env-bulletjournal" value={environmentForm.bulletjournal_version} onChange={(event) => {
-                      setEnvironmentDirty(true)
                       setEnvironmentForm((current) => ({ ...current, bulletjournal_version: event.target.value }))
                     }} required />
                   </div>
                   <div className="field-full">
                     <label htmlFor="env-custom">Custom requirements text</label>
                     <textarea id="env-custom" value={environmentForm.custom_requirements_text} onChange={(event) => {
-                      setEnvironmentDirty(true)
                       setEnvironmentForm((current) => ({ ...current, custom_requirements_text: event.target.value }))
                     }} />
                   </div>
@@ -2065,7 +2185,6 @@ function ProjectPage() {
                     <label>Restart behavior</label>
                     <div className="checkbox-row">
                       <input id="env-restart" type="checkbox" checked={environmentForm.restart_if_running} onChange={(event) => {
-                        setEnvironmentDirty(true)
                         setEnvironmentForm((current) => ({ ...current, restart_if_running: event.target.checked }))
                       }} />
                       <label htmlFor="env-restart">Restart automatically if currently running</label>
@@ -2073,8 +2192,8 @@ function ProjectPage() {
                   </div>
                 </div>
                 <div className="button-row">
-                  <button className="button" type="submit" disabled={savingEnvironment}>{savingEnvironment ? 'Queueing...' : 'Save Environment Changes'}</button>
-                  <button className="button-secondary" type="button" onClick={() => queueAction('reinstall-environment')}>Reinstall Environment</button>
+                  <button className="button" type="submit" disabled={savingEnvironment}>{savingEnvironment ? environmentActionPendingLabel : environmentActionLabel}</button>
+                  {environmentActionFeedback ? <span className={classNames('inline-feedback', environmentActionFeedback.tone)}>{environmentActionFeedback.message}</span> : null}
                 </div>
               </form>
             </div>
@@ -2090,20 +2209,20 @@ function ProjectPage() {
             <div className="panel-body summary-grid">
               <div className="summary-block">
                 <h3>Container</h3>
-                <p className="section-copy">Name: {project.runtime.container_name || 'Not running'}</p>
-                <p className="section-copy">Id: {project.runtime.container_id || 'Not running'}</p>
-                <p className="section-copy">Host port: {project.runtime.container_port ?? 'Not running'}</p>
+                <p className="section-copy">Name: {displayProject.runtime.container_name || 'Not running'}</p>
+                <p className="section-copy">Id: {displayProject.runtime.container_id || 'Not running'}</p>
+                <p className="section-copy">Host port: {displayProject.runtime.container_port ?? 'Not running'}</p>
               </div>
               <div className="summary-block">
                 <h3>Runtime clock</h3>
-                <p className="section-copy">Started: {formatDateTime(project.runtime.runtime_started_at)}</p>
-                <p className="section-copy">Stopped: {formatDateTime(project.runtime.runtime_stopped_at)}</p>
+                <p className="section-copy">Started: {formatDateTime(displayProject.runtime.runtime_started_at)}</p>
+                <p className="section-copy">Stopped: {formatDateTime(displayProject.runtime.runtime_stopped_at)}</p>
               </div>
               <div className="summary-block">
                 <h3>Current usage</h3>
-                <p className="section-copy">Disk: {formatBytes(project.metrics.disk_used_bytes ?? 0)}</p>
-                {typeof project.metrics.cpu_percent === 'number' ? <p className="section-copy">CPU: {formatPercentage(project.metrics.cpu_percent)}</p> : null}
-                {typeof project.metrics.memory_used_bytes === 'number' ? <p className="section-copy">Memory: {formatBytes(project.metrics.memory_used_bytes)}{project.metrics.memory_limit_bytes ? ` / ${formatBytes(project.metrics.memory_limit_bytes)}` : ''}</p> : null}
+                <p className="section-copy">Disk: {formatBytes(displayProject.metrics.disk_used_bytes ?? 0)}</p>
+                {typeof displayProject.metrics.cpu_percent === 'number' ? <p className="section-copy">CPU: {formatPercentage(displayProject.metrics.cpu_percent)}</p> : null}
+                {typeof displayProject.metrics.memory_used_bytes === 'number' ? <p className="section-copy">Memory: {formatBytes(displayProject.metrics.memory_used_bytes)}{displayProject.metrics.memory_limit_bytes ? ` / ${formatBytes(displayProject.metrics.memory_limit_bytes)}` : ''}</p> : null}
               </div>
             </div>
           </section>
@@ -2166,8 +2285,8 @@ function ProjectPage() {
             </div>
             <div className="panel-body">
               <div className="jobs-list">
-                {(project.recent_jobs || []).length === 0 ? <div className="empty-state">No recent jobs recorded for this project yet.</div> : null}
-                {(project.recent_jobs || []).map((job) => (
+                {(displayProject.recent_jobs || []).length === 0 ? <div className="empty-state">No recent jobs recorded for this project yet.</div> : null}
+                {(displayProject.recent_jobs || []).map((job) => (
                   <article className="job-row" key={job.job_id}>
                     <div className="job-row-top">
                       <strong>{job.job_type}</strong>

@@ -63,7 +63,6 @@ class ProjectService:
         project_id: str,
         created_by_user_id: str,
         python_version: str,
-        bulletjournal_version: str,
         custom_requirements_text: str,
         cpu_limit_millis: int | None,
         memory_limit_bytes: int | None,
@@ -72,12 +71,17 @@ class ProjectService:
         resolved_project_id = validate_project_id(project_id)
         if self.projects.get(resolved_project_id) is not None:
             raise ConflictError(f"Project {resolved_project_id} already exists.")
+        resolved_bulletjournal_version = (
+            self.environment_service.resolve_bulletjournal_version(
+                custom_requirements_text=custom_requirements_text
+            )
+        )
         project_paths = create_project_root(self.instance_paths, resolved_project_id)
         self.environment_service.write_project_environment(
             project_paths=project_paths,
             project_id=resolved_project_id,
             python_version=python_version,
-            bulletjournal_version=bulletjournal_version,
+            bulletjournal_version=resolved_bulletjournal_version,
             custom_requirements_text=custom_requirements_text,
         )
         now = utc_now_iso()
@@ -96,7 +100,7 @@ class ProjectService:
             last_run_finished_at=None,
             idle_shutdown_eligible_at=None,
             python_version=python_version,
-            bulletjournal_version=bulletjournal_version,
+            bulletjournal_version=resolved_bulletjournal_version,
             custom_requirements_text=custom_requirements_text,
             lock_sha256=None,
             runtime_venv_size_bytes=None,
@@ -310,21 +314,25 @@ class ProjectService:
         *,
         project_id: str,
         python_version: str,
-        bulletjournal_version: str,
         custom_requirements_text: str,
     ) -> ProjectRecord:
+        resolved_bulletjournal_version = (
+            self.environment_service.resolve_bulletjournal_version(
+                custom_requirements_text=custom_requirements_text
+            )
+        )
         project_paths = self.project_paths(project_id)
         self.environment_service.write_project_environment(
             project_paths=project_paths,
             project_id=project_id,
             python_version=python_version,
-            bulletjournal_version=bulletjournal_version,
+            bulletjournal_version=resolved_bulletjournal_version,
             custom_requirements_text=custom_requirements_text,
         )
         return self.projects.update(
             project_id,
             python_version=python_version,
-            bulletjournal_version=bulletjournal_version,
+            bulletjournal_version=resolved_bulletjournal_version,
             custom_requirements_text=custom_requirements_text,
         )
 

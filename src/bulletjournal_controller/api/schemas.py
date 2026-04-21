@@ -43,7 +43,7 @@ class UpdateProjectRequest(LimitsRequest):
 
 class UpdateEnvironmentRequest(StrictModel):
     python_version: str
-    bulletjournal_version: str
+    bulletjournal_version: str | None = None
     custom_requirements_text: str
     mark_all_artifacts_stale: bool = True
     restart_if_running: bool = True

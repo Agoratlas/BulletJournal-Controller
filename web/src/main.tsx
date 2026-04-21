@@ -1223,9 +1223,9 @@ function LoginPage() {
       <div className="login-panel">
         <section className="hero-panel">
           <div className="eyebrow">Managed Runtime Control</div>
-          <h1>One controller, many bulletjournal-editor projects.</h1>
+          <h1>One controller, many BulletJournal projects.</h1>
           <p className="lede">
-            Sign in to create, start, stop, inspect, update, and proxy isolated bulletjournal-editor runtimes through one authenticated origin.
+            Sign in to create, start, stop, inspect, update, and proxy isolated BulletJournal runtimes through one authenticated origin.
           </p>
           <div className="hero-grid">
             <div className="hero-note">
@@ -1279,7 +1279,7 @@ function AppChrome({ children }: { children: React.ReactNode }) {
           <div className="eyebrow">BulletJournal Controller</div>
           <h1>Project control plane with authenticated proxy access.</h1>
           <p className="lede">
-            Provision managed environments, inspect job progress, and open isolated bulletjournal-editor runtimes through one controller origin.
+            Provision managed environments, inspect job progress, and open isolated BulletJournal runtimes through one controller origin.
           </p>
         </section>
         <aside className="masthead-side">
@@ -1615,7 +1615,7 @@ function DashboardPage() {
                 <strong>{systemInfo?.instance_id || 'Loading...'}</strong>
               </div>
               <div className="stat-card">
-                <span className="muted">Default bulletjournal-editor</span>
+                <span className="muted">Default BulletJournal</span>
                 <strong>{systemInfo?.default_bulletjournal_version || 'Loading...'}</strong>
               </div>
               <div className="stat-card">
@@ -1739,7 +1739,7 @@ function CreateProjectModal({
       openedWindowRef.current = window.open('', '_blank')
       if (openedWindowRef.current && !openedWindowRef.current.closed) {
         openedWindowRef.current.document.title = 'Preparing project'
-        openedWindowRef.current.document.body.innerHTML = '<main style="font-family: system-ui, sans-serif; padding: 24px; color: #1f2929;"><h1 style="margin: 0 0 12px; font-size: 20px;">Preparing your bulletjournal-editor project</h1><p style="margin: 0; line-height: 1.6;">The controller is installing dependencies and starting the container. This tab will redirect automatically when the project is ready.</p></main>'
+        openedWindowRef.current.document.body.innerHTML = '<main style="font-family: system-ui, sans-serif; padding: 24px; color: #1f2929;"><h1 style="margin: 0 0 12px; font-size: 20px;">Preparing your BulletJournal project</h1><p style="margin: 0; line-height: 1.6;">The controller is installing dependencies and starting the container. This tab will redirect automatically when the project is ready.</p></main>'
       }
       const response = await request<{ project: { project_id: string }; job: { job_id: string } }>('/api/v1/projects', {
         method: 'POST',
@@ -1776,7 +1776,7 @@ function CreateProjectModal({
         <div className="modal-head">
           <div>
             <div className="eyebrow">Create Project</div>
-            <h2>Provision a managed bulletjournal-editor runtime</h2>
+            <h2>Provision a managed BulletJournal runtime</h2>
             <p className="section-copy">Project ids become both filesystem roots and runtime identifiers. Creation installs dependencies, starts the container, and opens the project when it is ready.</p>
           </div>
           <button className="close-button" type="button" onClick={onClose} aria-label="Close dialog" disabled={creationActive || submitting}>×</button>
@@ -1813,7 +1813,7 @@ function CreateProjectModal({
                 <div className="field-full">
                   <label htmlFor="create-dependencies">Dependency text</label>
                   <textarea id="create-dependencies" value={form.custom_requirements_text} onChange={(event) => setForm((current) => ({ ...current, custom_requirements_text: event.target.value }))} />
-                  <span className="muted">Python and bulletjournal-editor versions come from the controller defaults during creation. You can change them later from the project details page.</span>
+                  <span className="muted">The dependency text starts from the controller defaults. Edit the BulletJournal line there if you want a different package source or pinned version.</span>
                 </div>
                 <div className="field-full collapsible-panel">
                   <button className="button-secondary section-toggle" type="button" onClick={() => setShowLimitsForm((current) => !current)}>
@@ -1870,7 +1870,6 @@ function ProjectPage() {
   const [optimisticAction, setOptimisticAction] = useState<OptimisticProjectAction | null>(null)
   const [environmentForm, setEnvironmentForm] = useState({
     python_version: '',
-    bulletjournal_version: '',
     custom_requirements_text: '',
     restart_if_running: true,
   })
@@ -1889,7 +1888,6 @@ function ProjectPage() {
 
   const environmentInputsDirty = !!project && (
     environmentForm.python_version !== project.python_version
-    || environmentForm.bulletjournal_version !== project.bulletjournal_version
     || environmentForm.custom_requirements_text !== project.custom_requirements_text
   )
 
@@ -1900,7 +1898,6 @@ function ProjectPage() {
       if (!environmentInputsDirty && !environmentSyncPending) {
         setEnvironmentForm((current) => ({
           python_version: nextProject.python_version,
-          bulletjournal_version: nextProject.bulletjournal_version,
           custom_requirements_text: nextProject.custom_requirements_text,
           restart_if_running: current.restart_if_running,
         }))
@@ -2134,7 +2131,7 @@ function ProjectPage() {
               </div>
               <div className="summary-block">
                 <h3>Versions</h3>
-                <p className="section-copy">bulletjournal-editor {displayProject.bulletjournal_version}</p>
+                <p className="section-copy">BulletJournal {displayProject.bulletjournal_version}</p>
                 <p className="section-copy">Python {displayProject.python_version}</p>
                 <p className="section-copy">Lock SHA: {displayProject.lock_sha256 || 'Not recorded yet'}</p>
               </div>
@@ -2169,17 +2166,12 @@ function ProjectPage() {
                       setEnvironmentForm((current) => ({ ...current, python_version: event.target.value }))
                     }} required />
                   </div>
-                  <div className="field">
-                    <label htmlFor="env-bulletjournal">bulletjournal-editor version</label>
-                    <input id="env-bulletjournal" value={environmentForm.bulletjournal_version} onChange={(event) => {
-                      setEnvironmentForm((current) => ({ ...current, bulletjournal_version: event.target.value }))
-                    }} required />
-                  </div>
                   <div className="field-full">
                     <label htmlFor="env-custom">Custom requirements text</label>
                     <textarea id="env-custom" value={environmentForm.custom_requirements_text} onChange={(event) => {
                       setEnvironmentForm((current) => ({ ...current, custom_requirements_text: event.target.value }))
                     }} />
+                    <span className="muted">Edit the BulletJournal dependency line here to change its package source or pinned version.</span>
                   </div>
                   <div className="field">
                     <label>Restart behavior</label>

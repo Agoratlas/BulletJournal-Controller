@@ -11,6 +11,7 @@ from bulletjournal_controller.config import (
     MANAGED_RUNTIME_PACKAGE_NAME,
     InstanceConfig,
 )
+from bulletjournal_controller.domain.errors import ValidationError
 from bulletjournal_controller.domain.models import ProjectRecord
 from bulletjournal_controller.runtime.installer import InstallerRunner
 from bulletjournal_controller.storage.atomic_write import atomic_write_text
@@ -152,36 +153,41 @@ class EnvironmentService:
             packages.append(normalize_package_name(match.group("name")))
         return self._dedupe(packages)
 
+    def resolve_bulletjournal_version(self, *, custom_requirements_text: str) -> str:
+        managed_line = self._required_managed_runtime_dependency(
+            self.parse_dependency_config(custom_requirements_text).dependency_lines
+        )
+        if "==" in managed_line:
+            return managed_line.split("==", 1)[1].strip()
+        if " @ " in managed_line:
+            return managed_line.split(" @ ", 1)[1].strip()
+        return managed_line.strip()
+
     def merge_dependency_lines(
         self, *, bulletjournal_version: str, custom_requirements_text: str
     ) -> list[str]:
+        _ = bulletjournal_version
         defaults = self.parse_dependency_config(self.default_dependency_text())
-        default_lines = defaults.dependency_lines
-        if not any(
-            self.dependency_identity(line) in MANAGED_RUNTIME_PACKAGE_ALIASES
-            for line in default_lines
-        ):
-            default_lines.insert(
-                0, f"{MANAGED_RUNTIME_PACKAGE_NAME}=={bulletjournal_version}"
-            )
-        default_lines = [
-            f"{MANAGED_RUNTIME_PACKAGE_NAME}=={bulletjournal_version}"
-            if self.dependency_identity(line) in MANAGED_RUNTIME_PACKAGE_ALIASES
-            else line
-            for line in default_lines
-        ]
         custom = self.parse_dependency_config(custom_requirements_text)
+        managed_line = self._required_managed_runtime_dependency(
+            custom.dependency_lines
+        )
+        default_lines = [
+            line
+            for line in defaults.dependency_lines
+            if self._dependency_key(line) != MANAGED_RUNTIME_PACKAGE_NAME
+        ]
         custom_lines = custom.dependency_lines
-        custom_map = {self.dependency_identity(line): line for line in custom_lines}
-        result: list[str] = []
-        seen: set[str] = set()
+        custom_map = {self._dependency_key(line): line for line in custom_lines}
+        result: list[str] = [managed_line]
+        seen: set[str] = {MANAGED_RUNTIME_PACKAGE_NAME}
         for line in default_lines:
-            identity = self.dependency_identity(line)
+            identity = self._dependency_key(line)
             resolved = custom_map.get(identity, line)
             result.append(resolved)
             seen.add(identity)
         for line in custom_lines:
-            identity = self.dependency_identity(line)
+            identity = self._dependency_key(line)
             if identity not in seen:
                 result.append(line)
                 seen.add(identity)
@@ -429,6 +435,21 @@ class EnvironmentService:
                 result.append(value)
                 seen.add(value)
         return result
+
+    def _required_managed_runtime_dependency(self, lines: list[str]) -> str:
+        for line in lines:
+            if self._dependency_key(line) != MANAGED_RUNTIME_PACKAGE_NAME:
+                continue
+            return line
+        raise ValidationError(
+            "custom_requirements_text must include a BulletJournal dependency line."
+        )
+
+    def _dependency_key(self, line: str) -> str:
+        identity = self.dependency_identity(line)
+        if identity in MANAGED_RUNTIME_PACKAGE_ALIASES:
+            return MANAGED_RUNTIME_PACKAGE_NAME
+        return identity
 
     @staticmethod
     def _index_shorthand(line: str) -> tuple[str, str] | None:

@@ -171,11 +171,7 @@ class ExportService:
             or self._resolve_python_version(project_section)
             or "3.11"
         )
-        custom_requirements = [
-            item
-            for item in resolved_dependencies
-            if self._dependency_identity(item) not in MANAGED_RUNTIME_PACKAGE_ALIASES
-        ]
+        custom_requirements = resolved_dependencies
         now = utc_now_iso()
         lock_path = destination / "uv.lock"
         lock_sha256 = (
@@ -249,6 +245,9 @@ class ExportService:
                 continue
             if "==" in line:
                 return line.split("==", 1)[1].strip()
+            if " @ " in line:
+                return line.split(" @ ", 1)[1].strip()
+            return line.strip()
         return None
 
     @staticmethod

@@ -51,15 +51,10 @@ def create_project(
     python_version = (
         payload.python_version or container.instance_config.default_python_version
     )
-    bulletjournal_version = (
-        payload.bulletjournal_version
-        or container.instance_config.default_bulletjournal_version
-    )
     project = container.project_service.create_project(
         project_id=payload.project_id,
         created_by_user_id=user.user_id,
         python_version=python_version,
-        bulletjournal_version=bulletjournal_version,
         custom_requirements_text=payload.custom_requirements_text,
         cpu_limit_millis=payload.cpu_limit_millis,
         memory_limit_bytes=payload.memory_limit_bytes,

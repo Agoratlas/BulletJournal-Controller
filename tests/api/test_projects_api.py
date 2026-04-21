@@ -28,8 +28,7 @@ def test_project_create_list_detail_update_delete(instance_root, server_config) 
             json={
                 "project_id": "study-a",
                 "python_version": "3.11",
-                "bulletjournal_version": "0.1.0",
-                "custom_requirements_text": "alpha\n",
+                "custom_requirements_text": "bulletjournal-editor==0.3.0\nalpha\n",
                 "cpu_limit_millis": 2000,
                 "memory_limit_bytes": 4096,
                 "gpu_enabled": False,
@@ -44,6 +43,7 @@ def test_project_create_list_detail_update_delete(instance_root, server_config) 
         detail = client.get("/api/v1/projects/study-a")
         assert detail.status_code == 200
         assert "controller_status_token" not in detail.json()
+        assert detail.json()["bulletjournal_version"] == "0.3.0"
 
         updated = client.patch(
             "/api/v1/projects/study-a",
@@ -68,8 +68,7 @@ def test_project_create_list_detail_update_delete(instance_root, server_config) 
             project_id="study-b",
             created_by_user_id=admin.user_id,
             python_version="3.11",
-            bulletjournal_version="0.1.0",
-            custom_requirements_text="",
+            custom_requirements_text="bulletjournal-editor==0.1.0\n",
             cpu_limit_millis=1000,
             memory_limit_bytes=2048,
             gpu_enabled=False,
@@ -97,3 +96,29 @@ def test_invalid_request_shape_returns_422(instance_root, server_config) -> None
             json={"project_id": "bad", "unexpected": True},
         )
         assert response.status_code == 422
+
+
+def test_project_create_requires_bulletjournal_dependency_line(
+    instance_root, server_config
+) -> None:
+    app = create_app(instance_root=instance_root, server_config=server_config)
+    container: ServiceContainer = app.state.container
+    container.auth_service.create_user(
+        username="admin", display_name="Admin", password="secret-pass"
+    )
+    with _auth_client(app) as client:
+        response = client.post(
+            "/api/v1/projects",
+            headers={"origin": "http://testserver"},
+            json={
+                "project_id": "study-a",
+                "python_version": "3.11",
+                "custom_requirements_text": "alpha\n",
+                "cpu_limit_millis": 2000,
+                "memory_limit_bytes": 4096,
+                "gpu_enabled": False,
+            },
+        )
+
+        assert response.status_code == 422
+        assert "custom_requirements_text" in response.json()["detail"]

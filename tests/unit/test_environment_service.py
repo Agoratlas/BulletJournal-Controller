@@ -6,7 +6,10 @@ from types import SimpleNamespace
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
+
 from bulletjournal_controller.config import default_instance_config
+from bulletjournal_controller.domain.errors import ValidationError
 from bulletjournal_controller.runtime.installer import InstallerRunner
 from bulletjournal_controller.runtime.docker_adapter import DockerAdapter
 from bulletjournal_controller.services.environment_service import EnvironmentService
@@ -87,7 +90,7 @@ class DummyProjectRecord:
     project_id: str = "study-a"
     python_version: str = "3.11"
     bulletjournal_version: str = "0.1.0"
-    custom_requirements_text: str = ""
+    custom_requirements_text: str = "bulletjournal-editor==0.1.0\n"
     gpu_enabled: bool = False
 
 
@@ -118,7 +121,7 @@ def test_parse_default_dependencies_and_merge_precedence(tmp_path: Path) -> None
     )
     merged = service.merge_dependency_lines(
         bulletjournal_version="0.2.0",
-        custom_requirements_text="beta==2\ngamma @ git+ssh://example/repo.git@abc123\n",
+        custom_requirements_text="bulletjournal-editor==0.2.0\nbeta==2\ngamma @ git+ssh://example/repo.git@abc123\n",
     )
     assert merged == [
         "bulletjournal-editor==0.2.0",
@@ -237,6 +240,45 @@ def test_default_dependency_text_preserves_comments_for_ui(tmp_path: Path) -> No
     assert "bulletjournal-editor==" in rendered
 
 
+def test_resolve_bulletjournal_version_prefers_dependency_text_pin() -> None:
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=InstallerRunner(DockerAdapter()),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+
+    resolved = service.resolve_bulletjournal_version(
+        custom_requirements_text="bulletjournal-editor==0.4.0\nalpha==1\n",
+    )
+
+    assert resolved == "0.4.0"
+
+
+def test_resolve_bulletjournal_version_accepts_direct_reference() -> None:
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=InstallerRunner(DockerAdapter()),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+
+    resolved = service.resolve_bulletjournal_version(
+        custom_requirements_text="bulletjournal-editor @ git+https://github.com/Agoratlas/BulletJournal\n",
+    )
+
+    assert resolved == "git+https://github.com/Agoratlas/BulletJournal"
+
+
+def test_resolve_bulletjournal_version_requires_managed_dependency() -> None:
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=InstallerRunner(DockerAdapter()),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+
+    with pytest.raises(ValidationError, match="custom_requirements_text"):
+        service.resolve_bulletjournal_version(custom_requirements_text="alpha==1\n")
+
+
 def test_floating_vcs_dependency_names_only_selects_non_pinned_refs() -> None:
     service = EnvironmentService(
         instance_config=default_instance_config(),
@@ -275,7 +317,7 @@ def test_write_project_environment_does_not_create_placeholder_lockfile(
         project_id="study-a",
         python_version="3.11",
         bulletjournal_version="0.1.0",
-        custom_requirements_text="",
+        custom_requirements_text="bulletjournal-editor==0.1.0\n",
     )
     assert project_paths.pyproject_path.is_file()
     assert not project_paths.uv_lock_path.exists()
@@ -515,6 +557,7 @@ def test_install_environment_requests_upgrades_for_floating_vcs_dependencies(
             Any,
             DummyProjectRecord(
                 custom_requirements_text=(
+                    "bulletjournal-editor==0.1.0\n"
                     "fastreport @ git+ssh://github-fastreport/Agoratlas/FastReport@main\n"
                     "snapshot @ git+ssh://example/repo.git@a1b2c3d4\n"
                 ),
@@ -551,7 +594,7 @@ def test_install_environment_rewrites_pyproject_before_locking(tmp_path: Path) -
             Any,
             DummyProjectRecord(
                 bulletjournal_version="0.2.0",
-                custom_requirements_text="alpha==1\n",
+                custom_requirements_text="bulletjournal-editor==0.2.0\nalpha==1\n",
             ),
         ),
         project_paths=cast(Any, project_paths),

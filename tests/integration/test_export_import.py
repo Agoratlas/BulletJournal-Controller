@@ -21,8 +21,7 @@ def test_export_import_round_trip(instance_root) -> None:
         project_id="study-a",
         created_by_user_id=user.user_id,
         python_version="3.11",
-        bulletjournal_version="0.1.0",
-        custom_requirements_text="",
+        custom_requirements_text="bulletjournal-editor==0.1.0\n",
         cpu_limit_millis=1000,
         memory_limit_bytes=1024,
         gpu_enabled=False,
@@ -40,4 +39,4 @@ def test_export_import_round_trip(instance_root) -> None:
     imported_project = container.project_service.get_project("study-b")
     assert imported_project.controller_status_token
     assert imported_project.bulletjournal_version == "0.1.0"
-    assert imported_project.custom_requirements_text == ""
+    assert imported_project.custom_requirements_text == "bulletjournal-editor==0.1.0\n"

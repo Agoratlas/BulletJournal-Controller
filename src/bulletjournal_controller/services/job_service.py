@@ -249,7 +249,6 @@ class JobService:
                 project = self.project_service.update_environment_inputs(
                     project_id=project.project_id,
                     python_version=str(payload["python_version"]),
-                    bulletjournal_version=str(payload["bulletjournal_version"]),
                     custom_requirements_text=str(payload["custom_requirements_text"]),
                 )
             self.project_service.mark_installing(project.project_id)

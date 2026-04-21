@@ -237,6 +237,62 @@ def test_update_environment_inputs_derives_bulletjournal_version_from_dependency
     assert updated.bulletjournal_version == "0.5.0"
 
 
+def test_mark_install_succeeded_updates_bulletjournal_version_from_venv_metadata(
+    tmp_path,
+) -> None:
+    instance_paths = init_instance_root(tmp_path / "instance")
+    db = StateDB(instance_paths.state_db_path)
+    user = UserRepository(db).create(
+        user_id="user-1",
+        username="admin",
+        display_name="Admin",
+        password_hash="hash",
+        is_active=True,
+    )
+    environment_service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=InstallerRunner(DockerAdapter()),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+    service = ProjectService(
+        instance_paths=instance_paths,
+        projects=ProjectRepository(db),
+        jobs=JobRepository(db),
+        environment_service=environment_service,
+        runtime_service=DummyRuntimeService(),
+    )
+    project = service.create_project(
+        project_id="study-a",
+        created_by_user_id=user.user_id,
+        python_version="3.11",
+        custom_requirements_text="bulletjournal-editor @ git+https://github.com/Agoratlas/BulletJournal@main\n",
+        cpu_limit_millis=1000,
+        memory_limit_bytes=1024,
+        gpu_enabled=False,
+    )
+    dist_info = (
+        service.project_paths(project.project_id).runtime_venv_dir
+        / "lib"
+        / "python3.11"
+        / "site-packages"
+        / "bulletjournal_editor-1.0.0.dist-info"
+    )
+    dist_info.mkdir(parents=True)
+    (dist_info / "METADATA").write_text(
+        "Metadata-Version: 2.4\nName: bulletjournal-editor\nVersion: 1.0.0\n",
+        encoding="utf-8",
+    )
+    (dist_info / "direct_url.json").write_text(
+        '{"url":"https://github.com/Agoratlas/BulletJournal","vcs_info":{"vcs":"git","commit_id":"4e8e21707279ead345c30fef1709726ea9e3f7c9"}}',
+        encoding="utf-8",
+    )
+
+    service.mark_installing(project.project_id)
+    updated = service.mark_install_succeeded(project.project_id, lock_sha256="abc123")
+
+    assert updated.bulletjournal_version == "1.0.0 (4e8e217)"
+
+
 def test_mark_runtime_crashed_sets_error_and_clears_runtime(tmp_path) -> None:
     instance_paths = init_instance_root(tmp_path / "instance")
     db = StateDB(instance_paths.state_db_path)

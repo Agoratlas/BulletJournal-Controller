@@ -180,6 +180,13 @@ class ProjectService:
             "runtime_venv_size_bytes": runtime_venv_size_bytes,
             "last_install_at": utc_now_iso(),
         }
+        installed_version = (
+            self.environment_service.resolve_installed_bulletjournal_version(
+                project_paths=self.project_paths(project_id)
+            )
+        )
+        if installed_version is not None:
+            updates["bulletjournal_version"] = installed_version
         if project.status == ProjectStatus.INSTALLING.value:
             return self.set_status(
                 project_id=project_id,

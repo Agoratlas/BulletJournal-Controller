@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import os
 import re
 import time
@@ -162,6 +163,23 @@ class EnvironmentService:
         if " @ " in managed_line:
             return managed_line.split(" @ ", 1)[1].strip()
         return managed_line.strip()
+
+    def resolve_installed_bulletjournal_version(
+        self, *, project_paths: ProjectPaths
+    ) -> str | None:
+        dist_info = self._managed_runtime_dist_info_dir(project_paths.runtime_venv_dir)
+        if dist_info is None:
+            return None
+        metadata_text = read_text_if_exists(dist_info / "METADATA")
+        if metadata_text is None:
+            return None
+        version = self._metadata_version(metadata_text)
+        if version is None:
+            return None
+        commit_id = self._direct_url_commit_id(dist_info / "direct_url.json")
+        if commit_id is None:
+            return version
+        return f"{version} ({commit_id[:7]})"
 
     def merge_dependency_lines(
         self, *, bulletjournal_version: str, custom_requirements_text: str
@@ -480,3 +498,43 @@ class EnvironmentService:
         if not ref:
             return True
         return not re.fullmatch(r"[0-9a-fA-F]{7,40}", ref)
+
+    @staticmethod
+    def _managed_runtime_dist_info_dir(runtime_venv_dir: Path) -> Path | None:
+        for pattern in (
+            "lib/python*/site-packages/bulletjournal_editor-*.dist-info",
+            "Lib/site-packages/bulletjournal_editor-*.dist-info",
+        ):
+            matches = sorted(runtime_venv_dir.glob(pattern))
+            if matches:
+                return matches[0]
+        return None
+
+    @staticmethod
+    def _metadata_version(metadata_text: str) -> str | None:
+        for line in metadata_text.splitlines():
+            if not line.startswith("Version:"):
+                continue
+            version = line.removeprefix("Version:").strip()
+            return version or None
+        return None
+
+    @staticmethod
+    def _direct_url_commit_id(path: Path) -> str | None:
+        text = read_text_if_exists(path)
+        if text is None:
+            return None
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        vcs_info = payload.get("vcs_info")
+        if not isinstance(vcs_info, dict):
+            return None
+        commit_id = vcs_info.get("commit_id")
+        if not isinstance(commit_id, str):
+            return None
+        commit_id = commit_id.strip()
+        return commit_id or None

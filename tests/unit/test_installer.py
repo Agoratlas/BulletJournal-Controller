@@ -60,3 +60,18 @@ def test_install_command_upgrades_selected_packages_during_lock() -> None:
         "uv lock --project /project --upgrade-package fastreport --upgrade-package bulletjournal"
         in joined
     )
+
+
+def test_project_init_command_invokes_bulletjournal_init_without_environment() -> None:
+    runner = InstallerRunner(DockerAdapter())
+    command = runner.build_project_init_command(
+        image="bulletjournal-runtime:local",
+        project_root=Path("/srv/project"),
+        project_id="study-a",
+        network_mode="bridge",
+    )
+    joined = " ".join(command)
+    assert (
+        "uv run --project /project bulletjournal init /project --project-id study-a --skip-environment"
+        in joined
+    )

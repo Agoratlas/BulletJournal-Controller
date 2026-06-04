@@ -21,7 +21,7 @@ from bulletjournal_controller.domain.errors import (
 )
 from bulletjournal_controller.domain.rules import validate_project_id
 from bulletjournal_controller.storage.atomic_write import atomic_write_text
-from bulletjournal_controller.utils import ensure_directory, utc_now_iso
+from bulletjournal_controller.utils import ensure_directory
 
 
 @dataclass(slots=True, frozen=True)
@@ -37,12 +37,12 @@ class ProjectPaths:
         return self.root / "notebooks"
 
     @property
-    def artifacts_dir(self) -> Path:
-        return self.root / "artifacts"
+    def object_store_dir(self) -> Path:
+        return self.root / "objects"
 
     @property
-    def object_store_dir(self) -> Path:
-        return self.artifacts_dir / "objects"
+    def dashboards_dir(self) -> Path:
+        return self.root / "dashboards"
 
     @property
     def metadata_dir(self) -> Path:
@@ -61,12 +61,20 @@ class ProjectPaths:
         return self.root / "checkpoints"
 
     @property
-    def uploads_dir(self) -> Path:
-        return self.root / "uploads"
+    def temp_dir(self) -> Path:
+        return self.root / "temp"
 
     @property
-    def uploads_temp_dir(self) -> Path:
-        return self.uploads_dir / "temp"
+    def uploads_dir(self) -> Path:
+        return self.temp_dir / "uploads"
+
+    @property
+    def execution_logs_dir(self) -> Path:
+        return self.temp_dir / "execution_logs"
+
+    @property
+    def worker_temp_dir(self) -> Path:
+        return self.temp_dir / "worker"
 
     @property
     def pyproject_path(self) -> Path:
@@ -254,38 +262,14 @@ def create_project_root(
     ensure_directory(project_paths.graph_dir)
     ensure_directory(project_paths.notebooks_dir)
     ensure_directory(project_paths.object_store_dir)
+    ensure_directory(project_paths.dashboards_dir)
     ensure_directory(project_paths.metadata_dir)
     ensure_directory(project_paths.checkpoints_dir)
-    ensure_directory(project_paths.uploads_temp_dir)
+    ensure_directory(project_paths.uploads_dir)
+    ensure_directory(project_paths.execution_logs_dir)
+    ensure_directory(project_paths.worker_temp_dir)
     ensure_directory(project_paths.runtime_venv_dir)
     ensure_directory(project_paths.runtime_logs_dir)
-    now = utc_now_iso()
-    meta = {
-        "schema_version": 1,
-        "project_id": resolved_project_id,
-        "graph_version": 1,
-        "updated_at": now,
-    }
-    atomic_write_text(
-        project_paths.graph_dir / "meta.json",
-        json.dumps(meta, indent=2, sort_keys=True) + "\n",
-    )
-    atomic_write_text(project_paths.graph_dir / "nodes.json", "[]\n")
-    atomic_write_text(project_paths.graph_dir / "edges.json", "[]\n")
-    atomic_write_text(project_paths.graph_dir / "layout.json", "[]\n")
-    project_meta = {
-        "schema_version": 1,
-        "project_id": resolved_project_id,
-        "created_at": now,
-    }
-    if title is not None and title.strip():
-        project_meta["title"] = title.strip()
-    atomic_write_text(
-        project_paths.project_json_path,
-        json.dumps(project_meta, indent=2, sort_keys=True) + "\n",
-    )
-    if not project_paths.state_db_path.exists():
-        sqlite3.connect(project_paths.state_db_path).close()
     return project_paths
 
 
@@ -298,12 +282,6 @@ def require_project_root(paths: InstancePaths, project_id: str) -> ProjectPaths:
     if not project_paths.root.exists():
         raise NotFoundError(f"Project {project_id} does not exist on disk.")
     required = [
-        project_paths.graph_dir,
-        project_paths.notebooks_dir,
-        project_paths.object_store_dir,
-        project_paths.metadata_dir,
-        project_paths.project_json_path,
-        project_paths.state_db_path,
         project_paths.pyproject_path,
         project_paths.runtime_dir,
     ]

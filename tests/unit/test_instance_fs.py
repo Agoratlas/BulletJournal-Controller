@@ -92,8 +92,12 @@ def test_create_project_root_creates_required_directories(tmp_path: Path) -> Non
     instance_paths = init_instance_root(tmp_path / "instance")
     project_paths = create_project_root(instance_paths, "study-a")
     assert project_paths.graph_dir.is_dir()
+    assert project_paths.dashboards_dir.is_dir()
     assert project_paths.metadata_dir.is_dir()
     assert project_paths.runtime_venv_dir.is_dir()
+    assert project_paths.execution_logs_dir.is_dir()
+    assert project_paths.worker_temp_dir.is_dir()
+    assert not project_paths.project_json_path.exists()
 
 
 def test_require_instance_root_validates_existing_layout(tmp_path: Path) -> None:

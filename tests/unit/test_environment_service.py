@@ -69,6 +69,11 @@ class RetryingInstaller:
     def __init__(self, results: list[FakeResult]):
         self.results = results
         self.calls = 0
+        self.commands: list[list[str]] = []
+
+    def build_project_init_command(self, **kwargs):
+        _ = kwargs
+        return ["docker", "run", "init-project"]
 
     def build_install_command(self, **kwargs):
         _ = kwargs
@@ -79,7 +84,7 @@ class RetryingInstaller:
         return ["docker", "run", "mark-stale"]
 
     def run(self, command):
-        _ = command
+        self.commands.append(command)
         result = self.results[self.calls]
         self.calls += 1
         return result
@@ -368,6 +373,7 @@ def test_install_environment_retries_transient_missing_bind_mount(
     project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
     installer = RetryingInstaller(
         [
+            FakeResult(returncode=0),
             FakeResult(
                 returncode=1,
                 stderr='docker: Error response from daemon: invalid mount config for type "bind": bind source path does not exist',
@@ -394,7 +400,7 @@ def test_install_environment_retries_transient_missing_bind_mount(
     )
 
     assert result == "lock-sha"
-    assert installer.calls == 2
+    assert installer.calls == 3
     assert any("retrying" in entry for entry in logs)
 
 
@@ -406,7 +412,8 @@ def test_install_environment_uses_extended_retry_budget_for_mount_visibility(
     project_paths = make_project_paths(project_root)
     project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
     installer = RetryingInstaller(
-        [
+        [FakeResult(returncode=0)]
+        + [
             FakeResult(returncode=1, stderr="bind source path does not exist")
             for _ in range(6)
         ]
@@ -429,7 +436,7 @@ def test_install_environment_uses_extended_retry_budget_for_mount_visibility(
     )
 
     assert result == "lock-sha"
-    assert installer.calls == 7
+    assert installer.calls == 8
 
 
 def test_install_environment_retries_when_additional_mount_is_not_immediately_visible(
@@ -443,6 +450,7 @@ def test_install_environment_retries_when_additional_mount_is_not_immediately_vi
     project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
     installer = RetryingInstaller(
         [
+            FakeResult(returncode=0),
             FakeResult(
                 returncode=1,
                 stderr='docker: Error response from daemon: invalid mount config for type "bind": bind source path does not exist',
@@ -469,7 +477,7 @@ def test_install_environment_retries_when_additional_mount_is_not_immediately_vi
     )
 
     assert result == "lock-sha"
-    assert installer.calls == 2
+    assert installer.calls == 3
 
 
 def test_install_environment_passes_runtime_env_file_to_installer(
@@ -484,7 +492,7 @@ def test_install_environment_passes_runtime_env_file_to_installer(
 
     class RecordingInstaller(RetryingInstaller):
         def __init__(self):
-            super().__init__([FakeResult(returncode=0)])
+            super().__init__([FakeResult(returncode=0), FakeResult(returncode=0)])
             self.install_kwargs = None
 
         def build_install_command(self, **kwargs):
@@ -523,7 +531,7 @@ def test_install_environment_passes_controller_uid_gid_to_installer(
 
     class RecordingInstaller(RetryingInstaller):
         def __init__(self):
-            super().__init__([FakeResult(returncode=0)])
+            super().__init__([FakeResult(returncode=0), FakeResult(returncode=0)])
             self.install_kwargs = None
 
         def build_install_command(self, **kwargs):
@@ -573,7 +581,7 @@ def test_install_environment_requests_upgrades_for_floating_vcs_dependencies(
 
     class RecordingInstaller(RetryingInstaller):
         def __init__(self):
-            super().__init__([FakeResult(returncode=0)])
+            super().__init__([FakeResult(returncode=0), FakeResult(returncode=0)])
             self.install_kwargs = None
 
         def build_install_command(self, **kwargs):
@@ -617,7 +625,7 @@ def test_install_environment_rewrites_pyproject_before_locking(tmp_path: Path) -
     lock_path = project_root / "uv.lock"
     lock_path.write_text("lock = true\n", encoding="utf-8")
     project_paths = make_project_paths(project_root)
-    installer = RetryingInstaller([FakeResult(returncode=0)])
+    installer = RetryingInstaller([FakeResult(returncode=0), FakeResult(returncode=0)])
     service = EnvironmentService(
         instance_config=default_instance_config(),
         installer=cast(Any, installer),
@@ -643,3 +651,31 @@ def test_install_environment_rewrites_pyproject_before_locking(tmp_path: Path) -
     assert 'requires-python = "==3.11.*"' in rendered
     assert '"bulletjournal-editor==0.2.0"' in rendered
     assert '"alpha==1"' in rendered
+
+
+def test_install_environment_runs_project_init_before_locking(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    lock_path = project_root / "uv.lock"
+    lock_path.write_text("lock = true\n", encoding="utf-8")
+    project_paths = make_project_paths(project_root)
+    installer = RetryingInstaller([FakeResult(returncode=0), FakeResult(returncode=0)])
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=cast(Any, installer),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+
+    service.install_environment(
+        project=cast(Any, DummyProjectRecord()),
+        project_paths=cast(Any, project_paths),
+        log_writer=lambda _message: None,
+        mark_all_artifacts_stale=False,
+        reason="test",
+    )
+
+    assert installer.commands[:2] == [
+        ["docker", "run", "init-project"],
+        ["docker", "run", "test"],
+    ]

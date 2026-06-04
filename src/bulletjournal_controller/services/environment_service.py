@@ -314,7 +314,32 @@ class EnvironmentService:
             bulletjournal_version=project.bulletjournal_version,
             custom_requirements_text=project.custom_requirements_text,
         )
-        command = self.installer.build_install_command(
+        common_mount_paths = [
+            project_paths.root,
+            *[
+                mount_path
+                for mount_path, _target, _readonly in self.runtime_config_service.additional_mounts()
+            ],
+        ]
+        init_command = self.installer.build_project_init_command(
+            image=self.runtime_config_service.runtime_config.runtime_image_name,
+            project_root=project_paths.root,
+            project_id=project.project_id,
+            network_mode=self.instance_config.docker_network_mode,
+            env_file=self.runtime_config_service.env_file(),
+            additional_mounts=self.runtime_config_service.additional_mounts(),
+            user_uid=self.runtime_config_service.runtime_config.container_uid,
+            user_gid=self.runtime_config_service.runtime_config.container_gid,
+        )
+        log_writer(f"project init command: {' '.join(init_command)}")
+        init_result = self._run_with_mount_retry(
+            command=init_command,
+            mount_paths=common_mount_paths,
+            log_writer=log_writer,
+        )
+        if init_result.returncode != 0:
+            raise RuntimeError("Project initialization failed.")
+        install_command = self.installer.build_install_command(
             image=self.runtime_config_service.runtime_config.runtime_image_name,
             project_root=project_paths.root,
             network_mode=self.instance_config.docker_network_mode,
@@ -327,16 +352,10 @@ class EnvironmentService:
                 dependency_config.dependency_lines
             ),
         )
-        log_writer(f"install command: {' '.join(command)}")
+        log_writer(f"install command: {' '.join(install_command)}")
         result = self._run_with_mount_retry(
-            command=command,
-            mount_paths=[
-                project_paths.root,
-                *[
-                    mount_path
-                    for mount_path, _target, _readonly in self.runtime_config_service.additional_mounts()
-                ],
-            ],
+            command=install_command,
+            mount_paths=common_mount_paths,
             log_writer=log_writer,
         )
         if result.returncode != 0:

@@ -31,10 +31,11 @@ from bulletjournal_controller.utils import (
 EXPORTABLE_NAMES = [
     "graph",
     "notebooks",
-    "artifacts",
+    "objects",
+    "dashboards",
     "metadata",
     "checkpoints",
-    "uploads",
+    "temp",
     "pyproject.toml",
     "uv.lock",
 ]
@@ -75,7 +76,7 @@ class ExportService:
                 "export_manifest.json", json.dumps(manifest, indent=2) + "\n"
             )
             for name in EXPORTABLE_NAMES:
-                if name == "artifacts" and not include_artifacts:
+                if name == "objects" and not include_artifacts:
                     continue
                 path = project_root / name
                 if not path.exists():

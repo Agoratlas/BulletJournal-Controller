@@ -26,6 +26,27 @@ def test_export_import_round_trip(instance_root) -> None:
         memory_limit_bytes=1024,
         gpu_enabled=False,
     )
+    project_root = instance_paths.project_root(project.project_id)
+    (project_root / "metadata").mkdir(parents=True, exist_ok=True)
+    (project_root / "graph").mkdir(parents=True, exist_ok=True)
+    (project_root / "objects").mkdir(parents=True, exist_ok=True)
+    (project_root / "dashboards").mkdir(parents=True, exist_ok=True)
+    (project_root / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (project_root / "temp" / "uploads").mkdir(parents=True, exist_ok=True)
+    (project_root / "temp" / "execution_logs").mkdir(parents=True, exist_ok=True)
+    (project_root / "temp" / "worker").mkdir(parents=True, exist_ok=True)
+    (project_root / "metadata" / "project.json").write_text(
+        '{"schema_version": 2, "project_id": "study-a", "created_at": "2026-06-04T00:00:00Z"}\n',
+        encoding="utf-8",
+    )
+    (project_root / "metadata" / "state.db").write_bytes(b"")
+    (project_root / "graph" / "meta.json").write_text(
+        '{"schema_version": 1, "project_id": "study-a", "graph_version": 1, "updated_at": "2026-06-04T00:00:00Z"}\n',
+        encoding="utf-8",
+    )
+    (project_root / "graph" / "nodes.json").write_text("[]\n", encoding="utf-8")
+    (project_root / "graph" / "edges.json").write_text("[]\n", encoding="utf-8")
+    (project_root / "graph" / "layout.json").write_text("[]\n", encoding="utf-8")
     archive = instance_paths.exports_dir / "study-a.zip"
     exported = container.export_service.export_project(
         project=project, archive_path=archive, include_artifacts=True

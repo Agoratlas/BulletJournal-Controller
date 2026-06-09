@@ -320,25 +320,6 @@ def test_resolve_bulletjournal_version_requires_managed_dependency() -> None:
         service.resolve_bulletjournal_version(custom_requirements_text="alpha==1\n")
 
 
-def test_floating_vcs_dependency_names_only_selects_non_pinned_refs() -> None:
-    service = EnvironmentService(
-        instance_config=default_instance_config(),
-        installer=InstallerRunner(DockerAdapter()),
-        runtime_config_service=DummyRuntimeConfigService(),
-    )
-
-    packages = service.floating_vcs_dependency_names(
-        [
-            "fastreport @ git+ssh://github-fastreport/Agoratlas/FastReport@main",
-            "snapshot @ git+ssh://example/repo.git@a1b2c3d4",
-            "plain-package==1.0.0",
-            "branchless @ git+ssh://example/repo.git",
-        ]
-    )
-
-    assert packages == ["fastreport", "branchless"]
-
-
 def test_write_project_environment_does_not_create_placeholder_lockfile(
     tmp_path: Path,
 ) -> None:
@@ -571,9 +552,7 @@ def test_install_environment_passes_controller_uid_gid_to_installer(
     assert installer.install_kwargs["user_gid"] == 1000
 
 
-def test_install_environment_requests_upgrades_for_floating_vcs_dependencies(
-    tmp_path: Path,
-) -> None:
+def test_install_environment_can_request_upgrade_all(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir(parents=True)
     project_paths = make_project_paths(project_root)
@@ -597,24 +576,16 @@ def test_install_environment_requests_upgrades_for_floating_vcs_dependencies(
     service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
 
     service.install_environment(
-        project=cast(
-            Any,
-            DummyProjectRecord(
-                custom_requirements_text=(
-                    "bulletjournal-editor==0.1.0\n"
-                    "fastreport @ git+ssh://github-fastreport/Agoratlas/FastReport@main\n"
-                    "snapshot @ git+ssh://example/repo.git@a1b2c3d4\n"
-                ),
-            ),
-        ),
+        project=cast(Any, DummyProjectRecord()),
         project_paths=cast(Any, project_paths),
         log_writer=lambda _message: None,
         mark_all_artifacts_stale=False,
         reason="test",
+        upgrade_all=True,
     )
 
     assert installer.install_kwargs is not None
-    assert installer.install_kwargs["upgrade_packages"] == ["fastreport"]
+    assert installer.install_kwargs["upgrade_all"] is True
 
 
 def test_install_environment_rewrites_pyproject_before_locking(tmp_path: Path) -> None:

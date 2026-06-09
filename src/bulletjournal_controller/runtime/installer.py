@@ -19,13 +19,13 @@ class InstallerRunner:
         gpu_enabled: bool,
         env_file: Path | None = None,
         additional_mounts: list[tuple[Path, str, bool]] | None = None,
-        upgrade_packages: list[str] | None = None,
+        upgrade_all: bool = False,
         user_uid: int | None = None,
         user_gid: int | None = None,
     ) -> list[str]:
         lock_command = "uv lock --project /project"
-        for package in upgrade_packages or []:
-            lock_command += f" --upgrade-package {package}"
+        if upgrade_all:
+            lock_command += " --upgrade"
         options = [
             "--rm",
             "--network",

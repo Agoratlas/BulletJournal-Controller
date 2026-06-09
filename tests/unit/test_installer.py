@@ -46,20 +46,17 @@ def test_install_command_runs_as_supplied_uid_gid() -> None:
     assert "HOME=/home/bulletjournal" in joined
 
 
-def test_install_command_upgrades_selected_packages_during_lock() -> None:
+def test_install_command_supports_upgrading_all_packages_during_lock() -> None:
     runner = InstallerRunner(DockerAdapter())
     command = runner.build_install_command(
         image="bulletjournal-runtime:local",
         project_root=Path("/srv/project"),
         network_mode="bridge",
         gpu_enabled=False,
-        upgrade_packages=["fastreport", "bulletjournal"],
+        upgrade_all=True,
     )
     joined = " ".join(command)
-    assert (
-        "uv lock --project /project --upgrade-package fastreport --upgrade-package bulletjournal"
-        in joined
-    )
+    assert "uv lock --project /project --upgrade" in joined
 
 
 def test_project_init_command_invokes_bulletjournal_init_without_environment() -> None:

@@ -181,6 +181,7 @@ class JobService:
                 log_writer=log_writer,
                 mark_all_artifacts_stale=False,
                 reason="initial environment creation",
+                upgrade_all=False,
             )
             project = self.project_service.mark_install_succeeded(
                 project.project_id,
@@ -207,6 +208,7 @@ class JobService:
                     payload.get("mark_all_artifacts_stale", False)
                 ),
                 reason=str(payload.get("reason") or "controller environment install"),
+                upgrade_all=False,
             )
             project = self.project_service.mark_install_succeeded(
                 project.project_id,
@@ -259,6 +261,7 @@ class JobService:
                 log_writer=log_writer,
                 mark_all_artifacts_stale=mark_all_artifacts_stale,
                 reason="controller-managed environment update",
+                upgrade_all=True,
             )
             project = self.project_service.mark_install_succeeded(
                 project.project_id,
@@ -365,6 +368,7 @@ class JobService:
             log_writer=log_writer,
             mark_all_artifacts_stale=mark_all_artifacts_stale,
             reason=reason,
+            upgrade_all=False,
         )
         return self.project_service.mark_install_succeeded(
             project_id,

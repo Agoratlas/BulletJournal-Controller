@@ -142,18 +142,6 @@ class EnvironmentService:
         token = match.group(1)
         return normalize_package_name(token)
 
-    def floating_vcs_dependency_names(self, lines: list[str]) -> list[str]:
-        packages: list[str] = []
-        for line in lines:
-            match = VCS_DEPENDENCY_PATTERN.match(line.strip())
-            if match is None:
-                continue
-            url = match.group("url").strip()
-            if not self._vcs_url_has_floating_ref(url):
-                continue
-            packages.append(normalize_package_name(match.group("name")))
-        return self._dedupe(packages)
-
     def resolve_bulletjournal_version(self, *, custom_requirements_text: str) -> str:
         managed_line = self._required_managed_runtime_dependency(
             self.parse_dependency_config(custom_requirements_text).dependency_lines
@@ -302,6 +290,7 @@ class EnvironmentService:
         log_writer,
         mark_all_artifacts_stale: bool,
         reason: str,
+        upgrade_all: bool = False,
     ) -> str:
         self.write_project_environment(
             project_paths=project_paths,
@@ -348,9 +337,7 @@ class EnvironmentService:
             additional_mounts=self.runtime_config_service.additional_mounts(),
             user_uid=self.runtime_config_service.runtime_config.container_uid,
             user_gid=self.runtime_config_service.runtime_config.container_gid,
-            upgrade_packages=self.floating_vcs_dependency_names(
-                dependency_config.dependency_lines
-            ),
+            upgrade_all=upgrade_all,
         )
         log_writer(f"install command: {' '.join(install_command)}")
         result = self._run_with_mount_retry(
@@ -510,13 +497,6 @@ class EnvironmentService:
         dependency_name = match.group("dependency").strip()
         index_url = match.group("index_url").strip()
         return dependency_name, index_url
-
-    @staticmethod
-    def _vcs_url_has_floating_ref(url: str) -> bool:
-        ref = url.rsplit("@", 1)[-1].strip() if "@" in url else ""
-        if not ref:
-            return True
-        return not re.fullmatch(r"[0-9a-fA-F]{7,40}", ref)
 
     @staticmethod
     def _managed_runtime_dist_info_dir(runtime_venv_dir: Path) -> Path | None:

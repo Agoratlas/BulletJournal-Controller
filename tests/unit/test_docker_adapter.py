@@ -21,7 +21,7 @@ def test_docker_command_construction_has_labels_and_mounts() -> None:
         gpu_enabled=False,
         network_mode="bridge",
         env_file=Path("/srv/runtime/.env"),
-        additional_mounts=[(Path("/srv/ssh"), "/home/bulletjournal/.ssh", True)],
+        additional_mounts=[(Path("/srv/mounts/credentials.json"), "/opt/service/credentials.json", True)],
         user_uid=1000,
         user_gid=1000,
     )
@@ -34,7 +34,7 @@ def test_docker_command_construction_has_labels_and_mounts() -> None:
     assert "bulletjournal.project_id=study-a" in joined
     assert "bulletjournal.instance_id=main" in joined
     assert "type=bind,src=/srv/projects/study-a,dst=/project" in joined
-    assert "type=bind,src=/srv/ssh,dst=/home/bulletjournal/.ssh,readonly" in joined
+    assert "type=bind,src=/srv/mounts/credentials.json,dst=/opt/service/credentials.json,readonly" in joined
     assert "127.0.0.1:49152:8765" in joined
     assert "/project/.runtime/venv/bin/python -X faulthandler -u -c" in joined
     assert "/project/.runtime/logs/server.log" in joined

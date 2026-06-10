@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 
 from bulletjournal_controller.api import create_app
@@ -96,6 +98,53 @@ def test_invalid_request_shape_returns_422(instance_root, server_config) -> None
             json={"project_id": "bad", "unexpected": True},
         )
         assert response.status_code == 422
+
+
+def test_system_config_reports_additional_mounts(instance_root, server_config) -> None:
+    app = create_app(instance_root=instance_root, server_config=server_config)
+    container: ServiceContainer = app.state.container
+    container.auth_service.create_user(
+        username="admin", display_name="Admin", password="secret-pass"
+    )
+    runtime_root = container.instance_paths.local_config_dir
+    mount_source = runtime_root / "mounts" / "service-account.json"
+    mount_source.parent.mkdir(parents=True, exist_ok=True)
+    mount_source.write_text("{}\n", encoding="utf-8")
+    container.instance_paths.local_runtime_json_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "runtime_image_name": "bulletjournal-runtime:local",
+                "runtime_dockerfile": "Dockerfile",
+                "runtime_build_context": ".",
+                "default_dependencies_file": "default-dependencies.txt",
+                "env_file": ".env",
+                "ssh_dir": "ssh",
+                "additional_mounts": [
+                    {
+                        "source": "mounts/service-account.json",
+                        "target": "/opt/service-account.json",
+                        "read_only": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with _auth_client(app) as client:
+        response = client.get("/api/v1/system/config")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ssh_dir"] == str(container.instance_paths.local_ssh_dir)
+    assert payload["additional_mounts"] == [
+        {
+            "source": str(mount_source.resolve()),
+            "target": "/opt/service-account.json",
+            "read_only": True,
+        }
+    ]
 
 
 def test_project_create_requires_bulletjournal_dependency_line(

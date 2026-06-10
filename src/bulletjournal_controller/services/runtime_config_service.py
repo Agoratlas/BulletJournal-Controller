@@ -10,6 +10,9 @@ from bulletjournal_controller.domain.errors import ConfigurationError
 from bulletjournal_controller.storage.instance_fs import InstancePaths
 
 
+RUNTIME_CONFIG_SCHEMA_VERSION = 2
+
+
 @dataclass(slots=True, frozen=True)
 class RuntimeConfig:
     runtime_image_name: str
@@ -18,7 +21,7 @@ class RuntimeConfig:
     default_dependencies_file: Path | None
     env_file: Path | None
     ssh_dir: Path | None
-    private_assets: Path | None
+    additional_mounts: tuple[tuple[Path, str, bool], ...]
     container_uid: int | None
     container_gid: int | None
 
@@ -37,14 +40,7 @@ class RuntimeConfigService:
             mounts.append(
                 (self.runtime_config.ssh_dir, "/home/bulletjournal/.ssh", True)
             )
-        if self.runtime_config.private_assets is not None:
-            mounts.append(
-                (
-                    self.runtime_config.private_assets,
-                    "/opt/bulletjournal/private_assets",
-                    True,
-                )
-            )
+        mounts.extend(self.runtime_config.additional_mounts)
         return mounts
 
     def default_dependencies_file(self) -> Path | None:
@@ -78,6 +74,7 @@ class RuntimeConfigService:
             )
         if not isinstance(data, dict):
             raise ConfigurationError("runtime.json must contain a JSON object.")
+        self._validate_schema_version(data)
 
         runtime_image_name = _required_str(data, "runtime_image_name")
         runtime_dockerfile = self._resolve_path(
@@ -95,10 +92,10 @@ class RuntimeConfigService:
         ssh_dir = self._resolve_optional_path(
             configured_root, defaults_root, data.get("ssh_dir")
         )
-        private_assets = self._resolve_optional_path(
+        additional_mounts = self._parse_additional_mounts(
             configured_root,
             defaults_root,
-            data.get("private_assets", data.get("private_assets_dir")),
+            data.get("additional_mounts"),
         )
         container_uid = self._current_uid()
         container_gid = self._current_gid()
@@ -109,10 +106,58 @@ class RuntimeConfigService:
             default_dependencies_file=default_dependencies_file,
             env_file=env_file,
             ssh_dir=ssh_dir,
-            private_assets=private_assets,
+            additional_mounts=additional_mounts,
             container_uid=container_uid,
             container_gid=container_gid,
         )
+
+    def _parse_additional_mounts(
+        self, config_root: Path, defaults_root: Path, raw: object
+    ) -> tuple[tuple[Path, str, bool], ...]:
+        if raw is None:
+            return ()
+        if not isinstance(raw, list):
+            raise ConfigurationError("runtime.json field additional_mounts must be a JSON array.")
+        mounts: list[tuple[Path, str, bool]] = []
+        for index, entry in enumerate(raw, start=1):
+            if not isinstance(entry, dict):
+                raise ConfigurationError(
+                    f"runtime.json additional_mounts[{index}] must be a JSON object."
+                )
+            source = self._resolve_optional_path(
+                config_root, defaults_root, entry.get("source")
+            )
+            if source is None:
+                raise ConfigurationError(
+                    f"runtime.json additional_mounts[{index}].source is required."
+                )
+            target = str(entry.get("target", "")).strip()
+            if not target:
+                raise ConfigurationError(
+                    f"runtime.json additional_mounts[{index}].target is required."
+                )
+            if not target.startswith("/"):
+                raise ConfigurationError(
+                    f"runtime.json additional_mounts[{index}].target must be an absolute container path."
+                )
+            read_only = entry.get("read_only", False)
+            if not isinstance(read_only, bool):
+                raise ConfigurationError(
+                    f"runtime.json additional_mounts[{index}].read_only must be a boolean."
+                )
+            mounts.append((source, target, read_only))
+        return tuple(mounts)
+
+    @staticmethod
+    def _validate_schema_version(data: dict[str, object]) -> None:
+        raw = data.get("schema_version")
+        if not isinstance(raw, int):
+            raise ConfigurationError("runtime.json field schema_version is required.")
+        if raw != RUNTIME_CONFIG_SCHEMA_VERSION:
+            raise ConfigurationError(
+                "Unsupported runtime.json schema version "
+                f"{raw}; expected {RUNTIME_CONFIG_SCHEMA_VERSION}."
+            )
 
     @staticmethod
     def _current_uid() -> int | None:

@@ -53,3 +53,24 @@ Optional per-instance runtime environment variables.
 - loaded into installer containers and project runtime containers via Docker `--env-file`
 - available to BulletJournal runtime code in Marimo and orchestrated execution paths
 - intended for per-instance secrets or service configuration that should not live in git
+
+## `config/runtime/runtime.json`
+
+Optional bind mounts can be declared with `additional_mounts`:
+
+```json
+{
+  "schema_version": 2,
+  "additional_mounts": [
+    {
+      "source": "mounts/service-account.json",
+      "target": "/opt/bulletjournal/service-account.json",
+      "read_only": true
+    }
+  ]
+}
+```
+
+- `source` may be absolute or relative to `config/runtime/`
+- `target` must be an absolute path inside the container
+- `read_only` defaults to `false` when omitted

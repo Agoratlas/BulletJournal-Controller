@@ -1,10 +1,10 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "runtime_image_name": "bulletjournal-runtime:local",
   "runtime_dockerfile": "Dockerfile",
   "runtime_build_context": ".",
   "default_dependencies_file": "default-dependencies.txt",
   "env_file": ".env",
   "ssh_dir": "ssh",
-  "private_assets": "private_assets"
+  "additional_mounts": []
 }

@@ -26,8 +26,7 @@ Installer and runtime containers can mount operator-provided config assets:
 
 - environment variables from configured `env_file` are loaded with Docker `--env-file`
 - SSH material from configured `ssh_dir` is mounted read-only at `/home/bulletjournal/.ssh`
-- private assets from configured `private_assets_dir` are mounted read-only at `/opt/bulletjournal/private-assets`
-- optional local BulletJournal source can be mounted read-only for editable local installs
+- entries from configured `additional_mounts` are passed through as Docker bind mounts
 
 This keeps deploy keys and private configuration out of the repository.
 

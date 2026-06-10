@@ -29,7 +29,12 @@ def config_info(request: Request):
         "ssh_dir": None
         if runtime_config.ssh_dir is None
         else str(runtime_config.ssh_dir),
-        "private_assets": None
-        if runtime_config.private_assets is None
-        else str(runtime_config.private_assets),
+        "additional_mounts": [
+            {
+                "source": str(source),
+                "target": target,
+                "read_only": read_only,
+            }
+            for source, target, read_only in runtime_config.additional_mounts
+        ],
     }

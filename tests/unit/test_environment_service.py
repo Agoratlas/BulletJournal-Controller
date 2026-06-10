@@ -502,6 +502,47 @@ def test_install_environment_passes_runtime_env_file_to_installer(
     assert installer.install_kwargs["env_file"] == env_file
 
 
+def test_install_environment_passes_additional_mounts_to_installer(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    project_paths = make_project_paths(project_root)
+    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
+    additional_mounts = [(tmp_path / "shared", "/opt/shared", False)]
+    additional_mounts[0][0].mkdir()
+
+    class RecordingInstaller(RetryingInstaller):
+        def __init__(self):
+            super().__init__([FakeResult(returncode=0), FakeResult(returncode=0)])
+            self.install_kwargs = None
+
+        def build_install_command(self, **kwargs):
+            self.install_kwargs = kwargs
+            return ["docker", "run", "test"]
+
+    installer = RecordingInstaller()
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=cast(Any, installer),
+        runtime_config_service=DummyRuntimeConfigServiceWithMounts(additional_mounts),
+    )
+    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+    project = DummyProjectRecord()
+
+    result = service.install_environment(
+        project=cast(Any, project),
+        project_paths=cast(Any, project_paths),
+        log_writer=lambda _message: None,
+        mark_all_artifacts_stale=False,
+        reason="test",
+    )
+
+    assert result == "lock-sha"
+    assert installer.install_kwargs is not None
+    assert installer.install_kwargs["additional_mounts"] == additional_mounts
+
+
 def test_install_environment_passes_controller_uid_gid_to_installer(
     tmp_path: Path,
 ) -> None:

@@ -158,14 +158,6 @@ class InstancePaths:
         return self.local_ssh_dir / "README.md"
 
     @property
-    def local_private_assets_dir(self) -> Path:
-        return self.local_config_dir / "private_assets"
-
-    @property
-    def local_private_assets_readme_path(self) -> Path:
-        return self.local_private_assets_dir / "README.md"
-
-    @property
     def local_runtime_dir(self) -> Path:
         return self.local_config_dir
 
@@ -208,7 +200,6 @@ def init_instance_root(
     ensure_directory(paths.runtime_cache_dir)
     ensure_directory(paths.local_config_dir)
     ensure_directory(paths.local_ssh_dir)
-    ensure_directory(paths.local_private_assets_dir)
     ensure_directory(paths.local_runtime_dir)
     if not paths.controller_log_path.exists():
         paths.controller_log_path.write_text("", encoding="utf-8")
@@ -238,7 +229,6 @@ def require_instance_root(path: Path) -> InstancePaths:
             paths.local_config_dir,
             paths.local_runtime_dir,
             paths.local_ssh_dir,
-            paths.local_private_assets_dir,
             paths.instance_json_path,
             paths.state_db_path,
         ]
@@ -329,10 +319,6 @@ def _seed_local_config(paths: InstancePaths, config: InstanceConfig) -> None:
     _seed_optional_readme(
         defaults_runtime_root / "ssh" / "README.md",
         paths.local_ssh_readme_path,
-    )
-    _seed_optional_readme(
-        defaults_runtime_root / "private_assets" / "README.md",
-        paths.local_private_assets_readme_path,
     )
 
 

@@ -181,6 +181,51 @@ def test_start_project_passes_runtime_env_file_to_adapter(monkeypatch) -> None:
     assert adapter.run_kwargs["controller_token"] == "project-token"
 
 
+def test_start_project_passes_additional_mounts_to_adapter(monkeypatch) -> None:
+    adapter = FakeAdapter(
+        [SimpleNamespace(returncode=0, stdout="container-id\n", stderr="")]
+    )
+    additional_mounts = [("/srv/config", "/opt/config", True)]
+    service = RuntimeService(
+        instance_config=_instance_config(),
+        server_config=ServerConfig(session_secret="secret", cookie_secure=False),
+        adapter=cast(Any, adapter),
+        runtime_config_service=SimpleNamespace(
+            runtime_config=SimpleNamespace(
+                runtime_image_name="img",
+                container_uid=None,
+                container_gid=None,
+            ),
+            env_file=lambda: None,
+            additional_mounts=lambda: additional_mounts,
+        ),
+    )
+    monkeypatch.setattr(
+        "bulletjournal_controller.services.runtime_service.wait_for_project_health",
+        lambda **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        service,
+        "remove_container_by_name",
+        lambda _container_name: None,
+    )
+    project = SimpleNamespace(
+        project_id="study-a",
+        controller_status_token="project-token",
+        cpu_limit_millis=1000,
+        memory_limit_bytes=1024,
+        gpu_enabled=False,
+    )
+    project_paths = SimpleNamespace(root="/srv/projects/study-a")
+
+    service.start_project(
+        project=cast(Any, project), project_paths=cast(Any, project_paths)
+    )
+
+    assert adapter.run_kwargs is not None
+    assert adapter.run_kwargs["additional_mounts"] == additional_mounts
+
+
 def test_start_project_passes_controller_uid_gid_to_adapter(monkeypatch) -> None:
     adapter = FakeAdapter(
         [SimpleNamespace(returncode=0, stdout="container-id\n", stderr="")]

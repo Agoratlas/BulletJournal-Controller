@@ -19,6 +19,7 @@ The controller now expects a locally built runtime image rather than a hard-code
 - built-in defaults live under `src/bulletjournal_controller/defaults/`
 - each instance gets its own editable runtime config scaffold under `instance_root/config/runtime/`
 - deploy keys and other private assets live in that instance-local runtime config directory, not in the repo
+- `additional_mounts` can bind-mount either individual files or whole directories into installer and runtime containers
 
 Example instance-local runtime config layout:
 
@@ -33,28 +34,36 @@ instance_root/config/runtime/
 |  |- config
 |  |- known_hosts
 |  `- id_ed25519
-`- private-assets/
+`- mounts/
+   `- shared-config/
 ```
 
 Minimal `runtime.json`:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "runtime_image_name": "bulletjournal-runtime:local",
   "runtime_dockerfile": "runtime/Dockerfile",
   "runtime_build_context": ".",
   "default_dependencies_file": "default-dependencies.txt",
   "env_file": ".env",
   "ssh_dir": "ssh",
-  "private_assets_dir": "private-assets",
-  "local_bulletjournal_source": "/absolute/path/to/BulletJournal"
+  "additional_mounts": [
+    {
+      "source": "mounts/shared-config",
+      "target": "/opt/bulletjournal/shared-config",
+      "read_only": true
+    }
+  ]
 }
 ```
 
 The controller reads this directory each time it needs runtime defaults, so edits there take effect for newly created projects without restarting the controller.
 
 The controller mounts `ssh_dir` read-only at `/home/bulletjournal/.ssh` for installer and runtime containers and runs those containers as the same uid/gid as the host controller process, so private GitHub dependencies can be resolved without root-owned SSH material.
+
+If `additional_mounts` is configured, each entry adds a Docker bind mount for installer and runtime containers. `source` may point to either a file or a directory. Relative `source` paths are resolved against `instance_root/config/runtime/`, and `target` must be an absolute container path.
 
 If `env_file` is configured, the controller passes it to Docker with `--env-file` for both install jobs and runtime containers, so the variables are available to Marimo sessions and orchestrated runs.
 

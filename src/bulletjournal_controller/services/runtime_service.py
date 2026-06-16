@@ -167,6 +167,20 @@ class RuntimeService:
         self, *, projects: list[ProjectRecord], projects_repo
     ) -> None:
         for project in projects:
+            should_inspect = project.status in {
+                ProjectStatus.RUNNING.value,
+                ProjectStatus.STARTING.value,
+                ProjectStatus.STOPPING.value,
+            } or any(
+                value is not None
+                for value in (
+                    project.container_name,
+                    project.container_id,
+                    project.container_port,
+                )
+            )
+            if not should_inspect:
+                continue
             container_name = project.container_name or self.container_name_for(
                 project.project_id
             )

@@ -417,6 +417,37 @@ def test_reconcile_instance_projects_marks_missing_running_container_crashed(
     assert changes["container_name"] is None
 
 
+def test_reconcile_instance_projects_skips_stopped_projects_without_runtime_metadata() -> None:
+    adapter = FakeAdapter([])
+    service = RuntimeService(
+        instance_config=_instance_config(),
+        server_config=ServerConfig(session_secret="secret", cookie_secure=False),
+        adapter=cast(Any, adapter),
+        runtime_config_service=SimpleNamespace(
+            runtime_config=SimpleNamespace(runtime_image_name="img"),
+            additional_mounts=lambda: [],
+        ),
+    )
+    updates = []
+    projects_repo = SimpleNamespace(
+        update=lambda project_id, **changes: updates.append((project_id, changes))
+    )
+    project = SimpleNamespace(
+        project_id="study-a",
+        status="stopped",
+        container_name=None,
+        container_id=None,
+        container_port=None,
+    )
+
+    service.reconcile_instance_projects(
+        projects=[cast(Any, project)], projects_repo=projects_repo
+    )
+
+    assert adapter.commands == []
+    assert updates == []
+
+
 def test_write_crash_diagnostics_persists_inspect_and_logs(tmp_path) -> None:
     inspect_payload = [
         {

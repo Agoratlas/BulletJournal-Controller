@@ -6,6 +6,7 @@ from bulletjournal_controller.runtime.installer import InstallerRunner
 from bulletjournal_controller.services.auth_service import AuthService
 from bulletjournal_controller.services.environment_service import EnvironmentService
 from bulletjournal_controller.services.export_service import ExportService
+from bulletjournal_controller.services.job_events import JobEventBroker
 from bulletjournal_controller.services.job_service import JobService
 from bulletjournal_controller.services.metrics_service import MetricsService
 from bulletjournal_controller.services.project_service import ProjectService
@@ -91,7 +92,12 @@ class ServiceContainer:
             projects=self.projects,
             default_created_by_user_id=SYSTEM_USER_ID,
         )
-        self.job_service = JobService(instance_paths=instance_paths, jobs=self.jobs)
+        self.job_event_broker = JobEventBroker()
+        self.job_service = JobService(
+            instance_paths=instance_paths,
+            jobs=self.jobs,
+            event_broker=self.job_event_broker,
+        )
         self.job_service.bind_services(
             project_service=self.project_service,
             export_service=self.export_service,
@@ -105,6 +111,7 @@ class ServiceContainer:
             project_service=self.project_service,
             runtime_service=self.runtime_service,
             idle_timeout_seconds=self.instance_config.idle_timeout_seconds,
+            job_service=self.job_service,
         )
 
     def start(self) -> None:
@@ -118,6 +125,7 @@ class ServiceContainer:
     def stop(self) -> None:
         self.reconcile_service.stop()
         self.job_service.stop()
+        self.job_event_broker.close()
 
     async def aclose(self) -> None:
         await self.proxy_service.aclose()

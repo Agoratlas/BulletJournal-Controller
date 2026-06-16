@@ -72,3 +72,14 @@ def test_project_init_command_invokes_bulletjournal_init_without_environment() -
         "uv run --project /project bulletjournal init /project --project-id study-a --skip-environment"
         in joined
     )
+
+
+def test_validate_environment_command_uses_runtime_cli() -> None:
+    runner = InstallerRunner(DockerAdapter())
+    command = runner.build_validate_environment_command(
+        image="bulletjournal-runtime:local",
+        project_root=Path("/srv/project"),
+        network_mode="bridge",
+    )
+    joined = " ".join(command)
+    assert "/project/.runtime/venv/bin/bulletjournal --help" in joined

@@ -2,6 +2,7 @@ __all__ = [
     'AuthService',
     'EnvironmentService',
     'ExportService',
+    'JobEventBroker',
     'JobService',
     'ProjectService',
     'ProxyService',
@@ -32,6 +33,10 @@ def __getattr__(name: str):
         from bulletjournal_controller.services.export_service import ExportService
 
         return ExportService
+    if name == 'JobEventBroker':
+        from bulletjournal_controller.services.job_events import JobEventBroker
+
+        return JobEventBroker
     if name == 'JobService':
         from bulletjournal_controller.services.job_service import JobService
 

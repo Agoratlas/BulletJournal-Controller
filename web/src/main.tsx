@@ -739,22 +739,14 @@ style.textContent = `
     border-width: 4px;
     margin: 0 auto;
   }
-  .creation-status {
-    display: grid;
-    gap: 16px;
-    justify-items: start;
-  }
-  .creation-status-card {
-    padding: 18px;
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--line);
-    background: rgba(255, 255, 255, 0.45);
-  }
   .status-stack {
     display: grid;
     gap: 6px;
   }
   .job-log-preview {
+    position: relative;
+  }
+  .job-log-preview pre {
     margin: 0;
     padding: 12px 14px;
     border-radius: var(--radius-md);
@@ -768,6 +760,40 @@ style.textContent = `
     max-height: 260px;
     overflow: auto;
   }
+  .job-log-download {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: inline-grid;
+    place-items: center;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: rgba(255, 251, 243, 0.98);
+    color: rgba(31, 41, 41, 0.96);
+    cursor: pointer;
+    box-shadow: 0 10px 22px rgba(39, 42, 40, 0.22);
+    transition: transform 120ms ease, background 120ms ease, box-shadow 120ms ease;
+    z-index: 1;
+  }
+  .job-log-download:hover:not(:disabled) {
+    transform: translateY(-1px);
+    background: rgba(255, 251, 243, 1);
+    box-shadow: 0 12px 24px rgba(39, 42, 40, 0.28);
+  }
+  .job-log-download:disabled {
+    cursor: progress;
+    opacity: 0.72;
+  }
+  .job-log-download svg {
+    width: 16px;
+    height: 16px;
+    display: block;
+    transform: translateY(0.5px);
+  }
   @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
@@ -777,9 +803,11 @@ style.textContent = `
     50% { opacity: 1; transform: translateY(-1px); }
   }
   :root[data-theme='dark'] .section-toggle,
-  :root[data-theme='dark'] .creation-status-card {
-    background: rgba(255, 255, 255, 0.05);
+  :root[data-theme='dark'] .job-log-download {
+    background: rgba(24, 27, 25, 0.92);
+    color: rgba(239, 231, 216, 0.96);
     border-color: var(--line);
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.34);
   }
   .subtle-link {
     color: var(--warm);
@@ -958,6 +986,20 @@ function jobLogUrl(jobId: string, lines = 200): string {
   return `/api/v1/jobs/${jobId}/log?lines=${lines}`
 }
 
+function fullJobLogUrl(jobId: string): string {
+  return `/api/v1/jobs/${jobId}/log?full=true`
+}
+
+function sanitizeFilenamePart(value: string): string {
+  const sanitized = value.trim().replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
+  return sanitized || 'job'
+}
+
+function buildJobLogFilename(job: JobRecord): string {
+  const nameParts = [job.project_id || 'controller', job.job_type, job.job_id].map(sanitizeFilenamePart)
+  return `${nameParts.join('__')}.log`
+}
+
 function isProjectOpenable(project: Project): boolean {
   return project.status === 'running' && project.runtime.container_port !== null
 }
@@ -1029,64 +1071,112 @@ function projectWithOptimisticAction(project: Project, optimisticAction: Optimis
   }
 }
 
-function projectCreationMessage(project: Project | null): string {
-  if (!project) {
-    return 'Preparing the new project. This can take a few minutes on a fresh dependency set.'
-  }
-  if (project.status === 'creating' || project.status === 'installing') {
-    return 'Installing dependencies and preparing the runtime environment. This can take several minutes.'
-  }
-  if (project.status === 'starting') {
-    return 'Starting the container and waiting for the project to become reachable.'
-  }
-  if (project.status === 'running') {
-    return 'Project is ready. Opening it now.'
-  }
-  return `Current state: ${projectStateLabel(project)}.`
+function isActiveJobStatus(status: string): boolean {
+  return status === 'queued' || status === 'running'
 }
 
-function JobLogPreview({ job }: { job: JobRecord }) {
-  const [logText, setLogText] = useState('')
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError'
+}
+
+function useLatestValue<T>(value: T) {
+  const ref = useRef(value)
 
   useEffect(() => {
-    let cancelled = false
+    ref.current = value
+  }, [value])
 
-    async function loadLog() {
-      try {
-        const response = await fetch(jobLogUrl(job.job_id, 160), { credentials: 'include' })
-        const text = await response.text()
-        if (!cancelled) {
-          setLogText(text.trim())
-        }
-      } catch {
-        if (!cancelled) {
-          setLogText('')
-        }
+  return ref
+}
+
+function trimLogLines(lines: string[], maxLines: number): string[] {
+  if (lines.length <= maxLines) {
+    return lines
+  }
+  return lines.slice(lines.length - maxLines)
+}
+
+type JobEventMessage = {
+  type: 'job.updated' | 'job.log'
+  line?: string
+}
+
+function JobLogPreview({
+  job,
+  downloading,
+  onDownload,
+}: {
+  job: JobRecord
+  downloading?: boolean
+  onDownload?: (job: JobRecord) => void | Promise<void>
+}) {
+  const [logText, setLogText] = useState('')
+  const latestJobRef = useLatestValue(job)
+  const maxLines = 160
+
+  const loadLog = useCallback(async (signal: AbortSignal) => {
+    try {
+      const response = await fetch(jobLogUrl(latestJobRef.current.job_id, maxLines), { credentials: 'include', signal })
+      const text = await response.text()
+      setLogText(text.trim())
+    } catch (nextError) {
+      if (!isAbortError(nextError)) {
+        setLogText('')
       }
     }
+  }, [latestJobRef])
 
-    void loadLog()
-    if (job.status !== 'queued' && job.status !== 'running') {
-      return () => {
-        cancelled = true
+  useEffect(() => {
+    const controller = new AbortController()
+    void loadLog(controller.signal)
+    return () => controller.abort()
+  }, [job.job_id, loadLog])
+
+  useJobEvents([job.job_id], useCallback((eventJob, event) => {
+    if (eventJob.job_id !== job.job_id) {
+      return
+    }
+    if (event?.type === 'job.log') {
+      const line = typeof event.line === 'string' ? event.line : ''
+      if (!line) {
+        return
       }
+      setLogText((current) => trimLogLines([...(current ? current.split('\n') : []), line], maxLines).join('\n'))
+      return
     }
-
-    const id = window.setInterval(() => {
-      void loadLog()
-    }, 2000)
-
-    return () => {
-      cancelled = true
-      window.clearInterval(id)
+    if (!isActiveJobStatus(eventJob.status)) {
+      const controller = new AbortController()
+      void loadLog(controller.signal)
     }
-  }, [job.job_id, job.status])
+  }, [job.job_id, loadLog]))
 
   if (!logText) {
     return null
   }
 
-  return <pre className="job-log-preview">{logText}</pre>
+  return (
+    <div className="job-log-preview">
+      {onDownload ? (
+        <button
+          className="job-log-download"
+          type="button"
+          aria-label={downloading ? 'Downloading log' : 'Download log'}
+          title={downloading ? 'Downloading log' : 'Download full log'}
+          disabled={!!downloading}
+          onClick={() => {
+            void onDownload(job)
+          }}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M8 2.5v7" />
+            <path d="m5.25 7.75 2.75 2.75 2.75-2.75" />
+            <path d="M3 13.5h10" />
+          </svg>
+        </button>
+      ) : null}
+      <pre>{logText}</pre>
+    </div>
+  )
 }
 
 function useAppState(): AppState {
@@ -1097,17 +1187,182 @@ function useAppState(): AppState {
   return context
 }
 
-function usePolling(callback: () => void | Promise<void>, delay: number | null, deps: React.DependencyList) {
+function usePolling(
+  callback: (signal: AbortSignal) => void | Promise<void>,
+  delay: number | null,
+  deps: React.DependencyList,
+  options?: {
+    hiddenDelay?: number | null
+    errorDelay?: number | null
+  },
+) {
+  const callbackRef = useRef(callback)
+
+  useEffect(() => {
+    callbackRef.current = callback
+  }, [callback])
+
   useEffect(() => {
     if (delay === null) {
       return
     }
-    void callback()
-    const id = window.setInterval(() => {
-      void callback()
-    }, delay)
-    return () => window.clearInterval(id)
+
+    let cancelled = false
+    let timeoutId: number | null = null
+    let controller: AbortController | null = null
+    let inFlight = false
+    let rerunWhenVisible = false
+
+    const nextDelay = () => document.hidden ? (options?.hiddenDelay ?? delay) : delay
+
+    const schedule = (ms: number | null | undefined) => {
+      if (cancelled || ms === null || ms === undefined) {
+        return
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId)
+      }
+      timeoutId = window.setTimeout(() => {
+        timeoutId = null
+        void run()
+      }, ms)
+    }
+
+    const run = async () => {
+      if (cancelled || inFlight) {
+        return
+      }
+      inFlight = true
+      controller = new AbortController()
+      try {
+        await callbackRef.current(controller.signal)
+        if (!cancelled) {
+          schedule(nextDelay())
+        }
+      } catch (nextError) {
+        if (!cancelled && !isAbortError(nextError)) {
+          const errorDelay = document.hidden ? (options?.hiddenDelay ?? options?.errorDelay ?? delay) : (options?.errorDelay ?? delay)
+          schedule(errorDelay)
+        }
+      } finally {
+        inFlight = false
+        controller = null
+        if (!cancelled && rerunWhenVisible && !document.hidden) {
+          rerunWhenVisible = false
+          schedule(0)
+        }
+      }
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        return
+      }
+      if (inFlight) {
+        rerunWhenVisible = true
+        return
+      }
+      schedule(0)
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    void run()
+
+    return () => {
+      cancelled = true
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId)
+      }
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      controller?.abort()
+    }
   }, deps)
+}
+
+function useJobEvents(
+  jobIds: string[],
+  onJobUpdate: (job: JobRecord, event?: JobEventMessage) => void,
+) {
+  const onJobUpdateRef = useRef(onJobUpdate)
+  const jobIdsKey = useMemo(() => Array.from(new Set(jobIds)).sort().join('\u0000'), [jobIds])
+
+  useEffect(() => {
+    onJobUpdateRef.current = onJobUpdate
+  }, [onJobUpdate])
+
+  useEffect(() => {
+    if (!jobIdsKey) {
+      return
+    }
+
+    const trackedJobIds = jobIdsKey.split('\u0000')
+    const trackedJobIdSet = new Set(trackedJobIds)
+    const controller = new AbortController()
+    let cancelled = false
+    const source = new EventSource('/api/v1/events/jobs')
+
+    const loadTrackedJobs = async () => {
+      const responses = await Promise.allSettled(trackedJobIds.map((jobId) => request<JobRecord>(`/api/v1/jobs/${jobId}`, { signal: controller.signal })))
+      if (cancelled) {
+        return
+      }
+      for (const result of responses) {
+        if (result.status === 'fulfilled') {
+          onJobUpdateRef.current(result.value)
+        }
+      }
+    }
+
+    const handleJobLog = (rawEvent: Event) => {
+      const event = rawEvent as MessageEvent<string>
+      try {
+        const payload = JSON.parse(event.data) as { job_id: string; line?: string }
+        if (!trackedJobIdSet.has(payload.job_id)) {
+          return
+        }
+        onJobUpdateRef.current({
+          job_id: payload.job_id,
+          project_id: null,
+          job_type: '',
+          status: 'running',
+          requested_by_user_id: '',
+          payload_json: '',
+          result_json: null,
+          log_path: '',
+          created_at: '',
+          started_at: null,
+          finished_at: null,
+          error_message: null,
+        }, { type: 'job.log', line: payload.line })
+      } catch {
+        // Ignore malformed events and wait for the next update.
+      }
+    }
+
+    const handleJobUpdated = (rawEvent: Event) => {
+      const event = rawEvent as MessageEvent<string>
+      try {
+        const job = JSON.parse(event.data) as JobRecord
+        if (trackedJobIdSet.has(job.job_id)) {
+          onJobUpdateRef.current(job, { type: 'job.updated' })
+        }
+      } catch {
+        // Ignore malformed events and wait for the next update.
+      }
+    }
+
+    void loadTrackedJobs()
+    source.addEventListener('job.log', handleJobLog)
+    source.addEventListener('job.updated', handleJobUpdated)
+
+    return () => {
+      cancelled = true
+      controller.abort()
+      source.removeEventListener('job.log', handleJobLog)
+      source.removeEventListener('job.updated', handleJobUpdated)
+      source.close()
+    }
+  }, [jobIdsKey])
 }
 
 function AppProvider({ children }: { children: React.ReactNode }) {
@@ -1331,25 +1586,28 @@ function DashboardPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
+  const pendingDeletionsRef = useLatestValue(pendingDeletions)
 
-  const fetchDashboard = useCallback(async () => {
+  const fetchDashboard = useCallback(async (signal?: AbortSignal) => {
     try {
       const [nextProjects, nextSystemInfo] = await Promise.all([
-        request<Project[]>('/api/v1/projects'),
-        request<SystemInfo>('/api/v1/system/info'),
+        request<Project[]>('/api/v1/projects', { signal }),
+        request<SystemInfo>('/api/v1/system/info', { signal }),
       ])
       setProjects(nextProjects)
       setSystemInfo(nextSystemInfo)
       setHiddenProjectIds((current) => current.filter((projectId) => nextProjects.some((project) => project.project_id === projectId)))
       setError(null)
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Failed to load dashboard.')
+      if (!isAbortError(nextError)) {
+        setError(nextError instanceof Error ? nextError.message : 'Failed to load dashboard.')
+      }
     } finally {
       setLoading(false)
     }
   }, [])
 
-  usePolling(fetchDashboard, 5000, [fetchDashboard])
+  usePolling((signal) => fetchDashboard(signal), activeJobIds.length > 0 ? 5000 : 15000, [activeJobIds.length, fetchDashboard], { hiddenDelay: 60000, errorDelay: 15000 })
 
   useEffect(() => {
     if (!location.state || typeof location.state !== 'object') {
@@ -1368,56 +1626,29 @@ function DashboardPage() {
     navigate(location.pathname, { replace: true, state: null })
   }, [fetchDashboard, location.pathname, location.state, navigate])
 
-  useEffect(() => {
-    if (activeJobIds.length === 0) {
+  const handleTrackedJobUpdate = useCallback((job: JobRecord) => {
+    if (isActiveJobStatus(job.status)) {
+      setActiveJobIds((current) => current.includes(job.job_id) ? current : [...current, job.job_id])
       return
     }
-    const id = window.setInterval(async () => {
-      const responses = await Promise.allSettled(activeJobIds.map((jobId) => request<JobRecord>(`/api/v1/jobs/${jobId}`)))
-      const stillActive: string[] = []
-      let shouldRefresh = false
-      const completedDeleteJobs: string[] = []
-      const failedDeleteJobs: Array<{ jobId: string; projectId: string; message: string }> = []
-      for (const result of responses) {
-        if (result.status === 'fulfilled') {
-          if (result.value.status === 'queued' || result.value.status === 'running') {
-            stillActive.push(result.value.job_id)
-          } else {
-            shouldRefresh = true
-            const deletedProjectId = pendingDeletions[result.value.job_id]
-            if (deletedProjectId) {
-              completedDeleteJobs.push(result.value.job_id)
-              if (result.value.status !== 'succeeded') {
-                failedDeleteJobs.push({
-                  jobId: result.value.job_id,
-                  projectId: deletedProjectId,
-                  message: result.value.error_message || `Failed to delete project ${deletedProjectId}.`,
-                })
-              }
-            }
-          }
-        }
+
+    setActiveJobIds((current) => current.filter((jobId) => jobId !== job.job_id))
+    const deletedProjectId = pendingDeletionsRef.current[job.job_id]
+    if (deletedProjectId) {
+      setPendingDeletions((current) => {
+        const next = { ...current }
+        delete next[job.job_id]
+        return next
+      })
+      if (job.status !== 'succeeded') {
+        setHiddenProjectIds((current) => current.filter((projectId) => projectId !== deletedProjectId))
+        setActionError(job.error_message || `Failed to delete project ${deletedProjectId}.`)
       }
-      setActiveJobIds(stillActive)
-      if (completedDeleteJobs.length > 0) {
-        setPendingDeletions((current) => {
-          const next = { ...current }
-          for (const jobId of completedDeleteJobs) {
-            delete next[jobId]
-          }
-          return next
-        })
-      }
-      if (failedDeleteJobs.length > 0) {
-        setHiddenProjectIds((current) => current.filter((projectId) => !failedDeleteJobs.some((entry) => entry.projectId === projectId)))
-        setActionError(failedDeleteJobs[0].message)
-      }
-      if (shouldRefresh) {
-        await fetchDashboard()
-      }
-    }, 2000)
-    return () => window.clearInterval(id)
-  }, [activeJobIds, fetchDashboard, pendingDeletions])
+    }
+    void fetchDashboard()
+  }, [fetchDashboard])
+
+  useJobEvents(activeJobIds, handleTrackedJobUpdate)
 
   useEffect(() => {
     setOptimisticActions((current) => {
@@ -1646,10 +1877,6 @@ function DashboardPage() {
         <CreateProjectModal
           systemInfo={systemInfo}
           onClose={() => setShowCreateModal(false)}
-          onJobQueued={(projectId, jobId) => {
-            setActiveJobIds((current) => Array.from(new Set([...current, jobId])))
-            void fetchDashboard()
-          }}
         />
       ) : null}
     </AppChrome>
@@ -1659,12 +1886,11 @@ function DashboardPage() {
 function CreateProjectModal({
   systemInfo,
   onClose,
-  onJobQueued,
 }: {
   systemInfo: SystemInfo
   onClose: () => void
-  onJobQueued: (projectId: string, jobId: string) => void
 }) {
+  const navigate = useNavigate()
   const [form, setForm] = useState({
     project_id: '',
     custom_requirements_text: systemInfo.default_dependencies_text,
@@ -1674,73 +1900,13 @@ function CreateProjectModal({
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [creationJobId, setCreationJobId] = useState<string | null>(null)
-  const [creationJob, setCreationJob] = useState<JobRecord | null>(null)
-  const [createdProjectId, setCreatedProjectId] = useState<string | null>(null)
-  const [createdProject, setCreatedProject] = useState<Project | null>(null)
   const [showLimitsForm, setShowLimitsForm] = useState(false)
-  const openedWindowRef = useRef<Window | null>(null)
-
-  const creationActive = creationJobId !== null && createdProjectId !== null
-
-  useEffect(() => {
-    if (!creationJobId || !createdProjectId) {
-      return
-    }
-
-    let cancelled = false
-    const id = window.setInterval(async () => {
-      try {
-        const [job, project] = await Promise.all([
-          request<JobRecord>(`/api/v1/jobs/${creationJobId}`),
-          request<Project>(`/api/v1/projects/${createdProjectId}`),
-        ])
-        if (cancelled) {
-          return
-        }
-        setCreationJob(job)
-        setCreatedProject(project)
-        if (isProjectOpenable(project)) {
-          if (openedWindowRef.current && !openedWindowRef.current.closed) {
-            openedWindowRef.current.location.href = `/p/${project.project_id}/`
-          } else {
-            window.open(`/p/${project.project_id}/`, '_blank', 'noreferrer')
-          }
-          onClose()
-          return
-        }
-        if (job.status === 'failed' || job.status === 'cancelled' || job.status === 'aborted_on_restart') {
-          setError(job.error_message || 'Failed to create project.')
-          if (openedWindowRef.current && !openedWindowRef.current.closed) {
-            openedWindowRef.current.close()
-          }
-          openedWindowRef.current = null
-          setCreationJobId(null)
-          setCreatedProjectId(null)
-        }
-      } catch (nextError) {
-        if (!cancelled) {
-          setError(nextError instanceof Error ? nextError.message : 'Failed to monitor project creation.')
-        }
-      }
-    }, 2000)
-
-    return () => {
-      cancelled = true
-      window.clearInterval(id)
-    }
-  }, [createdProjectId, creationJobId, onClose])
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSubmitting(true)
     setError(null)
     try {
-      openedWindowRef.current = window.open('', '_blank')
-      if (openedWindowRef.current && !openedWindowRef.current.closed) {
-        openedWindowRef.current.document.title = 'Preparing project'
-        openedWindowRef.current.document.body.innerHTML = '<main style="font-family: system-ui, sans-serif; padding: 24px; color: #1f2929;"><h1 style="margin: 0 0 12px; font-size: 20px;">Preparing your BulletJournal project</h1><p style="margin: 0; line-height: 1.6;">The controller is installing dependencies and starting the container. This tab will redirect automatically when the project is ready.</p></main>'
-      }
       const response = await request<{ project: { project_id: string }; job: { job_id: string } }>('/api/v1/projects', {
         method: 'POST',
         body: JSON.stringify({
@@ -1751,16 +1917,14 @@ function CreateProjectModal({
           gpu_enabled: form.gpu_enabled,
         }),
       })
-      setCreatedProjectId(response.project.project_id)
-      setCreationJobId(response.job.job_id)
-      setCreationJob(null)
-      onJobQueued(response.project.project_id, response.job.job_id)
+      navigate(`/projects/${response.project.project_id}`, {
+        state: {
+          createdProjectId: response.project.project_id,
+          createJobId: response.job.job_id,
+        },
+      })
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Failed to create project.')
-      if (openedWindowRef.current && !openedWindowRef.current.closed) {
-        openedWindowRef.current.close()
-      }
-      openedWindowRef.current = null
     } finally {
       setSubmitting(false)
     }
@@ -1768,7 +1932,7 @@ function CreateProjectModal({
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={() => {
-      if (!creationActive && !submitting) {
+      if (!submitting) {
         onClose()
       }
     }}>
@@ -1777,82 +1941,59 @@ function CreateProjectModal({
           <div>
             <div className="eyebrow">Create Project</div>
             <h2>Provision a managed BulletJournal runtime</h2>
-            <p className="section-copy">Project ids become both filesystem roots and runtime identifiers. Creation installs dependencies, starts the container, and opens the project when it is ready.</p>
+            <p className="section-copy">Project ids become both filesystem roots and runtime identifiers. Creation installs dependencies and starts the container in the background after the project record is created.</p>
           </div>
-          <button className="close-button" type="button" onClick={onClose} aria-label="Close dialog" disabled={creationActive || submitting}>×</button>
+          <button className="close-button" type="button" onClick={onClose} aria-label="Close dialog" disabled={submitting}>×</button>
         </div>
         <div className="modal-body">
-          {creationActive ? (
-            <div className="creation-status">
-              <div className="loading-inline">
-                <span className="spinner large" aria-hidden="true" />
-                <div className="status-stack">
-                  <strong>Creating <code>{createdProjectId}</code></strong>
-                  <span className="muted">{projectCreationMessage(createdProject)}</span>
-                </div>
+          <form className="layout-grid" onSubmit={onSubmit}>
+            <div className="field-grid">
+              <div className="field">
+                <label htmlFor="create-project-id">Project id</label>
+                <input id="create-project-id" value={form.project_id} onChange={(event) => setForm((current) => ({ ...current, project_id: event.target.value }))} placeholder="study-a" required />
               </div>
-              <div className="creation-status-card status-stack">
-                <span className="muted">Current state</span>
-                <div className="badges">
-                  <span className={classNames('badge', createdProject ? projectStateTone(createdProject) : 'neutral')}>
-                    {createdProject ? projectStateLabel(createdProject) : 'creating'}
+              <div className="field-full">
+                <label htmlFor="create-dependencies">Dependency text</label>
+                <textarea id="create-dependencies" value={form.custom_requirements_text} onChange={(event) => setForm((current) => ({ ...current, custom_requirements_text: event.target.value }))} />
+                <span className="muted">The dependency text starts from the controller defaults. Edit the BulletJournal line there if you want a different package source or pinned version.</span>
+              </div>
+              <div className="field-full collapsible-panel">
+                <button className="button-secondary section-toggle" type="button" onClick={() => setShowLimitsForm((current) => !current)}>
+                  <span className="status-stack">
+                    <strong>Runtime limits</strong>
+                    <span className="muted">CPU {formatCpuLimit(parseCpuInputToMillis(form.cpu_limit_input))} · Memory {formatMemoryLimit(parseMemoryInputToBytes(form.memory_limit_input))} · GPU {form.gpu_enabled ? 'On' : 'Off'}</span>
                   </span>
-                </div>
-                <span className="muted">Keep this dialog open while the controller installs dependencies and starts the container.</span>
-              </div>
-              {creationJob ? <JobLogPreview job={creationJob} /> : null}
-              {error ? <div className="error-banner">{error}</div> : null}
-            </div>
-          ) : (
-            <form className="layout-grid" onSubmit={onSubmit}>
-              <div className="field-grid">
-                <div className="field">
-                  <label htmlFor="create-project-id">Project id</label>
-                  <input id="create-project-id" value={form.project_id} onChange={(event) => setForm((current) => ({ ...current, project_id: event.target.value }))} placeholder="study-a" required />
-                </div>
-                <div className="field-full">
-                  <label htmlFor="create-dependencies">Dependency text</label>
-                  <textarea id="create-dependencies" value={form.custom_requirements_text} onChange={(event) => setForm((current) => ({ ...current, custom_requirements_text: event.target.value }))} />
-                  <span className="muted">The dependency text starts from the controller defaults. Edit the BulletJournal line there if you want a different package source or pinned version.</span>
-                </div>
-                <div className="field-full collapsible-panel">
-                  <button className="button-secondary section-toggle" type="button" onClick={() => setShowLimitsForm((current) => !current)}>
-                    <span className="status-stack">
-                      <strong>Runtime limits</strong>
-                      <span className="muted">CPU {formatCpuLimit(parseCpuInputToMillis(form.cpu_limit_input))} · Memory {formatMemoryLimit(parseMemoryInputToBytes(form.memory_limit_input))} · GPU {form.gpu_enabled ? 'On' : 'Off'}</span>
-                    </span>
-                    <span>{showLimitsForm ? 'Hide' : 'Edit'}</span>
-                  </button>
-                  {showLimitsForm ? (
-                    <div className="field-grid">
-                      <div className="field">
-                        <label htmlFor="create-cpu">CPU limit (CPUs)</label>
-                        <input id="create-cpu" type="number" min={0} step="0.1" value={form.cpu_limit_input} onChange={(event) => setForm((current) => ({ ...current, cpu_limit_input: event.target.value }))} placeholder="Unlimited" />
-                        <span className="muted">Leave blank for no CPU limit.</span>
-                      </div>
-                      <div className="field">
-                        <label htmlFor="create-memory">Memory limit (GB)</label>
-                        <input id="create-memory" type="number" min={0} step="0.5" value={form.memory_limit_input} onChange={(event) => setForm((current) => ({ ...current, memory_limit_input: event.target.value }))} placeholder="Unlimited" />
-                        <span className="muted">Leave blank for no memory limit.</span>
-                      </div>
-                      <div className="field-full">
-                        <label>GPU access</label>
-                        <div className="checkbox-row">
-                          <input id="create-gpu" type="checkbox" checked={form.gpu_enabled} onChange={(event) => setForm((current) => ({ ...current, gpu_enabled: event.target.checked }))} />
-                          <label htmlFor="create-gpu">Enable GPU if supported on the host</label>
-                        </div>
+                  <span>{showLimitsForm ? 'Hide' : 'Edit'}</span>
+                </button>
+                {showLimitsForm ? (
+                  <div className="field-grid">
+                    <div className="field">
+                      <label htmlFor="create-cpu">CPU limit (CPUs)</label>
+                      <input id="create-cpu" type="number" min={0} step="0.1" value={form.cpu_limit_input} onChange={(event) => setForm((current) => ({ ...current, cpu_limit_input: event.target.value }))} placeholder="Unlimited" />
+                      <span className="muted">Leave blank for no CPU limit.</span>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="create-memory">Memory limit (GB)</label>
+                      <input id="create-memory" type="number" min={0} step="0.5" value={form.memory_limit_input} onChange={(event) => setForm((current) => ({ ...current, memory_limit_input: event.target.value }))} placeholder="Unlimited" />
+                      <span className="muted">Leave blank for no memory limit.</span>
+                    </div>
+                    <div className="field-full">
+                      <label>GPU access</label>
+                      <div className="checkbox-row">
+                        <input id="create-gpu" type="checkbox" checked={form.gpu_enabled} onChange={(event) => setForm((current) => ({ ...current, gpu_enabled: event.target.checked }))} />
+                        <label htmlFor="create-gpu">Enable GPU if supported on the host</label>
                       </div>
                     </div>
-                  ) : null}
-                </div>
+                  </div>
+                ) : null}
               </div>
-              {error ? <div className="error-banner">{error}</div> : null}
-              <div className="button-row">
-                <button className="button" type="submit" disabled={submitting}>{submitting ? 'Queueing...' : 'Create Project'}</button>
-                <button className="button-secondary" type="button" onClick={onClose}>Cancel</button>
-              </div>
-            </form>
-          )}
+            </div>
+            {error ? <div className="error-banner">{error}</div> : null}
+            <div className="button-row">
+              <button className="button" type="submit" disabled={submitting}>{submitting ? 'Queueing...' : 'Create Project'}</button>
+              <button className="button-secondary" type="button" onClick={onClose} disabled={submitting}>Cancel</button>
+            </div>
+          </form>
         </div>
       </section>
     </div>
@@ -1862,6 +2003,7 @@ function CreateProjectModal({
 function ProjectPage() {
   const { projectId = '' } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1871,6 +2013,7 @@ function ProjectPage() {
   const [environmentForm, setEnvironmentForm] = useState({
     python_version: '',
     custom_requirements_text: '',
+    mark_all_artifacts_stale: true,
     restart_if_running: true,
   })
   const [limitsForm, setLimitsForm] = useState({
@@ -1881,28 +2024,33 @@ function ProjectPage() {
   const [savingEnvironment, setSavingEnvironment] = useState(false)
   const [savingLimits, setSavingLimits] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [downloadingJobIds, setDownloadingJobIds] = useState<string[]>([])
   const [showLimitsEditor, setShowLimitsEditor] = useState(false)
   const [environmentSyncPending, setEnvironmentSyncPending] = useState(false)
   const [limitsDirty, setLimitsDirty] = useState(false)
   const [environmentActionFeedback, setEnvironmentActionFeedback] = useState<{ tone: 'pending' | 'success', message: string } | null>(null)
-
   const environmentInputsDirty = !!project && (
     environmentForm.python_version !== project.python_version
     || environmentForm.custom_requirements_text !== project.custom_requirements_text
   )
+  const projectIdRef = useLatestValue(projectId)
+  const environmentInputsDirtyRef = useLatestValue(environmentInputsDirty)
+  const environmentSyncPendingRef = useLatestValue(environmentSyncPending)
+  const limitsDirtyRef = useLatestValue(limitsDirty)
 
-  const fetchProject = useCallback(async () => {
+  const fetchProject = useCallback(async (signal?: AbortSignal) => {
     try {
-      const nextProject = await request<Project>(`/api/v1/projects/${projectId}`)
+      const nextProject = await request<Project>(`/api/v1/projects/${projectIdRef.current}`, { signal })
       setProject(nextProject)
-      if (!environmentInputsDirty && !environmentSyncPending) {
+      if (!environmentInputsDirtyRef.current && !environmentSyncPendingRef.current) {
         setEnvironmentForm((current) => ({
           python_version: nextProject.python_version,
           custom_requirements_text: nextProject.custom_requirements_text,
+          mark_all_artifacts_stale: current.mark_all_artifacts_stale,
           restart_if_running: current.restart_if_running,
         }))
       }
-      if (!limitsDirty) {
+      if (!limitsDirtyRef.current) {
         setLimitsForm({
           cpu_limit_input: formatCpuInputValue(nextProject.limits.cpu_limit_millis),
           memory_limit_input: formatMemoryInputValue(nextProject.limits.memory_limit_bytes),
@@ -1911,13 +2059,32 @@ function ProjectPage() {
       }
       setError(null)
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Failed to load project.')
+      if (!isAbortError(nextError)) {
+        setError(nextError instanceof Error ? nextError.message : 'Failed to load project.')
+      }
     } finally {
       setLoading(false)
     }
-  }, [environmentInputsDirty, environmentSyncPending, limitsDirty, projectId])
+  }, [environmentInputsDirtyRef, environmentSyncPendingRef, limitsDirtyRef, projectIdRef])
 
-  usePolling(fetchProject, environmentInputsDirty || environmentSyncPending || limitsDirty ? null : 5000, [environmentInputsDirty, environmentSyncPending, fetchProject, limitsDirty])
+  usePolling((signal) => fetchProject(signal), environmentInputsDirty || environmentSyncPending || limitsDirty ? null : (activeJobIds.length > 0 ? 5000 : 15000), [activeJobIds.length, environmentInputsDirty, environmentSyncPending, fetchProject, limitsDirty], { hiddenDelay: 60000, errorDelay: 15000 })
+
+  useEffect(() => {
+    if (!location.state || typeof location.state !== 'object') {
+      return
+    }
+
+    const state = location.state as { createdProjectId?: unknown; createJobId?: unknown }
+    const createdProjectId = typeof state.createdProjectId === 'string' ? state.createdProjectId : null
+    const createJobId = typeof state.createJobId === 'string' ? state.createJobId : null
+    if (createdProjectId !== projectId || !createJobId) {
+      return
+    }
+
+    setFlash(`Queued create_project for ${createdProjectId}.`)
+    setActiveJobIds((current) => Array.from(new Set([...current, createJobId])))
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.pathname, location.state, navigate, projectId])
 
   useEffect(() => {
     if (!optimisticAction?.jobId || activeJobIds.includes(optimisticAction.jobId)) {
@@ -1936,31 +2103,17 @@ function ProjectPage() {
     return () => window.clearTimeout(id)
   }, [environmentActionFeedback])
 
-  useEffect(() => {
-    if (activeJobIds.length === 0) {
+  const handleTrackedJobUpdate = useCallback((job: JobRecord) => {
+    if (isActiveJobStatus(job.status)) {
+      setActiveJobIds((current) => current.includes(job.job_id) ? current : [...current, job.job_id])
       return
     }
-    const id = window.setInterval(async () => {
-      const responses = await Promise.allSettled(activeJobIds.map((jobId) => request<JobRecord>(`/api/v1/jobs/${jobId}`)))
-      const stillActive: string[] = []
-      let changed = false
-      for (const result of responses) {
-        if (result.status === 'fulfilled') {
-          if (result.value.status === 'queued' || result.value.status === 'running') {
-            stillActive.push(result.value.job_id)
-          } else {
-            changed = true
-          }
-        }
-      }
-      setActiveJobIds(stillActive)
-      if (changed) {
-        await fetchProject()
-        setEnvironmentSyncPending(false)
-      }
-    }, 2000)
-    return () => window.clearInterval(id)
-  }, [activeJobIds, fetchProject])
+    setActiveJobIds((current) => current.filter((jobId) => jobId !== job.job_id))
+    setEnvironmentSyncPending(false)
+    void fetchProject()
+  }, [fetchProject])
+
+  useJobEvents(activeJobIds, handleTrackedJobUpdate)
 
   async function queueAction(action: 'start' | 'stop') {
     setOptimisticAction({ action })
@@ -1997,7 +2150,10 @@ function ProjectPage() {
     try {
       const response = await request<ProjectActionJobResponse>(`/api/v1/projects/${projectId}/${shouldSaveAndReinstall ? 'update-environment' : 'reinstall-environment'}`, {
         method: 'POST',
-        body: JSON.stringify(shouldSaveAndReinstall ? environmentForm : { restart_if_running: environmentForm.restart_if_running }),
+        body: JSON.stringify(shouldSaveAndReinstall ? environmentForm : {
+          restart_if_running: environmentForm.restart_if_running,
+          mark_all_artifacts_stale: environmentForm.mark_all_artifacts_stale,
+        }),
       })
       if (!response.job) {
         throw new Error('Environment action did not return a queued job.')
@@ -2064,6 +2220,30 @@ function ProjectPage() {
     }
   }
 
+  async function downloadJobLog(job: JobRecord) {
+    setDownloadingJobIds((current) => current.includes(job.job_id) ? current : [...current, job.job_id])
+    try {
+      const response = await fetch(fullJobLogUrl(job.job_id), { credentials: 'include' })
+      if (!response.ok) {
+        throw new Error(`Failed to download log (${response.status}).`)
+      }
+      const text = await response.text()
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+      const objectUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = buildJobLogFilename(job)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(objectUrl)
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Failed to download job log.')
+    } finally {
+      setDownloadingJobIds((current) => current.filter((jobId) => jobId !== job.job_id))
+    }
+  }
+
   if (loading) {
     return (
       <AppChrome>
@@ -2091,7 +2271,7 @@ function ProjectPage() {
         <div className="nav-pills">
           <Link className="pill-link" to="/">Back to dashboard</Link>
           <span className="eyebrow">Project detail</span>
-          {activeJobIds.length > 0 ? <span className="badge">Polling {activeJobIds.length} active job{activeJobIds.length === 1 ? '' : 's'}</span> : null}
+          {activeJobIds.length > 0 ? <span className="badge">Watching {activeJobIds.length} active job{activeJobIds.length === 1 ? '' : 's'}</span> : null}
         </div>
         <div className="button-row">
           {isProjectOpenable(displayProject) ? <a className="button-secondary" href={`/p/${displayProject.project_id}/`} target="_blank" rel="noreferrer">Open Project</a> : null}
@@ -2180,6 +2360,15 @@ function ProjectPage() {
                         setEnvironmentForm((current) => ({ ...current, restart_if_running: event.target.checked }))
                       }} />
                       <label htmlFor="env-restart">Restart automatically if currently running</label>
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label>Artifact invalidation</label>
+                    <div className="checkbox-row">
+                      <input id="env-mark-stale" type="checkbox" checked={environmentForm.mark_all_artifacts_stale} onChange={(event) => {
+                        setEnvironmentForm((current) => ({ ...current, mark_all_artifacts_stale: event.target.checked }))
+                      }} />
+                      <label htmlFor="env-mark-stale">Mark artifacts stale after reinstall</label>
                     </div>
                   </div>
                 </div>
@@ -2287,7 +2476,13 @@ function ProjectPage() {
                     <span className="muted">{job.job_id}</span>
                     <span className="muted">Created {formatDateTime(job.created_at)}</span>
                     <span className="muted">Duration {formatDurationBetween(job.started_at || job.created_at, job.finished_at)}</span>
-                    {job.job_type === 'create_project' || job.job_type === 'update_environment' || job.job_type === 'reinstall_environment' ? <JobLogPreview job={job} /> : null}
+                    {job.job_type === 'create_project' || job.job_type === 'update_environment' || job.job_type === 'reinstall_environment' ? (
+                      <JobLogPreview
+                        job={job}
+                        downloading={downloadingJobIds.includes(job.job_id)}
+                        onDownload={job.log_path ? downloadJobLog : undefined}
+                      />
+                    ) : null}
                     {job.error_message ? <div className="error-banner">{job.error_message}</div> : null}
                   </article>
                 ))}

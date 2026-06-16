@@ -247,6 +247,8 @@ class EnvironmentService:
             f"{source_block}"
             "[tool.uv]\n"
             "package = false\n\n"
+            "[tool.marimo.display]\n"
+            'theme = "system"\n\n'
             "[tool.setuptools]\n"
             "packages = []\n\n"
             "[tool.bulletjournal_controller]\n"
@@ -348,6 +350,26 @@ class EnvironmentService:
         if result.returncode != 0:
             raise RuntimeError("Environment install failed.")
         if mark_all_artifacts_stale:
+            validate_command = self.installer.build_validate_environment_command(
+                image=self.runtime_config_service.runtime_config.runtime_image_name,
+                project_root=project_paths.root,
+                network_mode=self.instance_config.docker_network_mode,
+                env_file=self.runtime_config_service.env_file(),
+                additional_mounts=self.runtime_config_service.additional_mounts(),
+                user_uid=self.runtime_config_service.runtime_config.container_uid,
+                user_gid=self.runtime_config_service.runtime_config.container_gid,
+            )
+            log_writer(f"validate environment command: {' '.join(validate_command)}")
+            validate_result = self._run_with_mount_retry(
+                command=validate_command,
+                mount_paths=common_mount_paths,
+                log_writer=log_writer,
+            )
+            if validate_result.returncode != 0:
+                log_writer(
+                    "Skipping artifact invalidation because the runtime environment failed validation after install."
+                )
+                return self.compute_lock_sha256(project_paths.uv_lock_path)
             stale_command = self.installer.build_mark_stale_command(
                 image=self.runtime_config_service.runtime_config.runtime_image_name,
                 project_root=project_paths.root,

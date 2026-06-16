@@ -27,6 +27,14 @@ class DummyProjectService:
         self.crashed.append(project_id)
 
 
+class DummyJobService:
+    def __init__(self):
+        self.stop_requests = []
+
+    def ensure_project_stopped_via_job(self, project_id: str, *, reason: str):
+        self.stop_requests.append((project_id, reason))
+
+
 class DummyRuntimeService:
     def __init__(self, status_payload):
         self.status_payload = status_payload
@@ -86,10 +94,12 @@ def test_reconcile_stops_project_after_idle_timeout_elapsed() -> None:
     }
     project_service = DummyProjectService(project)
     runtime_service = DummyRuntimeService(status_payload)
+    job_service = DummyJobService()
     service = ReconcileService(
         project_service=project_service,
         runtime_service=runtime_service,
         idle_timeout_seconds=86400,
+        job_service=job_service,
     )
 
     import bulletjournal_controller.services.reconcile_service as reconcile_module
@@ -103,7 +113,8 @@ def test_reconcile_stops_project_after_idle_timeout_elapsed() -> None:
     finally:
         reconcile_module.utc_now = original_utc_now
 
-    assert project_service.stopped == [("study-a", "idle_timeout")]
+    assert project_service.stopped == []
+    assert job_service.stop_requests == [("study-a", "idle_timeout")]
 
 
 def test_reconcile_marks_project_crashed_when_status_fetch_fails_for_missing_container() -> (

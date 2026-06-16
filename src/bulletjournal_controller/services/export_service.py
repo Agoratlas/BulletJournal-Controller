@@ -40,6 +40,7 @@ EXPORTABLE_NAMES = [
     "uv.lock",
 ]
 DEPENDENCY_NAME_PATTERN = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+MARIMO_DIRNAME = "__marimo__"
 
 
 class ExportService:
@@ -75,6 +76,8 @@ class ExportService:
             archive.writestr(
                 "export_manifest.json", json.dumps(manifest, indent=2) + "\n"
             )
+            if not include_artifacts:
+                archive.writestr("project/artifacts/objects/", b"")
             for name in EXPORTABLE_NAMES:
                 if name == "objects" and not include_artifacts:
                     continue
@@ -85,7 +88,9 @@ class ExportService:
                     archive.write(path, f"project/{name}")
                     continue
                 for child in sorted(path.rglob("*")):
-                    if child.is_file():
+                    if child.is_file() and not self._should_skip_export_path(
+                        child.relative_to(project_root)
+                    ):
                         archive.write(
                             child,
                             f"project/{child.relative_to(project_root).as_posix()}",
@@ -267,3 +272,17 @@ class ExportService:
             return None
         candidate = requires_python.replace("==", "").replace(".*", "").strip()
         return candidate or None
+
+    @staticmethod
+    def _should_skip_export_path(relative_path: Path) -> bool:
+        parts = relative_path.parts
+        if len(parts) >= 2 and parts[0] == "notebooks" and MARIMO_DIRNAME in parts[1:]:
+            return True
+        if (
+            len(parts) >= 4
+            and parts[0] == "checkpoints"
+            and parts[2] == "notebooks"
+            and MARIMO_DIRNAME in parts[3:]
+        ):
+            return True
+        return False

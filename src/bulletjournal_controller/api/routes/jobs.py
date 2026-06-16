@@ -19,6 +19,11 @@ def get_job(job_id: str, request: Request):
 
 @router.get("/{job_id}/log", response_class=PlainTextResponse)
 def get_job_log(
-    job_id: str, request: Request, lines: int = Query(default=200, ge=1, le=2000)
+    job_id: str,
+    request: Request,
+    lines: int | None = Query(default=200, ge=1, le=2000),
+    full: bool = False,
 ):
-    return request.app.state.container.job_service.read_job_log(job_id, lines=lines)
+    return request.app.state.container.job_service.read_job_log(
+        job_id, lines=None if full else lines
+    )

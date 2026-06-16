@@ -92,7 +92,7 @@ docs/
 2. Install the package in editable mode:
 
 ```bash
-pip install -e .[dev]
+pip install -e ".[dev]"
 ```
 
 3. Create an instance root:

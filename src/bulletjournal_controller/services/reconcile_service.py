@@ -10,10 +10,18 @@ from bulletjournal_controller.utils import parse_iso8601, utc_now
 
 
 class ReconcileService:
-    def __init__(self, *, project_service, runtime_service, idle_timeout_seconds: int):
+    def __init__(
+        self,
+        *,
+        project_service,
+        runtime_service,
+        idle_timeout_seconds: int,
+        job_service=None,
+    ):
         self.project_service = project_service
         self.runtime_service = runtime_service
         self.idle_timeout_seconds = idle_timeout_seconds
+        self.job_service = job_service
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
 
@@ -63,9 +71,15 @@ class ReconcileService:
                 and idle_deadline is not None
                 and idle_deadline <= utc_now()
             ):
-                self.project_service.stop_project(
-                    project.project_id, reason=ProjectStatusReason.IDLE_TIMEOUT.value
-                )
+                if self.job_service is None:
+                    self.project_service.stop_project(
+                        project.project_id, reason=ProjectStatusReason.IDLE_TIMEOUT.value
+                    )
+                else:
+                    self.job_service.ensure_project_stopped_via_job(
+                        project.project_id,
+                        reason=ProjectStatusReason.IDLE_TIMEOUT.value,
+                    )
 
     def _run_loop(self) -> None:
         while not self._stop_event.wait(RECONCILE_INTERVAL_SECONDS):

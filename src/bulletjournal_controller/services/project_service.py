@@ -343,7 +343,7 @@ class ProjectService:
             custom_requirements_text=custom_requirements_text,
         )
 
-    def delete_project(self, project_id: str) -> None:
+    def delete_project(self, project_id: str, *, retain_job_id: str | None = None) -> None:
         project = self.get_project(project_id)
         if project.status == ProjectStatus.RUNNING.value:
             self.stop_project(project_id, reason=ProjectStatusReason.MANUAL_STOP.value)
@@ -352,6 +352,6 @@ class ProjectService:
                 self.runtime_service.cleanup_project_container(project_id)
             except RuntimeOperationError:
                 pass
-        self.jobs.delete_for_project(project_id)
+        self.jobs.delete_for_project(project_id, exclude_job_id=retain_job_id)
         delete_project_root(self.instance_paths, project_id)
         self.projects.delete(project_id)

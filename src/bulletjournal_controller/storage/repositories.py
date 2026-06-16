@@ -313,6 +313,13 @@ class JobRepository(BaseRepository[JobRecord]):
             ).fetchone()
         return row is not None
 
-    def delete_for_project(self, project_id: str) -> None:
+    def delete_for_project(
+        self, project_id: str, *, exclude_job_id: str | None = None
+    ) -> None:
+        query = "DELETE FROM jobs WHERE project_id = ?"
+        params: list[str] = [project_id]
+        if exclude_job_id is not None:
+            query += " AND job_id != ?"
+            params.append(exclude_job_id)
         with self.db.transaction() as connection:
-            connection.execute("DELETE FROM jobs WHERE project_id = ?", (project_id,))
+            connection.execute(query, tuple(params))

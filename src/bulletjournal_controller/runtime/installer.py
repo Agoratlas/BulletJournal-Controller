@@ -102,6 +102,45 @@ class InstallerRunner:
             options = ["--mount", mount_spec] + options
         return self.adapter.docker_base_command() + ["run"] + options
 
+    def build_validate_environment_command(
+        self,
+        *,
+        image: str,
+        project_root: Path,
+        network_mode: str,
+        env_file: Path | None = None,
+        additional_mounts: list[tuple[Path, str, bool]] | None = None,
+        user_uid: int | None = None,
+        user_gid: int | None = None,
+    ) -> list[str]:
+        options = [
+            "--rm",
+            "--network",
+            network_mode,
+            "--mount",
+            f"type=bind,src={project_root},dst=/project",
+            "--workdir",
+            "/project",
+            image,
+            "/project/.runtime/venv/bin/bulletjournal",
+            "--help",
+        ]
+        if env_file is not None:
+            options = ["--env-file", str(env_file)] + options
+        if user_uid is not None and user_gid is not None:
+            options = [
+                "--user",
+                f"{user_uid}:{user_gid}",
+                "--env",
+                "HOME=/home/bulletjournal",
+            ] + options
+        for mount_path, target, read_only in additional_mounts or []:
+            mount_spec = f"type=bind,src={mount_path},dst={target}"
+            if read_only:
+                mount_spec += ",readonly"
+            options = ["--mount", mount_spec] + options
+        return self.adapter.docker_base_command() + ["run"] + options
+
     def build_project_init_command(
         self,
         *,

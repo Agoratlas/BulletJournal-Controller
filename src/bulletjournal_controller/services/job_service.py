@@ -19,6 +19,7 @@ from bulletjournal_controller.domain.errors import (
     NotFoundError,
 )
 from bulletjournal_controller.domain.models import JobRecord
+from bulletjournal_controller.services.job_events import JobEventBroker
 from bulletjournal_controller.storage.instance_fs import InstancePaths
 from bulletjournal_controller.storage.repositories import JobRepository
 from bulletjournal_controller.utils import (
@@ -30,9 +31,16 @@ from bulletjournal_controller.utils import (
 
 
 class JobService:
-    def __init__(self, *, instance_paths: InstancePaths, jobs: JobRepository):
+    def __init__(
+        self,
+        *,
+        instance_paths: InstancePaths,
+        jobs: JobRepository,
+        event_broker: JobEventBroker | None = None,
+    ):
         self.instance_paths = instance_paths
         self.jobs = jobs
+        self.event_broker = event_broker
         self._queue: queue.Queue[str] = queue.Queue()
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -103,24 +111,33 @@ class JobService:
             finished_at=None,
             error_message=None,
         )
+        self._publish_job_update(job)
         self._queue.put(job_id)
         return job
 
     def get_job(self, job_id: str) -> JobRecord | None:
         return self.jobs.get(job_id)
 
-    def read_job_log(self, job_id: str, *, lines: int = 200) -> str:
+    def read_job_log(self, job_id: str, *, lines: int | None = 200) -> str:
         job = self.get_job(job_id)
         if job is None:
             raise NotFoundError(f"Job {job_id} was not found.")
         path = Path(job.log_path)
-        if not path.exists():
-            return ""
-        content = path.read_text(encoding="utf-8")
-        log_lines = content.splitlines()
+        log_lines = self._read_log_lines(path)
+        if lines is None:
+            return "\n".join(log_lines) + ("\n" if log_lines else "")
         if len(log_lines) <= lines:
-            return content
+            return "\n".join(log_lines) + ("\n" if log_lines else "")
         return "\n".join(log_lines[-lines:]) + "\n"
+
+    def read_job_log_lines(self, job_id: str, *, lines: int = 200) -> list[str]:
+        job = self.get_job(job_id)
+        if job is None:
+            raise NotFoundError(f"Job {job_id} was not found.")
+        log_lines = self._read_log_lines(Path(job.log_path))
+        if len(log_lines) <= lines:
+            return log_lines
+        return log_lines[-lines:]
 
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -134,12 +151,15 @@ class JobService:
             self._run_job(job)
 
     def _run_job(self, job: JobRecord) -> None:
-        self.jobs.update(
+        running_job = self.jobs.update(
             job.job_id,
             status=JobStatus.RUNNING.value,
             started_at=utc_now_iso(),
             error_message=None,
         )
+        if running_job is None:
+            return
+        self._publish_job_update(running_job)
         try:
             result = self._dispatch(job)
         except Exception as exc:
@@ -151,19 +171,37 @@ class JobService:
                     f"failed to apply project failure state: {state_exc}",
                 )
             self._log(Path(job.log_path), f"job failed: {exc}")
-            self.jobs.update(
+            failed_job = self.jobs.update(
                 job.job_id,
                 status=JobStatus.FAILED.value,
                 finished_at=utc_now_iso(),
                 error_message=str(exc),
             )
+            self._publish_job_update(failed_job)
             return
-        self.jobs.update(
+        succeeded_job = self.jobs.update(
             job.job_id,
             status=JobStatus.SUCCEEDED.value,
             finished_at=utc_now_iso(),
             result_json=json.dumps(result, sort_keys=True),
             error_message=None,
+        )
+        self._publish_job_update(succeeded_job)
+
+    def _publish_job_update(self, job: JobRecord | None) -> None:
+        if self.event_broker is None or job is None:
+            return
+        self.event_broker.publish(job.to_api())
+
+    def _publish_job_log_line(self, job_id: str, line: str) -> None:
+        if self.event_broker is None:
+            return
+        self.event_broker.publish(
+            {
+                "type": "job.log",
+                "job_id": job_id,
+                "line": line,
+            }
         )
 
     def _dispatch(self, job: JobRecord) -> dict[str, Any]:
@@ -229,8 +267,9 @@ class JobService:
             project = self.project_service.get_project(job.project_id)
             if project.status == ProjectStatus.STOPPED.value:
                 return {"project_id": project.project_id, "status": project.status}
+            reason = str(payload.get("reason") or ProjectStatusReason.MANUAL_STOP.value)
             project = self.project_service.stop_project(
-                job.project_id, reason=ProjectStatusReason.MANUAL_STOP.value
+                job.project_id, reason=reason
             )
             return {"project_id": project.project_id, "status": project.status}
         if job.job_type in {
@@ -306,7 +345,7 @@ class JobService:
                 imported["project"] = project.to_api()
             return imported
         if job.job_type == JobType.DELETE_PROJECT.value:
-            self.project_service.delete_project(job.project_id)
+            self.project_service.delete_project(job.project_id, retain_job_id=job.job_id)
             return {"project_id": job.project_id, "deleted": True}
         raise JobExecutionError(f"Unsupported job type {job.job_type}.")
 
@@ -349,6 +388,22 @@ class JobService:
         raise JobExecutionError(
             f"Project {project_id} did not become ready for proxy access within 90 seconds."
         )
+
+    def ensure_project_stopped_via_job(self, project_id: str, *, reason: str) -> None:
+        if self.project_service is None or self.system_user_id is None:
+            raise JobExecutionError("Job service is not fully bound.")
+        project = self.project_service.get_project(project_id)
+        if project.status != ProjectStatus.RUNNING.value:
+            return
+        try:
+            self.queue_job(
+                job_type=JobType.STOP_PROJECT.value,
+                requested_by_user_id=self.system_user_id,
+                payload={"project_id": project_id, "reason": reason},
+                project_id=project_id,
+            )
+        except ConflictError:
+            pass
 
     def _run_install_environment_job(
         self,
@@ -427,11 +482,20 @@ class JobService:
             )
 
     @staticmethod
-    def _log(path: Path, message: str) -> None:
+    def _read_log_lines(path: Path) -> list[str]:
+        if not path.exists():
+            return []
+        return path.read_text(encoding="utf-8").splitlines()
+
+    def _log(self, path: Path, message: str) -> None:
         with path.open("a", encoding="utf-8") as handle:
             lines = message.splitlines() or [""]
             for line in lines:
-                handle.write(f"{utc_now_iso()} {line}\n")
+                full_line = f"{utc_now_iso()} {line}"
+                handle.write(f"{full_line}\n")
+                job_id = path.stem.split("__", 1)[1] if "__" in path.stem else None
+                if job_id:
+                    self._publish_job_log_line(job_id, full_line)
 
     @staticmethod
     def _timestamp_for_filename(value: str) -> str:

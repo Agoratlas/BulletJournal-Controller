@@ -83,6 +83,10 @@ class RetryingInstaller:
         _ = kwargs
         return ["docker", "run", "mark-stale"]
 
+    def build_validate_environment_command(self, **kwargs):
+        _ = kwargs
+        return ["docker", "run", "validate-environment"]
+
     def run(self, command):
         self.commands.append(command)
         result = self.results[self.calls]
@@ -152,6 +156,8 @@ def test_render_pyproject_contains_expected_fields() -> None:
     assert 'requires-python = "==3.11.*"' in rendered
     assert "schema_version = 1" in rendered
     assert 'build-backend = "setuptools.build_meta"' in rendered
+    assert "[tool.marimo.display]" in rendered
+    assert 'theme = "system"' in rendered
     assert "packages = []" in rendered
 
 
@@ -342,6 +348,9 @@ def test_write_project_environment_does_not_create_placeholder_lockfile(
         custom_requirements_text="bulletjournal-editor==0.1.0\n",
     )
     assert project_paths.pyproject_path.is_file()
+    rendered = project_paths.pyproject_path.read_text(encoding="utf-8")
+    assert "[tool.marimo.display]" in rendered
+    assert 'theme = "system"' in rendered
     assert not project_paths.uv_lock_path.exists()
 
 
@@ -383,6 +392,84 @@ def test_install_environment_retries_transient_missing_bind_mount(
     assert result == "lock-sha"
     assert installer.calls == 3
     assert any("retrying" in entry for entry in logs)
+
+
+def test_install_environment_validates_before_marking_artifacts_stale(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    project_paths = make_project_paths(project_root)
+    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
+    installer = RetryingInstaller(
+        [
+            FakeResult(returncode=0),
+            FakeResult(returncode=0),
+            FakeResult(returncode=0),
+            FakeResult(returncode=0),
+        ]
+    )
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=cast(Any, installer),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+
+    result = service.install_environment(
+        project=cast(Any, DummyProjectRecord()),
+        project_paths=cast(Any, project_paths),
+        log_writer=lambda _message: None,
+        mark_all_artifacts_stale=True,
+        reason="test",
+    )
+
+    assert result == "lock-sha"
+    assert installer.commands == [
+        ["docker", "run", "init-project"],
+        ["docker", "run", "test"],
+        ["docker", "run", "validate-environment"],
+        ["docker", "run", "mark-stale"],
+    ]
+
+
+def test_install_environment_skips_mark_stale_when_validation_fails(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    project_paths = make_project_paths(project_root)
+    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
+    installer = RetryingInstaller(
+        [
+            FakeResult(returncode=0),
+            FakeResult(returncode=0),
+            FakeResult(returncode=1, stderr="invalid templates"),
+        ]
+    )
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=cast(Any, installer),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+    logs: list[str] = []
+    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+
+    result = service.install_environment(
+        project=cast(Any, DummyProjectRecord()),
+        project_paths=cast(Any, project_paths),
+        log_writer=logs.append,
+        mark_all_artifacts_stale=True,
+        reason="test",
+    )
+
+    assert result == "lock-sha"
+    assert installer.commands == [
+        ["docker", "run", "init-project"],
+        ["docker", "run", "test"],
+        ["docker", "run", "validate-environment"],
+    ]
+    assert any("Skipping artifact invalidation" in entry for entry in logs)
 
 
 def test_install_environment_uses_extended_retry_budget_for_mount_visibility(

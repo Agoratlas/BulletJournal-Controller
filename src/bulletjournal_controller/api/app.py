@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from bulletjournal_controller.api.auth import get_current_user
@@ -55,6 +55,13 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
     assets_dir = web_root / "assets"
     if assets_dir.exists():
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    favicon_path = web_root / "favicon.svg"
+    if favicon_path.exists():
+
+        @app.get("/favicon.svg", include_in_schema=False)
+        def favicon():
+            return FileResponse(favicon_path)
 
     @app.get("/healthz")
     def healthz():

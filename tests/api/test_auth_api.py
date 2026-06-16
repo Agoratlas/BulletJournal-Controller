@@ -30,3 +30,12 @@ def test_logout_requires_authentication(instance_root, server_config) -> None:
     with TestClient(app) as client:
         response = client.post('/api/v1/session/logout', headers={'origin': 'http://testserver'})
         assert response.status_code == 401
+
+
+def test_serves_bundled_favicon(instance_root, server_config) -> None:
+    app = create_app(instance_root=instance_root, server_config=server_config)
+    with TestClient(app) as client:
+        response = client.get('/favicon.svg')
+        assert response.status_code == 200
+        assert response.headers['content-type'] == 'image/svg+xml'
+        assert '<svg' in response.text

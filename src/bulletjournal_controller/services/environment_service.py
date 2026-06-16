@@ -329,7 +329,15 @@ class EnvironmentService:
             log_writer=log_writer,
         )
         if init_result.returncode != 0:
-            raise RuntimeError("Project initialization failed.")
+            raise RuntimeError(
+                self._command_failure_message(
+                    phase="Project initialization",
+                    command=init_command,
+                    returncode=init_result.returncode,
+                    stdout=init_result.stdout,
+                    stderr=init_result.stderr,
+                )
+            )
         install_command = self.installer.build_install_command(
             image=self.runtime_config_service.runtime_config.runtime_image_name,
             project_root=project_paths.root,
@@ -348,7 +356,15 @@ class EnvironmentService:
             log_writer=log_writer,
         )
         if result.returncode != 0:
-            raise RuntimeError("Environment install failed.")
+            raise RuntimeError(
+                self._command_failure_message(
+                    phase="Environment install",
+                    command=install_command,
+                    returncode=result.returncode,
+                    stdout=result.stdout,
+                    stderr=result.stderr,
+                )
+            )
         if mark_all_artifacts_stale:
             validate_command = self.installer.build_validate_environment_command(
                 image=self.runtime_config_service.runtime_config.runtime_image_name,
@@ -427,6 +443,34 @@ class EnvironmentService:
     @staticmethod
     def _is_missing_bind_mount_error(stderr: str) -> bool:
         return bool(MISSING_BIND_MOUNT_PATTERN.search(stderr))
+
+    @staticmethod
+    def _command_failure_message(
+        *,
+        phase: str,
+        command: list[str],
+        returncode: int,
+        stdout: str,
+        stderr: str,
+    ) -> str:
+        details: list[str] = [
+            f"{phase} failed with exit code {returncode}.",
+            f"Command: {' '.join(command)}",
+        ]
+        stdout_tail = EnvironmentService._output_tail(stdout)
+        stderr_tail = EnvironmentService._output_tail(stderr)
+        if stdout_tail:
+            details.append(f"stdout tail:\n{stdout_tail}")
+        if stderr_tail:
+            details.append(f"stderr tail:\n{stderr_tail}")
+        return "\n".join(details)
+
+    @staticmethod
+    def _output_tail(text: str, *, lines: int = 20) -> str:
+        content = text.strip()
+        if not content:
+            return ""
+        return "\n".join(content.splitlines()[-lines:])
 
     @staticmethod
     def _flush_mount_path(project_root: Path) -> None:

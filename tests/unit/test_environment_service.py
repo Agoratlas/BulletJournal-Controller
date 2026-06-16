@@ -394,6 +394,75 @@ def test_install_environment_retries_transient_missing_bind_mount(
     assert any("retrying" in entry for entry in logs)
 
 
+def test_install_environment_reports_project_init_failure_details(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    project_paths = make_project_paths(project_root)
+    installer = RetryingInstaller(
+        [
+            FakeResult(
+                returncode=17,
+                stdout="downloaded one\ndownloaded two\n",
+                stderr="Traceback line 1\nTraceback line 2\n",
+            )
+        ]
+    )
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=cast(Any, installer),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+
+    with pytest.raises(RuntimeError, match="Project initialization failed with exit code 17") as exc:
+        service.install_environment(
+            project=cast(Any, DummyProjectRecord()),
+            project_paths=cast(Any, project_paths),
+            log_writer=lambda _message: None,
+            mark_all_artifacts_stale=False,
+            reason="test",
+        )
+
+    message = str(exc.value)
+    assert "Command: docker run init-project" in message
+    assert "stdout tail:\ndownloaded one\ndownloaded two" in message
+    assert "stderr tail:\nTraceback line 1\nTraceback line 2" in message
+
+
+def test_install_environment_reports_install_failure_details(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir(parents=True)
+    project_paths = make_project_paths(project_root)
+    installer = RetryingInstaller(
+        [
+            FakeResult(returncode=0),
+            FakeResult(
+                returncode=23,
+                stdout="Resolved 10 packages\nInstalled 9 packages\n",
+                stderr="bulletjournal init failed\nValueError: bad config\n",
+            ),
+        ]
+    )
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=cast(Any, installer),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+
+    with pytest.raises(RuntimeError, match="Environment install failed with exit code 23") as exc:
+        service.install_environment(
+            project=cast(Any, DummyProjectRecord()),
+            project_paths=cast(Any, project_paths),
+            log_writer=lambda _message: None,
+            mark_all_artifacts_stale=False,
+            reason="test",
+        )
+
+    message = str(exc.value)
+    assert "Command: docker run test" in message
+    assert "stdout tail:\nResolved 10 packages\nInstalled 9 packages" in message
+    assert "stderr tail:\nbulletjournal init failed\nValueError: bad config" in message
+
+
 def test_install_environment_validates_before_marking_artifacts_stale(
     tmp_path: Path,
 ) -> None:

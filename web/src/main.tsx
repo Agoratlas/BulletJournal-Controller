@@ -651,37 +651,25 @@ style.textContent = `
     padding: 24px;
   }
   .login-panel {
-    width: min(960px, 100%);
+    width: min(420px, 100%);
     display: grid;
     gap: 20px;
-    grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
-  }
-  .hero-panel,
-  .form-panel {
     padding: 26px;
     border-radius: 28px;
     background: var(--paper);
     border: 1px solid var(--line);
     box-shadow: var(--shadow);
   }
-  .hero-panel h1,
-  .form-panel h2 {
+  .login-panel h1 {
     margin: 12px 0 10px;
   }
-  .hero-panel h1 {
-    font-size: clamp(2.2rem, 5vw, 4rem);
-    line-height: 0.95;
+  .login-panel h1 {
+    font-size: clamp(1.4rem, 3vw, 1.8rem);
   }
-  .hero-grid {
-    display: grid;
-    gap: 14px;
-    margin-top: 24px;
-  }
-  .hero-note {
-    padding: 16px 18px;
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.58);
-    border: 1px solid var(--line);
+  .login-divider {
+    margin: 2px 0 0;
+    border: 0;
+    border-top: 1px solid var(--line);
   }
   .loading-screen {
     min-height: 100vh;
@@ -814,8 +802,7 @@ style.textContent = `
   }
   @media (max-width: 1040px) {
     .dashboard-grid,
-    .detail-grid,
-    .login-panel {
+    .detail-grid {
       grid-template-columns: 1fr;
     }
   }
@@ -1475,49 +1462,24 @@ function LoginPage() {
 
   return (
     <div className="login-shell">
-      <div className="login-panel">
-        <section className="hero-panel">
-          <div className="eyebrow">Managed Runtime Control</div>
-          <h1>One controller, many BulletJournal projects.</h1>
-          <p className="lede">
-            Sign in to create, start, stop, inspect, update, and proxy isolated BulletJournal runtimes through one authenticated origin.
-          </p>
-          <div className="hero-grid">
-            <div className="hero-note">
-              <strong>Managed environments</strong>
-              <p className="section-copy">Each project owns explicit `pyproject.toml` and `uv.lock` files under controller management.</p>
-            </div>
-            <div className="hero-note">
-              <strong>Container isolation</strong>
-              <p className="section-copy">Projects run independently with separate Docker runtime limits and lifecycle tracking.</p>
-            </div>
-            <div className="hero-note">
-              <strong>Authenticated gateway</strong>
-              <p className="section-copy">Open the full project experience through `/p/&lt;project_id&gt;/...` without exposing runtime ports directly.</p>
-            </div>
+      <section className="login-panel">
+        <h1>BulletJournal login</h1>
+        <hr className="login-divider" />
+        <form className="layout-grid" onSubmit={onSubmit}>
+          <div className="field-full">
+            <label htmlFor="username">Username</label>
+            <input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required />
           </div>
-        </section>
-
-        <section className="form-panel">
-          <div className="eyebrow">Sign In</div>
-          <h2>Access the controller</h2>
-          <p className="section-copy">Use a controller account created with `bulletjournal-controller create-user`.</p>
-          <form className="layout-grid" onSubmit={onSubmit}>
-            <div className="field-full">
-              <label htmlFor="username">Username</label>
-              <input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required />
-            </div>
-            <div className="field-full">
-              <label htmlFor="password">Password</label>
-              <input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
-            </div>
-            {error ? <div className="error-banner">{error}</div> : null}
-            <div className="button-row">
-              <button className="button" type="submit" disabled={submitting}>{submitting ? 'Signing in...' : 'Login'}</button>
-            </div>
-          </form>
-        </section>
-      </div>
+          <div className="field-full">
+            <label htmlFor="password">Password</label>
+            <input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
+          </div>
+          {error ? <div className="error-banner">{error}</div> : null}
+          <div className="button-row">
+            <button className="button" type="submit" disabled={submitting}>{submitting ? 'Signing in...' : 'Login'}</button>
+          </div>
+        </form>
+      </section>
     </div>
   )
 }

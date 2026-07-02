@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
+import type { SVGProps } from 'react'
 
 type SessionUser = {
   user_id: string
@@ -122,12 +123,25 @@ style.textContent = `
     --bg-2: #e9ddc0;
     --paper: rgba(255, 251, 243, 0.88);
     --paper-strong: rgba(255, 251, 243, 0.96);
+    --paper-faint: rgba(255, 255, 255, 0.56);
     --ink: #1f2929;
     --muted: #61716d;
     --accent: #1d7b6c;
     --accent-soft: rgba(29, 123, 108, 0.12);
+    --accent-strong: #228f47;
     --warm: #b86435;
     --warm-soft: rgba(184, 100, 53, 0.12);
+    --danger: #b23a33;
+    --danger-soft: rgba(178, 58, 51, 0.12);
+    --warning: #c87418;
+    --warning-soft: rgba(200, 116, 24, 0.14);
+    --warning-bg: rgba(226, 150, 65, 0.82);
+    --danger-bg: rgba(222, 92, 86, 0.82);
+    --info: #246bca;
+    --info-soft: rgba(36, 107, 202, 0.14);
+    --info-strong: #1f6ff0;
+    --success-bg: rgba(113, 214, 170, 0.86);
+    --error-bg: rgba(239, 131, 123, 0.84);
     --line: rgba(31, 41, 41, 0.12);
     --shadow: 0 18px 54px rgba(39, 42, 40, 0.12);
     --radius-xl: 28px;
@@ -139,12 +153,25 @@ style.textContent = `
     --bg-2: #21211d;
     --paper: rgba(32, 33, 29, 0.88);
     --paper-strong: rgba(28, 29, 26, 0.96);
+    --paper-faint: rgba(255, 255, 255, 0.06);
     --ink: #efe7d8;
     --muted: #b7afa2;
     --accent: #63c4b2;
     --accent-soft: rgba(99, 196, 178, 0.14);
+    --accent-strong: #34b85a;
     --warm: #d89063;
     --warm-soft: rgba(216, 144, 99, 0.16);
+    --danger: #ef8a7f;
+    --danger-soft: rgba(239, 138, 127, 0.14);
+    --warning: #efb35f;
+    --warning-soft: rgba(239, 179, 95, 0.16);
+    --warning-bg: rgba(190, 124, 43, 0.82);
+    --danger-bg: rgba(196, 83, 76, 0.82);
+    --info: #7cb0ff;
+    --info-soft: rgba(124, 176, 255, 0.16);
+    --info-strong: #5f96ff;
+    --success-bg: rgba(32, 143, 118, 0.82);
+    --error-bg: rgba(173, 68, 61, 0.82);
     --line: rgba(239, 231, 216, 0.12);
     --shadow: 0 18px 54px rgba(0, 0, 0, 0.28);
   }
@@ -175,75 +202,10 @@ style.textContent = `
   .app-shell {
     max-width: 1240px;
     margin: 0 auto;
-    padding: 28px 18px 80px;
-  }
-  .masthead {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 18px;
-    align-items: start;
-    margin-bottom: 28px;
-  }
-  .brand-card {
-    padding: 22px 24px;
-    border-radius: var(--radius-xl);
-    background: linear-gradient(145deg, rgba(255, 251, 243, 0.95), rgba(246, 239, 225, 0.92));
-    border: 1px solid var(--line);
-    box-shadow: var(--shadow);
-  }
-  :root[data-theme='dark'] .brand-card {
-    background: linear-gradient(145deg, rgba(40, 41, 36, 0.96), rgba(28, 29, 26, 0.92));
-  }
-  .eyebrow {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 5px 10px;
-    border-radius: 999px;
-    background: var(--accent-soft);
-    color: var(--accent);
-    font-size: 0.76rem;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-  }
-  .brand-card h1 {
-    margin: 12px 0 8px;
-    font-size: clamp(2.2rem, 4.5vw, 4rem);
-    line-height: 0.95;
-    letter-spacing: -0.03em;
-  }
-  .lede {
-    margin: 0;
-    max-width: 50rem;
-    color: var(--muted);
-    font-size: 1.03rem;
-    line-height: 1.6;
-  }
-  .masthead-side {
-    display: grid;
-    gap: 12px;
-  }
-  .mini-card {
-    padding: 16px 18px;
-    border-radius: var(--radius-lg);
-    background: var(--paper);
-    border: 1px solid var(--line);
-    box-shadow: var(--shadow);
-    backdrop-filter: blur(10px);
-  }
-  .mini-card strong,
-  .mini-card span {
-    display: block;
+    padding: 28px 18px 132px;
   }
   .muted {
     color: var(--muted);
-  }
-  .topbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 24px;
   }
   .nav-pills {
     display: flex;
@@ -253,8 +215,13 @@ style.textContent = `
   .pill-link,
   .pill-button,
   .button,
+  .button-open,
+  .button-neutral,
+  .button-status-start,
+  .button-status-stop,
   .button-secondary,
-  .button-danger {
+  .button-danger,
+  .theme-option {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -264,7 +231,33 @@ style.textContent = `
     border-radius: 999px;
     border: 1px solid transparent;
     cursor: pointer;
-    transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+    transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+  }
+  .icon-action {
+    width: 42px;
+    min-height: 42px;
+    padding: 0;
+  }
+  .icon-action svg {
+    width: 18px;
+    height: 18px;
+    display: block;
+    transform: translateY(0);
+  }
+  .button-secondary.icon-action {
+    width: 42px;
+    min-height: 42px;
+    padding: 0;
+    border-radius: 999px;
+  }
+  .info-glyph {
+    font-size: 20px;
+    line-height: 1;
+    font-style: italic;
+    font-weight: 600;
+    font-family: Georgia, 'Iowan Old Style', serif;
+    display: inline-block;
+    transform: translateY(0.5px);
   }
   .pill-link,
   .button-secondary {
@@ -282,9 +275,14 @@ style.textContent = `
   }
   .button,
   .pill-button {
-    background: linear-gradient(135deg, var(--accent), #14574d);
+    background: var(--accent-strong);
     color: white;
-    box-shadow: 0 10px 20px rgba(29, 123, 108, 0.2);
+    box-shadow: 0 12px 28px rgba(52, 184, 90, 0.26);
+  }
+  .button-open {
+    background: var(--info-strong);
+    color: white;
+    box-shadow: 0 12px 28px rgba(31, 111, 240, 0.22);
   }
   .button-neutral,
   .button-status-start,
@@ -292,12 +290,12 @@ style.textContent = `
     color: white;
   }
   .button-status-start {
-    background: linear-gradient(135deg, var(--accent), #14574d);
-    box-shadow: 0 10px 20px rgba(29, 123, 108, 0.2);
+    background: var(--accent-strong);
+    box-shadow: 0 12px 28px rgba(52, 184, 90, 0.26);
   }
   .button-status-stop {
-    background: linear-gradient(135deg, var(--warm), #8f4925);
-    box-shadow: 0 10px 20px rgba(184, 100, 53, 0.18);
+    background: #de5c56;
+    box-shadow: 0 12px 28px rgba(222, 92, 86, 0.22);
   }
   .button-neutral {
     background: rgba(98, 108, 108, 0.18);
@@ -306,9 +304,9 @@ style.textContent = `
     box-shadow: none;
   }
   .button-danger {
-    background: linear-gradient(135deg, var(--warm), #8f4925);
+    background: #d13c36;
     color: white;
-    box-shadow: 0 10px 20px rgba(184, 100, 53, 0.18);
+    box-shadow: 0 12px 28px rgba(209, 60, 54, 0.24);
   }
   .pill-link:hover,
   .pill-button:hover,
@@ -324,7 +322,7 @@ style.textContent = `
   .dashboard-grid {
     display: grid;
     gap: 20px;
-    grid-template-columns: minmax(0, 1.7fr) minmax(300px, 0.95fr);
+    grid-template-columns: minmax(0, 1fr);
   }
   .panel {
     border-radius: var(--radius-xl);
@@ -336,6 +334,12 @@ style.textContent = `
   .panel-head {
     padding: 22px 24px 0;
   }
+  .panel-head-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+  }
   .panel-body {
     padding: 22px 24px 24px;
   }
@@ -343,7 +347,7 @@ style.textContent = `
   .panel-head h3,
   .panel-body h2,
   .panel-body h3 {
-    margin: 10px 0 6px;
+    margin: 0 0 6px;
     font-size: 1.5rem;
   }
   .section-copy {
@@ -358,9 +362,22 @@ style.textContent = `
   .group-header {
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
+    align-items: center;
     gap: 12px;
     margin-bottom: 12px;
+  }
+  .group-header-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    flex: 1;
+  }
+  .group-header-divider {
+    height: 1px;
+    flex: 1;
+    min-width: 28px;
+    background: var(--line);
   }
   .group-header h3 {
     margin: 0;
@@ -369,24 +386,40 @@ style.textContent = `
   .project-cards {
     display: grid;
     gap: 14px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .project-card {
     display: grid;
-    gap: 16px;
-    padding: 18px;
+    gap: 14px;
+    padding: 0 18px 18px;
     border-radius: var(--radius-lg);
-    background: rgba(255, 255, 255, 0.56);
+    background: var(--paper-faint);
     border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .project-card-header {
+    padding: 16px 18px 0;
+    margin: 0 -18px;
+  }
+  .project-card.state-running .project-card-header {
+    background: var(--success-bg);
+  }
+  .project-card.state-error .project-card-header {
+    background: var(--error-bg);
   }
   .project-card-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: start;
-    gap: 12px;
+    display: grid;
+    gap: 14px;
   }
   .project-card h4 {
-    margin: 0 0 5px;
+    margin: 0;
     font-size: 1.2rem;
+  }
+  .project-card-divider {
+    border: 0;
+    border-top: 1px solid var(--line);
+    width: calc(100% + 36px);
+    margin: 0 -18px;
   }
   .badges {
     display: flex;
@@ -413,22 +446,60 @@ style.textContent = `
   .badge.neutral { background: rgba(98, 108, 108, 0.14); color: var(--muted); }
   .meta-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px 18px;
+    gap: 12px;
+    margin-top: 0;
+  }
+  .metrics-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
   }
   .meta-item {
     display: grid;
     gap: 2px;
   }
+  .metrics-row .meta-item {
+    text-align: center;
+    justify-items: center;
+  }
+  .meta-item strong {
+    line-height: 1.2;
+  }
   .meta-item span:first-child {
     color: var(--muted);
     font-size: 0.85rem;
+  }
+  .metric-chip {
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid transparent;
+    background: rgba(31, 41, 41, 0.05);
+  }
+  .metric-chip.metric-warning {
+    background: var(--warning-bg);
+    border-color: rgba(200, 116, 24, 0.2);
+  }
+  .metric-chip.metric-danger {
+    background: var(--danger-bg);
+    border-color: rgba(178, 58, 51, 0.24);
+  }
+  .timestamp-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .timestamp-row strong {
+    font-size: 0.95rem;
   }
   .quick-actions,
   .button-row {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
+  }
+  .quick-actions {
+    margin-top: 0;
   }
   .inline-feedback {
     display: inline-flex;
@@ -450,21 +521,6 @@ style.textContent = `
     background: rgba(29, 123, 108, 0.1);
     border-color: rgba(29, 123, 108, 0.14);
     color: #145b50;
-  }
-  .stats-grid {
-    display: grid;
-    gap: 12px;
-  }
-  .stat-card {
-    padding: 16px 18px;
-    border-radius: var(--radius-lg);
-    background: rgba(255, 255, 255, 0.58);
-    border: 1px solid var(--line);
-  }
-  .stat-card strong {
-    display: block;
-    font-size: 1.35rem;
-    margin-bottom: 4px;
   }
   .field-grid {
     display: grid;
@@ -500,8 +556,9 @@ style.textContent = `
   :root[data-theme='dark'] .close-button,
   :root[data-theme='dark'] .pill-link,
   :root[data-theme='dark'] .button-secondary,
-  :root[data-theme='dark'] .project-card,
-  :root[data-theme='dark'] .stat-card,
+  :root[data-theme='dark'] .button-neutral,
+  :root[data-theme='dark'] .project-card:not(.state-running):not(.state-error),
+  :root[data-theme='dark'] .metric-chip:not(.metric-warning):not(.metric-danger),
   :root[data-theme='dark'] .job-row,
   :root[data-theme='dark'] .summary-block,
   :root[data-theme='dark'] .hero-note,
@@ -684,12 +741,123 @@ style.textContent = `
     border: 1px solid var(--line);
     box-shadow: var(--shadow);
   }
-  .theme-row {
-    display: grid;
-    gap: 8px;
+  .theme-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 100%;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    color: var(--ink);
   }
-  .theme-select {
+  .footer-theme {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    align-self: stretch;
+    box-shadow: inset 1px 0 0 var(--line);
+  }
+  .theme-popover {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 10px);
+    width: 180px;
+    padding: 8px;
+    border-radius: 16px;
+    border: 1px solid var(--line);
+    background: var(--paper-strong);
+    box-shadow: var(--shadow);
+    display: grid;
+    gap: 6px;
+  }
+  .theme-option {
     width: 100%;
+    justify-content: flex-start;
+    min-height: 38px;
+    padding: 0 12px;
+    border-radius: 12px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+  .theme-option.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .app-footer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0;
+    padding: 0 0 0 18px;
+    border-top: 1px solid var(--line);
+    background: var(--paper-strong);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(16px);
+    min-height: 64px;
+  }
+  .footer-left,
+  .footer-right {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    min-width: 0;
+    align-self: stretch;
+  }
+  .footer-session {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  .footer-session strong,
+  .footer-session span {
+    overflow-wrap: anywhere;
+  }
+  .footer-left {
+    gap: 18px;
+  }
+  .logout-link {
+    color: var(--danger);
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+  .footer-metrics {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    justify-content: flex-end;
+    align-self: stretch;
+  }
+  .footer-metric {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    align-self: stretch;
+    padding: 0 14px;
+    border: 0;
+    background: transparent;
+    box-shadow: inset 1px 0 0 var(--line);
+    white-space: nowrap;
+  }
+  .footer-metric.metric-warning {
+    background: var(--warning-bg);
+    border-color: rgba(200, 116, 24, 0.2);
+  }
+  .footer-metric.metric-danger {
+    background: var(--danger-bg);
+    border-color: rgba(178, 58, 51, 0.24);
   }
   .collapsible-panel {
     display: grid;
@@ -791,38 +959,70 @@ style.textContent = `
     50% { opacity: 1; transform: translateY(-1px); }
   }
   :root[data-theme='dark'] .section-toggle,
-  :root[data-theme='dark'] .job-log-download {
+  :root[data-theme='dark'] .job-log-download,
+  :root[data-theme='dark'] .theme-trigger,
+  :root[data-theme='dark'] .footer-metric:not(.metric-warning):not(.metric-danger) {
     background: rgba(24, 27, 25, 0.92);
     color: rgba(239, 231, 216, 0.96);
     border-color: var(--line);
     box-shadow: 0 10px 22px rgba(0, 0, 0, 0.34);
   }
+  :root[data-theme='dark'] .footer-theme {
+    box-shadow: inset 1px 0 0 var(--line);
+  }
+  :root[data-theme='dark'] .footer-metric {
+    box-shadow: inset 1px 0 0 var(--line);
+  }
   .subtle-link {
     color: var(--warm);
   }
   @media (max-width: 1040px) {
-    .dashboard-grid,
-    .detail-grid {
+    .detail-grid,
+    .project-cards {
       grid-template-columns: 1fr;
     }
   }
+  @media (min-width: 761px) and (max-width: 1160px) {
+    .project-cards {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
   @media (max-width: 760px) {
-    .masthead,
     .topbar,
-    .project-card-top,
     .group-header,
     .job-row-top,
     .modal-head {
       grid-template-columns: 1fr;
       display: grid;
     }
+    .panel-head-row,
+    .group-header-title {
+      display: grid;
+      gap: 8px;
+    }
+    .group-header-divider {
+      width: 100%;
+    }
     .field-grid,
     .summary-grid,
-    .meta-grid {
+    .meta-grid,
+    .metrics-row {
       grid-template-columns: 1fr;
     }
     .app-shell {
-      padding: 18px 14px 56px;
+      padding: 18px 14px 170px;
+    }
+    .app-footer {
+      display: grid;
+      justify-content: stretch;
+    }
+    .footer-left,
+    .footer-right {
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+    .footer-right {
+      align-items: flex-end;
     }
   }
 `
@@ -830,6 +1030,46 @@ document.head.appendChild(style)
 
 function classNames(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(' ')
+}
+
+function IconBase(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props} />
+  )
+}
+
+function PlusIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </IconBase>
+  )
+}
+
+function PlayIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="M6.4 5.3Q6.4 4 7.6 4.7L18 10.8Q19.8 12 18 13.2L7.6 19.3Q6.4 20 6.4 18.7Z" fill="currentColor" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </IconBase>
+  )
+}
+
+function PencilIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="m15 5 4 4" />
+      <path d="M4 20h4l11-11a1.4 1.4 0 0 0 0-2L17 5a1.4 1.4 0 0 0-2 0L4 16v4Z" />
+    </IconBase>
+  )
+}
+
+function StopIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <rect x="6.25" y="6.25" width="11.5" height="11.5" rx="1.5" fill="currentColor" stroke="currentColor" strokeWidth="1.5" />
+    </IconBase>
+  )
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -942,9 +1182,54 @@ function formatMemoryInputValue(value: number | null | undefined): string {
 
 function formatPercentage(value: number | null | undefined): string {
   if (!Number.isFinite(value)) {
-    return 'Not available'
+    return '-'
   }
   return `${Number(value).toFixed(1)}%`
+}
+
+function formatRelativeTime(value: string | null | undefined): string {
+  if (!value) {
+    return '-'
+  }
+  const timestamp = new Date(value).getTime()
+  if (Number.isNaN(timestamp)) {
+    return '-'
+  }
+  const diffMs = Date.now() - timestamp
+  if (diffMs < 0) {
+    return 'Just now'
+  }
+  const minute = 60_000
+  const hour = 60 * minute
+  const day = 24 * hour
+  if (diffMs < hour) {
+    const minutes = Math.max(1, Math.floor(diffMs / minute))
+    return `${minutes}m ago`
+  }
+  if (diffMs < day) {
+    return `${Math.floor(diffMs / hour)}h ago`
+  }
+  return `${Math.floor(diffMs / day)}d ago`
+}
+
+function metricTone(percent: number | null | undefined): '' | 'metric-warning' | 'metric-danger' {
+  if (!Number.isFinite(percent)) {
+    return ''
+  }
+  if (Number(percent) > 80) {
+    return 'metric-danger'
+  }
+  if (Number(percent) > 60) {
+    return 'metric-warning'
+  }
+  return ''
+}
+
+function usagePercent(used: number | null | undefined, total: number | null | undefined): number | null {
+  if (!Number.isFinite(used) || !Number.isFinite(total) || !total || total <= 0) {
+    return null
+  }
+  return (Number(used) / Number(total)) * 100
 }
 
 function formatDurationBetween(start: string | null | undefined, end?: string | null): string {
@@ -1012,6 +1297,70 @@ function projectStateTone(project: Project): string {
     return 'error'
   }
   return 'stopped'
+}
+
+function projectCardStateClass(project: Project): string {
+  if (project.status === 'running') {
+    return 'state-running'
+  }
+  if (project.status === 'error' || project.status_reason === 'install_failed' || project.status_reason === 'start_failed' || project.status_reason === 'runtime_crashed') {
+    return 'state-error'
+  }
+  return ''
+}
+
+function projectMetricDetails(project: Project): Array<{ label: string; value: string; tone: '' | 'metric-warning' | 'metric-danger' }> {
+  const cpuPercent = typeof project.metrics.cpu_percent === 'number' ? project.metrics.cpu_percent : null
+  const memoryPercent = usagePercent(project.metrics.memory_used_bytes ?? null, project.metrics.memory_limit_bytes ?? null)
+
+  return [
+    {
+      label: 'Disk',
+      value: formatBytes(project.metrics.disk_used_bytes ?? 0),
+      tone: '',
+    },
+    {
+      label: 'RAM',
+      value: typeof project.metrics.memory_used_bytes === 'number'
+        ? formatBytes(project.metrics.memory_used_bytes)
+        : '-',
+      tone: metricTone(memoryPercent),
+    },
+    {
+      label: 'CPU',
+      value: formatPercentage(cpuPercent),
+      tone: metricTone(project.limits.cpu_limit_millis ? cpuPercent : null),
+    },
+  ]
+}
+
+function FooterSystemMetrics({ systemInfo }: { systemInfo: SystemInfo | null }) {
+  const cpuTone = metricTone(systemInfo?.metrics.cpu_percent)
+  const memoryPercent = usagePercent(systemInfo?.metrics.memory?.used_bytes ?? null, systemInfo?.metrics.memory?.total_bytes ?? null)
+  const diskPercent = usagePercent(systemInfo?.metrics.disk?.used_bytes ?? null, systemInfo?.metrics.disk?.total_bytes ?? null)
+
+  return (
+    <div className="footer-metrics">
+      <span
+        className={classNames('footer-metric', metricTone(diskPercent))}
+        title={systemInfo?.metrics.disk ? `${formatBytes(systemInfo.metrics.disk.used_bytes)} / ${formatBytes(systemInfo.metrics.disk.total_bytes)}` : 'Not available'}
+      >
+        <span className="muted">Disk</span>
+        <strong>{formatPercentage(diskPercent)}</strong>
+      </span>
+      <span
+        className={classNames('footer-metric', metricTone(memoryPercent))}
+        title={systemInfo?.metrics.memory ? `${formatBytes(systemInfo.metrics.memory.used_bytes)} / ${formatBytes(systemInfo.metrics.memory.total_bytes)}` : 'Not available'}
+      >
+        <span className="muted">RAM</span>
+        <strong>{formatPercentage(memoryPercent)}</strong>
+      </span>
+      <span className={classNames('footer-metric', cpuTone)}>
+        <span className="muted">CPU</span>
+        <strong>{formatPercentage(systemInfo?.metrics.cpu_percent)}</strong>
+      </span>
+    </div>
+  )
 }
 
 function projectActionState(project: Project): {
@@ -1411,7 +1760,6 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     return (
       <div className="loading-screen">
         <div className="loading-card">
-          <div className="eyebrow">Loading session</div>
           <h2>Preparing your controller workspace</h2>
           <p className="section-copy">Checking authentication and restoring the current controller session.</p>
         </div>
@@ -1484,53 +1832,96 @@ function LoginPage() {
   )
 }
 
-function AppChrome({ children }: { children: React.ReactNode }) {
+function ThemeSwitcher() {
   const { session, signOut, themeMode, setThemeMode } = useAppState()
-  const location = useLocation()
+  const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+    function onWindowClick() {
+      setOpen(false)
+    }
+    window.addEventListener('click', onWindowClick)
+    return () => window.removeEventListener('click', onWindowClick)
+  }, [open])
+
+  return (
+    <div className="footer-theme">
+      <button
+        className="theme-trigger"
+        type="button"
+        aria-label="Switch theme"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={(event) => {
+          event.stopPropagation()
+          setOpen((current) => !current)
+        }}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" width="18" height="18">
+          <path d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-.9-.5-1.3-.3-.3-.5-.7-.5-1.2 0-1.1.9-2 2-2h1a5 5 0 0 0 0-10Z"></path>
+          <path d="M7.5 10.5h.01"></path>
+          <path d="M9.5 7.5h.01"></path>
+          <path d="M14.5 7.5h.01"></path>
+          <path d="M16.5 10.5h.01"></path>
+        </svg>
+      </button>
+      {open ? (
+        <div className="theme-popover" role="menu" onClick={(event) => event.stopPropagation()}>
+          {(['light', 'dark', 'system'] as const).map((mode) => (
+            <button
+              key={mode}
+              className={classNames('theme-option', themeMode === mode && 'active')}
+              type="button"
+              role="menuitemradio"
+              aria-checked={themeMode === mode}
+              onClick={() => {
+                setThemeMode(mode)
+                setOpen(false)
+              }}
+            >
+              {mode === 'light' ? 'Light' : mode === 'dark' ? 'Dark' : 'System'}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function AppChrome({ children, footerMetrics = null }: { children: React.ReactNode; footerMetrics?: React.ReactNode }) {
+  const { session, signOut } = useAppState()
   const navigate = useNavigate()
 
   return (
     <div className="app-shell">
-      <header className="masthead">
-        <section className="brand-card">
-          <div className="eyebrow">BulletJournal Controller</div>
-          <h1>Project control plane with authenticated proxy access.</h1>
-          <p className="lede">
-            Provision managed environments, inspect job progress, and open isolated BulletJournal runtimes through one controller origin.
-          </p>
-        </section>
-        <aside className="masthead-side">
-          <div className="mini-card">
+      {children}
+      <footer className="app-footer">
+        <div className="footer-left">
+          <div className="footer-session">
             <span className="muted">Signed in as</span>
             <strong>{session?.user?.display_name || session?.user?.username || 'Unknown user'}</strong>
-            <span className="muted">{session?.user?.username || ''}</span>
+            <span className="muted">({session?.user?.username || 'unknown'})</span>
           </div>
-          <div className="mini-card">
-            <div className="nav-pills">
-              <Link className={classNames('pill-link', location.pathname === '/' && 'active')} to="/">Dashboard</Link>
-              <button
-                className="button-secondary"
-                type="button"
-                onClick={async () => {
-                  await signOut()
-                  navigate('/login', { replace: true })
-                }}
-              >
-                Logout
-              </button>
-            </div>
-          </div>
-          <div className="mini-card theme-row">
-            <span className="muted">Theme</span>
-            <select className="theme-select" value={themeMode} onChange={(event) => setThemeMode(event.target.value as ThemeMode)} aria-label="Theme preference">
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
-          </div>
-        </aside>
-      </header>
-      {children}
+          <button
+            className="logout-link"
+            type="button"
+            onClick={async () => {
+              await signOut()
+              navigate('/login', { replace: true })
+            }}
+          >
+            Logout
+          </button>
+        </div>
+        <div className="footer-right">
+          {footerMetrics}
+          <ThemeSwitcher />
+        </div>
+      </footer>
     </div>
   )
 }
@@ -1689,24 +2080,23 @@ function DashboardPage() {
   }
 
   return (
-    <AppChrome>
-      <div className="topbar">
-        <div className="nav-pills">
-          <span className="eyebrow">Dashboard</span>
-          {activeJobIds.length > 0 ? <span className="badge">Watching {activeJobIds.length} active job{activeJobIds.length === 1 ? '' : 's'}</span> : null}
-        </div>
-        <button className="button" type="button" onClick={() => setShowCreateModal(true)}>Create Project</button>
-      </div>
-
+    <AppChrome footerMetrics={<FooterSystemMetrics systemInfo={systemInfo} />}>
       {error ? <div className="error-banner">{error}</div> : null}
       {actionError ? <div className="error-banner">{actionError}</div> : null}
 
       <div className="dashboard-grid">
         <section className="panel">
           <div className="panel-head">
-            <div className="eyebrow">Managed projects</div>
-            <h2>Runtime groups</h2>
-            <p className="section-copy">Projects are grouped client-side into running, stopped, and error states with quick access to start, stop, open, and detail views.</p>
+            <div className="panel-head-row">
+              <div>
+                <h2>BulletJournal projects</h2>
+                {activeJobIds.length > 0 ? <span className="muted">Watching {activeJobIds.length} active job{activeJobIds.length === 1 ? '' : 's'}</span> : null}
+              </div>
+              <button className="button" type="button" onClick={() => setShowCreateModal(true)}>
+                <PlusIcon width={22} height={22} />
+                <span>New project</span>
+              </button>
+            </div>
           </div>
           <div className="panel-body">
             {loading ? <div className="empty-state">Loading projects...</div> : null}
@@ -1716,7 +2106,10 @@ function DashboardPage() {
                 return (
                   <section key={groupName}>
                     <div className="group-header">
-                      <h3>{groupName}</h3>
+                      <div className="group-header-title">
+                        <h3>{groupName}</h3>
+                        <div className="group-header-divider" aria-hidden="true" />
+                      </div>
                       <span className="muted">{group.length} project{group.length === 1 ? '' : 's'}</span>
                     </div>
                     {group.length === 0 ? (
@@ -1725,43 +2118,65 @@ function DashboardPage() {
                       <div className="project-cards">
                         {group.map((project) => {
                           const actionState = projectActionState(project)
+                          const metrics = projectMetricDetails(project)
+                          const actionUsesIcon = actionState.label === 'Start' || actionState.label === 'Stop' || actionState.label === 'Starting...' || actionState.label === 'Stopping...'
                           return (
-                            <article className="project-card" key={project.project_id}>
-                              <div className="project-card-top">
-                                <div>
+                            <article className={classNames('project-card', projectCardStateClass(project))} key={project.project_id}>
+                              <div className="project-card-header">
+                                <div className="project-card-top">
                                   <h4>{project.project_id}</h4>
-                                  <div className="badges">
-                                    <span className={classNames('badge', projectStateTone(project))}>
-                                      {projectStateLabel(project)}
-                                    </span>
-                                  </div>
+                                  <hr className="project-card-divider" />
                                 </div>
-                                <div className="muted">{project.bulletjournal_version}</div>
                               </div>
                               <div className="meta-grid">
-                                <div className="meta-item"><span>Python</span><strong>{project.python_version}</strong></div>
-                                <div className="meta-item"><span>Last edit</span><strong>{formatDateTime(project.last_edit_at)}</strong></div>
-                                <div className="meta-item"><span>Last run finished</span><strong>{formatDateTime(project.last_run_finished_at)}</strong></div>
-                                <div className="meta-item"><span>Runtime port</span><strong>{project.runtime.container_port ?? 'not running'}</strong></div>
-                                <div className="meta-item"><span>Disk</span><strong>{formatBytes(project.metrics.disk_used_bytes ?? 0)}</strong></div>
-                                {typeof project.metrics.cpu_percent === 'number' ? <div className="meta-item"><span>CPU</span><strong>{formatPercentage(project.metrics.cpu_percent)}</strong></div> : null}
-                                {typeof project.metrics.memory_used_bytes === 'number' ? <div className="meta-item"><span>Memory</span><strong>{formatBytes(project.metrics.memory_used_bytes)}</strong></div> : null}
+                                <div className="metrics-row">
+                                  {metrics.map((metric) => (
+                                    <div key={metric.label} className={classNames('meta-item', 'metric-chip', metric.tone)}>
+                                      <span>{metric.label}</span>
+                                      <strong>{metric.value}</strong>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="meta-item">
+                                  <span>Last edit</span>
+                                  {project.last_edit_at ? (
+                                    <div className="timestamp-row">
+                                      <strong>{formatRelativeTime(project.last_edit_at)}</strong>
+                                      <span className="muted">{formatDateTime(project.last_edit_at)}</span>
+                                    </div>
+                                  ) : (
+                                    <strong>-</strong>
+                                  )}
+                                </div>
                               </div>
                               <div className="quick-actions">
-                                {isProjectOpenable(project) ? <a className="button-secondary" href={`/p/${project.project_id}/`} target="_blank" rel="noreferrer">Open</a> : null}
+                                {isProjectOpenable(project) ? (
+                                  <a className="button-open icon-action" href={`/p/${project.project_id}/`} target="_blank" rel="noreferrer" aria-label="Open project" title="Open project">
+                                    <PencilIcon width={18} height={18} />
+                                  </a>
+                                ) : null}
                                 <button
-                                  className={classNames('button-secondary', actionState.className)}
+                                  className={classNames(actionState.className, actionUsesIcon && 'icon-action')}
                                   type="button"
                                   disabled={actionState.disabled}
+                                  aria-label={actionState.label}
+                                  title={actionState.label}
                                   onClick={() => {
                                     if (actionState.action) {
                                       void queueProjectAction(project.project_id, actionState.action)
                                     }
                                   }}
                                 >
-                                  {actionState.label}
+                                  {actionUsesIcon ? (
+                                    <>
+                                      {actionState.action === 'start' || actionState.label === 'Starting...' ? <PlayIcon width={18} height={18} /> : null}
+                                      {actionState.action === 'stop' || actionState.label === 'Stopping...' ? <StopIcon width={18} height={18} /> : null}
+                                    </>
+                                  ) : actionState.label}
                                 </button>
-                                <button className="button-secondary" type="button" onClick={() => navigate(`/projects/${project.project_id}`)}>Details</button>
+                                <button className="button-secondary icon-action" type="button" aria-label="Project details" title="Project details" onClick={() => navigate(`/projects/${project.project_id}`)}>
+                                  <span className="info-glyph" aria-hidden="true">i</span>
+                                </button>
                               </div>
                             </article>
                           )
@@ -1774,65 +2189,6 @@ function DashboardPage() {
             </div>
           </div>
         </section>
-
-        <aside className="layout-grid">
-          <section className="panel">
-            <div className="panel-head">
-              <div className="eyebrow">System metrics</div>
-              <h2>Current host usage</h2>
-            </div>
-            <div className="panel-body stats-grid">
-              <div className="stat-card">
-                <span className="muted">CPU in use</span>
-                <strong>{formatPercentage(systemInfo?.metrics.cpu_percent)}</strong>
-              </div>
-              <div className="stat-card">
-                <span className="muted">RAM in use</span>
-                <strong>{systemInfo?.metrics.memory ? `${formatBytes(systemInfo.metrics.memory.used_bytes)} / ${formatBytes(systemInfo.metrics.memory.total_bytes)}` : 'Loading...'}</strong>
-              </div>
-              <div className="stat-card">
-                <span className="muted">Disk in use</span>
-                <strong>{systemInfo?.metrics.disk ? `${formatBytes(systemInfo.metrics.disk.used_bytes)} / ${formatBytes(systemInfo.metrics.disk.total_bytes)}` : 'Loading...'}</strong>
-              </div>
-            </div>
-          </section>
-
-          <section className="panel">
-            <div className="panel-head">
-              <div className="eyebrow">Instance defaults</div>
-              <h2>{systemInfo?.title || 'Controller instance'}</h2>
-            </div>
-            <div className="panel-body stats-grid">
-              <div className="stat-card">
-                <span className="muted">Instance id</span>
-                <strong>{systemInfo?.instance_id || 'Loading...'}</strong>
-              </div>
-              <div className="stat-card">
-                <span className="muted">Default BulletJournal</span>
-                <strong>{systemInfo?.default_bulletjournal_version || 'Loading...'}</strong>
-              </div>
-              <div className="stat-card">
-                <span className="muted">Default Python</span>
-                <strong>{systemInfo?.default_python_version || 'Loading...'}</strong>
-              </div>
-              <div className="stat-card">
-                <span className="muted">Tracked projects</span>
-                <strong>{visibleProjects.length}</strong>
-              </div>
-            </div>
-          </section>
-
-          <section className="panel">
-            <div className="panel-head">
-              <div className="eyebrow">Default dependency text</div>
-              <h2>Creation baseline</h2>
-            </div>
-            <div className="panel-body">
-              <p className="section-copy">The create dialog starts with the merged default dependency text from the controller instance configuration.</p>
-              <textarea readOnly value={systemInfo?.default_dependencies_text || 'Loading default dependencies...'} />
-            </div>
-          </section>
-        </aside>
       </div>
 
       {showCreateModal && systemInfo ? (
@@ -1901,7 +2257,6 @@ function CreateProjectModal({
       <section className="modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
         <div className="modal-head">
           <div>
-            <div className="eyebrow">Create Project</div>
             <h2>Provision a managed BulletJournal runtime</h2>
             <p className="section-copy">Project ids become both filesystem roots and runtime identifiers. Creation installs dependencies and starts the container in the background after the project record is created.</p>
           </div>
@@ -2232,7 +2587,6 @@ function ProjectPage() {
       <div className="topbar">
         <div className="nav-pills">
           <Link className="pill-link" to="/">Back to dashboard</Link>
-          <span className="eyebrow">Project detail</span>
           {activeJobIds.length > 0 ? <span className="badge">Watching {activeJobIds.length} active job{activeJobIds.length === 1 ? '' : 's'}</span> : null}
         </div>
         <div className="button-row">
@@ -2259,7 +2613,6 @@ function ProjectPage() {
         <div className="layout-grid">
           <section className="panel">
             <div className="panel-head">
-              <div className="eyebrow">Project summary</div>
               <h2>{displayProject.project_id}</h2>
               <p className="section-copy">Controller metadata reflects project lifecycle state, recent runtime activity, lock ownership, and configured dependency inputs.</p>
             </div>
@@ -2295,7 +2648,6 @@ function ProjectPage() {
 
           <section className="panel">
             <div className="panel-head">
-              <div className="eyebrow">Environment editor</div>
               <h2>Managed dependency inputs</h2>
               <p className="section-copy">Reinstalling rebuilds the managed runtime. If you edit the dependency inputs first, the same action saves those changes before reinstalling.</p>
             </div>
@@ -2346,7 +2698,6 @@ function ProjectPage() {
         <aside className="layout-grid">
           <section className="panel">
             <div className="panel-head">
-              <div className="eyebrow">Runtime summary</div>
               <h2>Container and limits</h2>
             </div>
             <div className="panel-body summary-grid">
@@ -2372,7 +2723,6 @@ function ProjectPage() {
 
           <section className="panel">
             <div className="panel-head">
-              <div className="eyebrow">Resource limits editor</div>
               <h2>Adjust runtime constraints</h2>
             </div>
             <div className="panel-body">
@@ -2423,7 +2773,6 @@ function ProjectPage() {
 
           <section className="panel">
             <div className="panel-head">
-              <div className="eyebrow">Recent jobs</div>
               <h2>Project work queue</h2>
             </div>
             <div className="panel-body">
@@ -2454,7 +2803,6 @@ function ProjectPage() {
 
           <section className="panel">
             <div className="panel-head">
-              <div className="eyebrow">Danger zone</div>
               <h2>Delete managed project</h2>
             </div>
             <div className="panel-body">

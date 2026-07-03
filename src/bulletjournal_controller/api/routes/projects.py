@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, Request, status
+from fastapi.responses import FileResponse
 
 from bulletjournal_controller.api.auth import get_current_user, require_same_origin
 from bulletjournal_controller.api.schemas import (
@@ -12,6 +13,7 @@ from bulletjournal_controller.api.schemas import (
     UpdateEnvironmentRequest,
     UpdateProjectRequest,
 )
+from bulletjournal_controller.domain.errors import NotFoundError
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -88,6 +90,22 @@ def get_project(project_id: str, request: Request, _user=Depends(get_current_use
         job.to_api() for job in container.jobs.list_for_project(project_id)
     ]
     return payload
+
+
+@router.get("/{project_id}/lockfile")
+def download_project_lockfile(
+    project_id: str, request: Request, _user=Depends(get_current_user)
+):
+    container = request.app.state.container
+    project = container.project_service.get_project(project_id)
+    lockfile_path = container.instance_paths.project_paths(project.project_id).uv_lock_path
+    if not lockfile_path.is_file():
+        raise NotFoundError(f"Lockfile not found for project {project.project_id}.")
+    return FileResponse(
+        lockfile_path,
+        media_type="text/plain; charset=utf-8",
+        filename=f"{project.project_id}__uv.lock",
+    )
 
 
 @router.patch("/{project_id}", dependencies=[Depends(require_same_origin)])

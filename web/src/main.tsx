@@ -144,6 +144,7 @@ style.textContent = `
     --error-bg: rgba(239, 131, 123, 0.84);
     --line: rgba(31, 41, 41, 0.12);
     --shadow: 0 18px 54px rgba(39, 42, 40, 0.12);
+    --editor-grid: 20px;
     --radius-xl: 28px;
     --radius-lg: 20px;
     --radius-md: 14px;
@@ -182,15 +183,13 @@ style.textContent = `
     color: var(--ink);
     font-family: Georgia, 'Iowan Old Style', serif;
     background:
-      radial-gradient(circle at 0% 0%, rgba(29, 123, 108, 0.2), transparent 28%),
-      radial-gradient(circle at 100% 100%, rgba(184, 100, 53, 0.18), transparent 34%),
-      linear-gradient(180deg, #f8f1e1, var(--bg));
+      radial-gradient(circle, rgba(24, 53, 43, 0.24) 1.1px, transparent 1.3px) 0 0 / var(--editor-grid) var(--editor-grid),
+      linear-gradient(180deg, #faf6ed 0%, var(--bg) 100%);
   }
   :root[data-theme='dark'] body {
     background:
-      radial-gradient(circle at 0% 0%, rgba(99, 196, 178, 0.12), transparent 28%),
-      radial-gradient(circle at 100% 100%, rgba(216, 144, 99, 0.14), transparent 34%),
-      linear-gradient(180deg, #1e1e1a, var(--bg));
+      radial-gradient(circle, rgba(236, 229, 213, 0.16) 1.1px, transparent 1.3px) 0 0 / var(--editor-grid) var(--editor-grid),
+      linear-gradient(180deg, #1f1d1a 0%, var(--bg) 100%);
   }
   button, input, textarea, select {
     font: inherit;
@@ -211,6 +210,13 @@ style.textContent = `
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
+  }
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 20px;
   }
   .pill-link,
   .pill-button,
@@ -249,6 +255,10 @@ style.textContent = `
     min-height: 42px;
     padding: 0;
     border-radius: 999px;
+  }
+  .button-back {
+    min-width: 42px;
+    padding: 0;
   }
   .info-glyph {
     font-size: 20px;
@@ -404,6 +414,9 @@ style.textContent = `
   .project-card.state-running .project-card-header {
     background: var(--success-bg);
   }
+  .project-card.state-busy .project-card-header {
+    background: rgba(96, 165, 250, 0.88);
+  }
   .project-card.state-error .project-card-header {
     background: var(--error-bg);
   }
@@ -558,9 +571,13 @@ style.textContent = `
   :root[data-theme='dark'] .button-secondary,
   :root[data-theme='dark'] .button-neutral,
   :root[data-theme='dark'] .project-card:not(.state-running):not(.state-error),
+  :root[data-theme='dark'] .project-detail-card:not(.state-running):not(.state-error),
   :root[data-theme='dark'] .metric-chip:not(.metric-warning):not(.metric-danger),
   :root[data-theme='dark'] .job-row,
   :root[data-theme='dark'] .summary-block,
+  :root[data-theme='dark'] .detail-row,
+  :root[data-theme='dark'] .lockfile-row,
+  :root[data-theme='dark'] .limits-card,
   :root[data-theme='dark'] .hero-note,
   :root[data-theme='dark'] .empty-state {
     background: rgba(255, 255, 255, 0.06);
@@ -626,10 +643,28 @@ style.textContent = `
   .job-row {
     display: grid;
     gap: 8px;
-    padding: 14px 16px;
+    padding: 0 16px 16px;
     border-radius: 16px;
     background: rgba(255, 255, 255, 0.58);
     border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .job-row-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px 12px;
+    margin: 0 -16px;
+  }
+  .job-row.state-succeeded .job-row-header {
+    background: var(--success-bg);
+  }
+  .job-row.state-running .job-row-header {
+    background: rgba(96, 165, 250, 0.88);
+  }
+  .job-row.state-failed .job-row-header {
+    background: var(--error-bg);
   }
   .job-row-top {
     display: flex;
@@ -642,6 +677,10 @@ style.textContent = `
     gap: 20px;
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
     align-items: start;
+  }
+  .project-detail-stack {
+    display: grid;
+    gap: 20px;
   }
   .summary-grid {
     display: grid;
@@ -657,6 +696,129 @@ style.textContent = `
   .summary-block h3 {
     margin: 0 0 12px;
     font-size: 1.12rem;
+  }
+  .summary-block.compact {
+    display: grid;
+    gap: 8px;
+  }
+  .project-detail-card {
+    display: grid;
+    gap: 18px;
+    padding: 0 18px 18px;
+    border-radius: var(--radius-xl);
+    background: var(--paper);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .project-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    padding: 18px 18px 16px;
+    margin: 0 -18px;
+  }
+  .project-detail-card.state-running .project-detail-header {
+    background: var(--success-bg);
+  }
+  .project-detail-card.state-busy .project-detail-header {
+    background: rgba(96, 165, 250, 0.88);
+  }
+  .project-detail-card.state-error .project-detail-header {
+    background: var(--error-bg);
+  }
+  .project-detail-title,
+  .project-detail-status {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+  }
+  .project-detail-title h2,
+  .project-detail-status strong {
+    margin: 0;
+  }
+  .project-detail-title h2 {
+    font-size: 1.75rem;
+  }
+  .project-detail-status {
+    justify-items: end;
+    text-align: right;
+  }
+  .detail-meta-grid {
+    display: grid;
+    gap: 14px;
+  }
+  .detail-row {
+    display: grid;
+    gap: 6px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.52);
+  }
+  .detail-row-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .detail-row-header span {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .detail-value {
+    font-weight: 600;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+  .project-env-grid {
+    display: grid;
+    gap: 16px;
+  }
+  .lockfile-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.52);
+  }
+  .lockfile-meta {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+  }
+  .lockfile-meta code {
+    overflow-wrap: anywhere;
+  }
+  .limits-card {
+    display: grid;
+    gap: 16px;
+    padding: 16px;
+    border-radius: 18px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.48);
+  }
+  .limits-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .limits-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .mono-copy {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.88rem;
   }
   .modal-backdrop {
     position: fixed;
@@ -745,10 +907,11 @@ style.textContent = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 52px;
+    width: 48px;
     height: 100%;
     border: 0;
-    background: transparent;
+    background: inherit;
+    box-shadow: none;
     cursor: pointer;
     color: var(--ink);
   }
@@ -757,7 +920,7 @@ style.textContent = `
     display: flex;
     align-items: stretch;
     align-self: stretch;
-    box-shadow: inset 1px 0 0 var(--line);
+    background: transparent;
   }
   .theme-popover {
     position: absolute;
@@ -802,7 +965,7 @@ style.textContent = `
     background: var(--paper-strong);
     box-shadow: var(--shadow);
     backdrop-filter: blur(16px);
-    min-height: 64px;
+    min-height: 48px;
   }
   .footer-left,
   .footer-right {
@@ -842,22 +1005,51 @@ style.textContent = `
   }
   .footer-metric {
     display: inline-flex;
+    position: relative;
     align-items: center;
     gap: 8px;
     align-self: stretch;
-    padding: 0 14px;
+    padding: 0 12px;
     border: 0;
     background: transparent;
-    box-shadow: inset 1px 0 0 var(--line);
     white-space: nowrap;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .footer-metric > * {
+    position: relative;
+    z-index: 1;
+  }
+  .footer-metric::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: calc(var(--metric-percent, 0) * 1%);
+    background: var(--metric-fill, transparent);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .footer-metric.metric-ok {
+    --metric-fill: var(--success-bg);
+  }
+  .footer-metric::before,
+  .footer-theme::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--line);
+    pointer-events: none;
   }
   .footer-metric.metric-warning {
-    background: var(--warning-bg);
-    border-color: rgba(200, 116, 24, 0.2);
+    --metric-fill: var(--warning-bg);
   }
   .footer-metric.metric-danger {
-    background: var(--danger-bg);
-    border-color: rgba(178, 58, 51, 0.24);
+    --metric-fill: var(--danger-bg);
   }
   .collapsible-panel {
     display: grid;
@@ -960,18 +1152,13 @@ style.textContent = `
   }
   :root[data-theme='dark'] .section-toggle,
   :root[data-theme='dark'] .job-log-download,
-  :root[data-theme='dark'] .theme-trigger,
-  :root[data-theme='dark'] .footer-metric:not(.metric-warning):not(.metric-danger) {
+  :root[data-theme='dark'] .footer-metric:not(.metric-ok):not(.metric-warning):not(.metric-danger) {
     background: rgba(24, 27, 25, 0.92);
     color: rgba(239, 231, 216, 0.96);
     border-color: var(--line);
-    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.34);
   }
-  :root[data-theme='dark'] .footer-theme {
-    box-shadow: inset 1px 0 0 var(--line);
-  }
-  :root[data-theme='dark'] .footer-metric {
-    box-shadow: inset 1px 0 0 var(--line);
+  :root[data-theme='dark'] .theme-trigger {
+    color: rgba(239, 231, 216, 0.96);
   }
   .subtle-link {
     color: var(--warm);
@@ -1068,6 +1255,25 @@ function StopIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <IconBase {...props}>
       <rect x="6.25" y="6.25" width="11.5" height="11.5" rx="1.5" fill="currentColor" stroke="currentColor" strokeWidth="1.5" />
+    </IconBase>
+  )
+}
+
+function ArrowLeftIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="M19 12H5" />
+      <path d="m12 5-7 7 7 7" />
+    </IconBase>
+  )
+}
+
+function DownloadIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="M12 4v10" />
+      <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
+      <path d="M4 20h16" />
     </IconBase>
   )
 }
@@ -1212,7 +1418,7 @@ function formatRelativeTime(value: string | null | undefined): string {
   return `${Math.floor(diffMs / day)}d ago`
 }
 
-function metricTone(percent: number | null | undefined): '' | 'metric-warning' | 'metric-danger' {
+function metricTone(percent: number | null | undefined): '' | 'metric-ok' | 'metric-warning' | 'metric-danger' {
   if (!Number.isFinite(percent)) {
     return ''
   }
@@ -1222,7 +1428,18 @@ function metricTone(percent: number | null | undefined): '' | 'metric-warning' |
   if (Number(percent) > 60) {
     return 'metric-warning'
   }
-  return ''
+  return 'metric-ok'
+}
+
+function metricFillStyle(percent: number | null | undefined): React.CSSProperties | undefined {
+  if (!Number.isFinite(percent)) {
+    return undefined
+  }
+
+  const clampedPercent = Math.max(0, Math.min(100, Number(percent)))
+  return {
+    '--metric-percent': clampedPercent,
+  } as React.CSSProperties
 }
 
 function usagePercent(used: number | null | undefined, total: number | null | undefined): number | null {
@@ -1272,8 +1489,45 @@ function buildJobLogFilename(job: JobRecord): string {
   return `${nameParts.join('__')}.log`
 }
 
+function lockfileDownloadUrl(projectId: string): string {
+  return `/api/v1/projects/${encodeURIComponent(projectId)}/lockfile`
+}
+
 function isProjectOpenable(project: Project): boolean {
   return project.status === 'running' && project.runtime.container_port !== null
+}
+
+function displayProjectStatus(project: Project): string {
+  const label = projectStateLabel(project)
+  if (!label) {
+    return 'Unknown'
+  }
+  return label
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function jobStatusCardClass(job: JobRecord): string {
+  if (job.status === 'succeeded') {
+    return 'state-succeeded'
+  }
+  if (job.status === 'running' || job.status === 'queued') {
+    return 'state-running'
+  }
+  if (job.status === 'failed') {
+    return 'state-failed'
+  }
+  return ''
+}
+
+function displayJobStatus(job: JobRecord): string {
+  return job.status
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
 }
 
 function projectStateLabel(project: Project): string {
@@ -1287,11 +1541,11 @@ function projectStateLabel(project: Project): string {
 }
 
 function projectStateTone(project: Project): string {
-  if (project.status === 'running') {
+  if (project.status === 'creating' || project.status === 'installing' || project.status === 'starting' || project.status === 'stopping') {
     return 'running'
   }
-  if (project.status === 'creating' || project.status === 'installing' || project.status === 'starting' || project.status === 'stopping') {
-    return 'neutral'
+  if (project.status === 'running') {
+    return 'running'
   }
   if (project.status === 'error' || project.status_reason === 'install_failed' || project.status_reason === 'start_failed' || project.status_reason === 'runtime_crashed') {
     return 'error'
@@ -1300,6 +1554,9 @@ function projectStateTone(project: Project): string {
 }
 
 function projectCardStateClass(project: Project): string {
+  if (project.status === 'creating' || project.status === 'installing' || project.status === 'starting' || project.status === 'stopping') {
+    return 'state-busy'
+  }
   if (project.status === 'running') {
     return 'state-running'
   }
@@ -1309,7 +1566,7 @@ function projectCardStateClass(project: Project): string {
   return ''
 }
 
-function projectMetricDetails(project: Project): Array<{ label: string; value: string; tone: '' | 'metric-warning' | 'metric-danger' }> {
+function projectMetricDetails(project: Project): Array<{ label: string; value: string; tone: '' | 'metric-ok' | 'metric-warning' | 'metric-danger' }> {
   const cpuPercent = typeof project.metrics.cpu_percent === 'number' ? project.metrics.cpu_percent : null
   const memoryPercent = usagePercent(project.metrics.memory_used_bytes ?? null, project.metrics.memory_limit_bytes ?? null)
 
@@ -1343,6 +1600,7 @@ function FooterSystemMetrics({ systemInfo }: { systemInfo: SystemInfo | null }) 
     <div className="footer-metrics">
       <span
         className={classNames('footer-metric', metricTone(diskPercent))}
+        style={metricFillStyle(diskPercent)}
         title={systemInfo?.metrics.disk ? `${formatBytes(systemInfo.metrics.disk.used_bytes)} / ${formatBytes(systemInfo.metrics.disk.total_bytes)}` : 'Not available'}
       >
         <span className="muted">Disk</span>
@@ -1350,12 +1608,13 @@ function FooterSystemMetrics({ systemInfo }: { systemInfo: SystemInfo | null }) 
       </span>
       <span
         className={classNames('footer-metric', metricTone(memoryPercent))}
+        style={metricFillStyle(memoryPercent)}
         title={systemInfo?.metrics.memory ? `${formatBytes(systemInfo.metrics.memory.used_bytes)} / ${formatBytes(systemInfo.metrics.memory.total_bytes)}` : 'Not available'}
       >
         <span className="muted">RAM</span>
         <strong>{formatPercentage(memoryPercent)}</strong>
       </span>
-      <span className={classNames('footer-metric', cpuTone)}>
+      <span className={classNames('footer-metric', cpuTone)} style={metricFillStyle(systemInfo?.metrics.cpu_percent)}>
         <span className="muted">CPU</span>
         <strong>{formatPercentage(systemInfo?.metrics.cpu_percent)}</strong>
       </span>
@@ -2561,6 +2820,30 @@ function ProjectPage() {
     }
   }
 
+  async function downloadLockfile() {
+    setError(null)
+    try {
+      const response = await fetch(lockfileDownloadUrl(projectId), { credentials: 'include' })
+      if (!response.ok) {
+        const contentType = response.headers.get('content-type') || ''
+        const payload = contentType.includes('application/json') ? await response.json() : await response.text()
+        const detail = typeof payload === 'object' && payload !== null && 'detail' in payload ? String((payload as { detail: unknown }).detail) : response.statusText
+        throw new Error(detail || 'Failed to download lockfile.')
+      }
+      const blob = await response.blob()
+      const objectUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = `${projectId}__uv.lock`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(objectUrl)
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Failed to download lockfile.')
+    }
+  }
+
   if (loading) {
     return (
       <AppChrome>
@@ -2581,238 +2864,293 @@ function ProjectPage() {
   const actionState = projectActionState(displayProject)
   const environmentActionLabel = environmentInputsDirty ? 'Save and reinstall' : 'Reinstall environment'
   const environmentActionPendingLabel = environmentInputsDirty ? 'Saving and reinstalling...' : 'Queueing reinstall...'
+  const metrics = projectMetricDetails(displayProject)
+  const actionUsesIcon = actionState.label === 'Start' || actionState.label === 'Stop' || actionState.label === 'Starting...' || actionState.label === 'Stopping...'
+  const runtimeTimestampLabel = displayProject.status === 'running' || displayProject.status === 'starting'
+    ? 'Started at'
+    : 'Stopped at'
+  const runtimeTimestampValue = displayProject.status === 'running' || displayProject.status === 'starting'
+    ? displayProject.runtime.runtime_started_at
+    : displayProject.runtime.runtime_stopped_at
 
   return (
     <AppChrome>
       <div className="topbar">
         <div className="nav-pills">
-          <Link className="pill-link" to="/">Back to dashboard</Link>
+          <Link className="pill-link button-back" to="/" aria-label="Back to dashboard" title="Back to dashboard">
+            <ArrowLeftIcon width={18} height={18} />
+          </Link>
           {activeJobIds.length > 0 ? <span className="badge">Watching {activeJobIds.length} active job{activeJobIds.length === 1 ? '' : 's'}</span> : null}
-        </div>
-        <div className="button-row">
-          {isProjectOpenable(displayProject) ? <a className="button-secondary" href={`/p/${displayProject.project_id}/`} target="_blank" rel="noreferrer">Open Project</a> : null}
-          <button
-            className={classNames('button-secondary', actionState.className)}
-            type="button"
-            disabled={actionState.disabled}
-            onClick={() => {
-              if (actionState.action) {
-                void queueAction(actionState.action)
-              }
-            }}
-          >
-            {actionState.label}
-          </button>
         </div>
       </div>
 
       {flash ? <div className="success-banner">{flash}</div> : null}
       {error ? <div className="error-banner">{error}</div> : null}
 
-      <div className="detail-grid">
-        <div className="layout-grid">
-          <section className="panel">
-            <div className="panel-head">
+      <div className="project-detail-stack">
+        <section className={classNames('project-detail-card', projectCardStateClass(displayProject))}>
+          <div className="project-detail-header">
+            <div className="project-detail-title">
               <h2>{displayProject.project_id}</h2>
-              <p className="section-copy">Controller metadata reflects project lifecycle state, recent runtime activity, lock ownership, and configured dependency inputs.</p>
             </div>
-            <div className="panel-body summary-grid">
-              <div className="summary-block">
-                <h3>Status</h3>
-                <div className="badges">
-                  <span className={classNames('badge', projectStateTone(displayProject))}>{projectStateLabel(displayProject)}</span>
+            <div className="project-detail-status">
+              <strong>{displayProjectStatus(displayProject)}</strong>
+            </div>
+          </div>
+          <div className="quick-actions">
+            {isProjectOpenable(displayProject) ? (
+              <a className="button-open icon-action" href={`/p/${displayProject.project_id}/`} target="_blank" rel="noreferrer" aria-label="Open project" title="Open project">
+                <PencilIcon width={18} height={18} />
+              </a>
+            ) : null}
+            <button
+              className={classNames(actionState.className, actionUsesIcon && 'icon-action')}
+              type="button"
+              disabled={actionState.disabled}
+              aria-label={actionState.label}
+              title={actionState.label}
+              onClick={() => {
+                if (actionState.action) {
+                  void queueAction(actionState.action)
+                }
+              }}
+            >
+              {actionUsesIcon ? (
+                <>
+                  {actionState.action === 'start' || actionState.label === 'Starting...' ? <PlayIcon width={18} height={18} /> : null}
+                  {actionState.action === 'stop' || actionState.label === 'Stopping...' ? <StopIcon width={18} height={18} /> : null}
+                </>
+              ) : actionState.label}
+            </button>
+          </div>
+          <div className="metrics-row">
+            {metrics.map((metric) => (
+              <div key={metric.label} className={classNames('meta-item', 'metric-chip', metric.tone)}>
+                <span>{metric.label}</span>
+                <strong>{metric.value}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="summary-grid">
+            <div className="summary-block compact">
+              <h3>Last edit</h3>
+              {displayProject.last_edit_at ? (
+                <div className="timestamp-row">
+                  <strong>{formatRelativeTime(displayProject.last_edit_at)}</strong>
+                  <span className="muted">{formatDateTime(displayProject.last_edit_at)}</span>
                 </div>
-                <p className="section-copy">Last install: {formatDateTime(displayProject.last_install_at)}</p>
-              </div>
-              <div className="summary-block">
-                <h3>Versions</h3>
-                <p className="section-copy">BulletJournal {displayProject.bulletjournal_version}</p>
-                <p className="section-copy">Python {displayProject.python_version}</p>
-                <p className="section-copy">Lock SHA: {displayProject.lock_sha256 || 'Not recorded yet'}</p>
-              </div>
-              <div className="summary-block">
-                <h3>Edits and runs</h3>
-                <p className="section-copy">Last edit: {formatDateTime(displayProject.last_edit_at)}</p>
-                <p className="section-copy">Last run finished: {formatDateTime(displayProject.last_run_finished_at)}</p>
-                <p className="section-copy">Idle eligible at: {formatDateTime(displayProject.idle_shutdown_eligible_at)}</p>
-              </div>
-              <div className="summary-block">
-                <h3>Filesystem</h3>
-                <p className="section-copy">Root path: <code>{displayProject.root_path}</code></p>
-                <p className="section-copy">Created: {formatDateTime(displayProject.created_at)}</p>
-                <p className="section-copy">Updated: {formatDateTime(displayProject.updated_at)}</p>
-                <p className="section-copy">Disk in use: {formatBytes(displayProject.metrics.disk_used_bytes ?? 0)}</p>
-              </div>
+              ) : (
+                <strong>-</strong>
+              )}
             </div>
-          </section>
+            <div className="summary-block compact">
+              <h3>Last run</h3>
+              {displayProject.last_run_finished_at ? (
+                <div className="timestamp-row">
+                  <strong>{formatRelativeTime(displayProject.last_run_finished_at)}</strong>
+                  <span className="muted">{formatDateTime(displayProject.last_run_finished_at)}</span>
+                </div>
+              ) : (
+                <strong>-</strong>
+              )}
+            </div>
+          </div>
+        </section>
 
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Managed dependency inputs</h2>
-              <p className="section-copy">Reinstalling rebuilds the managed runtime. If you edit the dependency inputs first, the same action saves those changes before reinstalling.</p>
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Project environment</h2>
+          </div>
+          <div className="panel-body">
+            <form className="project-env-grid" onSubmit={onSaveEnvironment}>
+              <div className="field-grid">
+                <div className="field">
+                  <label htmlFor="env-python">Python version</label>
+                  <input id="env-python" value={environmentForm.python_version} onChange={(event) => {
+                    setEnvironmentForm((current) => ({ ...current, python_version: event.target.value }))
+                  }} required />
+                </div>
+                <div className="field-full">
+                  <label htmlFor="env-custom">Requirements</label>
+                  <textarea id="env-custom" value={environmentForm.custom_requirements_text} onChange={(event) => {
+                    setEnvironmentForm((current) => ({ ...current, custom_requirements_text: event.target.value }))
+                  }} />
+                </div>
+                <div className="field">
+                  <label>Restart behavior</label>
+                  <div className="checkbox-row">
+                    <input id="env-restart" type="checkbox" checked={environmentForm.restart_if_running} onChange={(event) => {
+                      setEnvironmentForm((current) => ({ ...current, restart_if_running: event.target.checked }))
+                    }} />
+                    <label htmlFor="env-restart">Restart if currently running</label>
+                  </div>
+                </div>
+                <div className="field">
+                  <label>Artifact invalidation</label>
+                  <div className="checkbox-row">
+                    <input id="env-mark-stale" type="checkbox" checked={environmentForm.mark_all_artifacts_stale} onChange={(event) => {
+                      setEnvironmentForm((current) => ({ ...current, mark_all_artifacts_stale: event.target.checked }))
+                    }} />
+                    <label htmlFor="env-mark-stale">Mark artifacts stale after reinstall</label>
+                  </div>
+                </div>
+              </div>
+              <div className="button-row">
+                <button className="button-open" type="submit" disabled={savingEnvironment}>{savingEnvironment ? environmentActionPendingLabel : environmentActionLabel}</button>
+                {environmentActionFeedback ? <span className={classNames('inline-feedback', environmentActionFeedback.tone)}>{environmentActionFeedback.message}</span> : null}
+              </div>
+              <div className="lockfile-row">
+                <div className="lockfile-meta">
+                  <span className="muted">Current lockfile SHA</span>
+                  <code className="mono-copy">{displayProject.lock_sha256 || 'Not recorded yet'}</code>
+                </div>
+                <button className="button-secondary" type="button" onClick={() => {
+                  void downloadLockfile()
+                }}>
+                  <DownloadIcon width={18} height={18} />
+                  <span>Download lockfile</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Container info</h2>
+          </div>
+          <div className="panel-body layout-grid">
+            <div className="detail-meta-grid">
+              <div className="detail-row">
+                <div className="detail-row-header">
+                  <strong>Container name</strong>
+                </div>
+                <div className="detail-value mono-copy">{displayProject.runtime.container_name || 'Not running'}</div>
+              </div>
+              <div className="detail-row">
+                <div className="detail-row-header">
+                  <strong>Container id</strong>
+                </div>
+                <div className="detail-value mono-copy">{displayProject.runtime.container_id || 'Not running'}</div>
+              </div>
+              <div className="detail-row">
+                <div className="detail-row-header">
+                  <strong>Host port</strong>
+                </div>
+                <div className="detail-value">{displayProject.runtime.container_port ?? 'Not running'}</div>
+              </div>
+              <div className="detail-row">
+                <div className="detail-row-header">
+                  <strong>{runtimeTimestampLabel}</strong>
+                  <span>{formatDateTime(runtimeTimestampValue)}</span>
+                </div>
+                <div className="detail-value">{runtimeTimestampValue ? formatRelativeTime(runtimeTimestampValue) : '-'}</div>
+              </div>
             </div>
-            <div className="panel-body">
-              <form className="layout-grid" onSubmit={onSaveEnvironment}>
-                <div className="field-grid">
+            <div className="limits-card">
+              <div className="limits-card-header">
+                <div className="status-stack">
+                  <strong>Adjust runtime constraints</strong>
+                  <span className="muted">CPU, memory, and GPU settings for this project</span>
+                </div>
+                <div className="limits-summary">
+                  <span className="badge neutral">CPU {formatCpuLimit(parseCpuInputToMillis(limitsForm.cpu_limit_input))}</span>
+                  <span className="badge neutral">Memory {formatMemoryLimit(parseMemoryInputToBytes(limitsForm.memory_limit_input))}</span>
+                  <span className="badge neutral">GPU {limitsForm.gpu_enabled ? 'On' : 'Off'}</span>
+                </div>
+              </div>
+              <button className="button-secondary section-toggle" type="button" onClick={() => setShowLimitsEditor((current) => !current)}>
+                <span>{showLimitsEditor ? 'Hide editor' : 'Edit constraints'}</span>
+                <span className="muted">{showLimitsEditor ? 'Collapse' : 'Expand'}</span>
+              </button>
+              {showLimitsEditor ? (
+                <form className="field-grid" onSubmit={onSaveLimits}>
                   <div className="field">
-                    <label htmlFor="env-python">Python version</label>
-                    <input id="env-python" value={environmentForm.python_version} onChange={(event) => {
-                      setEnvironmentForm((current) => ({ ...current, python_version: event.target.value }))
-                    }} required />
+                    <label htmlFor="limits-cpu">CPU limit (CPUs)</label>
+                    <input id="limits-cpu" type="number" min={0} step="0.1" value={limitsForm.cpu_limit_input} onChange={(event) => {
+                      setLimitsDirty(true)
+                      setLimitsForm((current) => ({ ...current, cpu_limit_input: event.target.value }))
+                    }} placeholder="Unlimited" />
+                    <span className="muted">Leave blank for no CPU limit.</span>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="limits-memory">Memory limit (GB)</label>
+                    <input id="limits-memory" type="number" min={0} step="0.5" value={limitsForm.memory_limit_input} onChange={(event) => {
+                      setLimitsDirty(true)
+                      setLimitsForm((current) => ({ ...current, memory_limit_input: event.target.value }))
+                    }} placeholder="Unlimited" />
+                    <span className="muted">Leave blank for no memory limit.</span>
                   </div>
                   <div className="field-full">
-                    <label htmlFor="env-custom">Custom requirements text</label>
-                    <textarea id="env-custom" value={environmentForm.custom_requirements_text} onChange={(event) => {
-                      setEnvironmentForm((current) => ({ ...current, custom_requirements_text: event.target.value }))
-                    }} />
-                    <span className="muted">Edit the BulletJournal dependency line here to change its package source or pinned version.</span>
-                  </div>
-                  <div className="field">
-                    <label>Restart behavior</label>
+                    <label>GPU access</label>
                     <div className="checkbox-row">
-                      <input id="env-restart" type="checkbox" checked={environmentForm.restart_if_running} onChange={(event) => {
-                        setEnvironmentForm((current) => ({ ...current, restart_if_running: event.target.checked }))
+                      <input id="limits-gpu" type="checkbox" checked={limitsForm.gpu_enabled} onChange={(event) => {
+                        setLimitsDirty(true)
+                        setLimitsForm((current) => ({ ...current, gpu_enabled: event.target.checked }))
                       }} />
-                      <label htmlFor="env-restart">Restart automatically if currently running</label>
+                      <label htmlFor="limits-gpu">Enable GPU if supported on the host</label>
                     </div>
                   </div>
-                  <div className="field">
-                    <label>Artifact invalidation</label>
-                    <div className="checkbox-row">
-                      <input id="env-mark-stale" type="checkbox" checked={environmentForm.mark_all_artifacts_stale} onChange={(event) => {
-                        setEnvironmentForm((current) => ({ ...current, mark_all_artifacts_stale: event.target.checked }))
-                      }} />
-                      <label htmlFor="env-mark-stale">Mark artifacts stale after reinstall</label>
-                    </div>
+                  <div className="button-row">
+                    <button className="button" type="submit" disabled={savingLimits}>{savingLimits ? 'Saving...' : 'Save limits'}</button>
                   </div>
-                </div>
-                <div className="button-row">
-                  <button className="button" type="submit" disabled={savingEnvironment}>{savingEnvironment ? environmentActionPendingLabel : environmentActionLabel}</button>
-                  {environmentActionFeedback ? <span className={classNames('inline-feedback', environmentActionFeedback.tone)}>{environmentActionFeedback.message}</span> : null}
-                </div>
-              </form>
+                </form>
+              ) : null}
             </div>
-          </section>
-        </div>
+          </div>
+        </section>
 
-        <aside className="layout-grid">
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Container and limits</h2>
-            </div>
-            <div className="panel-body summary-grid">
-              <div className="summary-block">
-                <h3>Container</h3>
-                <p className="section-copy">Name: {displayProject.runtime.container_name || 'Not running'}</p>
-                <p className="section-copy">Id: {displayProject.runtime.container_id || 'Not running'}</p>
-                <p className="section-copy">Host port: {displayProject.runtime.container_port ?? 'Not running'}</p>
-              </div>
-              <div className="summary-block">
-                <h3>Runtime clock</h3>
-                <p className="section-copy">Started: {formatDateTime(displayProject.runtime.runtime_started_at)}</p>
-                <p className="section-copy">Stopped: {formatDateTime(displayProject.runtime.runtime_stopped_at)}</p>
-              </div>
-              <div className="summary-block">
-                <h3>Current usage</h3>
-                <p className="section-copy">Disk: {formatBytes(displayProject.metrics.disk_used_bytes ?? 0)}</p>
-                {typeof displayProject.metrics.cpu_percent === 'number' ? <p className="section-copy">CPU: {formatPercentage(displayProject.metrics.cpu_percent)}</p> : null}
-                {typeof displayProject.metrics.memory_used_bytes === 'number' ? <p className="section-copy">Memory: {formatBytes(displayProject.metrics.memory_used_bytes)}{displayProject.metrics.memory_limit_bytes ? ` / ${formatBytes(displayProject.metrics.memory_limit_bytes)}` : ''}</p> : null}
-              </div>
-            </div>
-          </section>
-
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Adjust runtime constraints</h2>
-            </div>
-            <div className="panel-body">
-              <div className="collapsible-panel">
-                <button className="button-secondary section-toggle" type="button" onClick={() => setShowLimitsEditor((current) => !current)}>
-                  <span className="status-stack">
-                    <strong>Runtime limits</strong>
-                    <span className="muted">CPU {formatCpuLimit(parseCpuInputToMillis(limitsForm.cpu_limit_input))} · Memory {formatMemoryLimit(parseMemoryInputToBytes(limitsForm.memory_limit_input))} · GPU {limitsForm.gpu_enabled ? 'On' : 'Off'}</span>
-                  </span>
-                  <span>{showLimitsEditor ? 'Hide' : 'Edit'}</span>
-                </button>
-                {showLimitsEditor ? (
-                  <form className="layout-grid" onSubmit={onSaveLimits}>
-                    <div className="field">
-                      <label htmlFor="limits-cpu">CPU limit (CPUs)</label>
-                      <input id="limits-cpu" type="number" min={0} step="0.1" value={limitsForm.cpu_limit_input} onChange={(event) => {
-                        setLimitsDirty(true)
-                        setLimitsForm((current) => ({ ...current, cpu_limit_input: event.target.value }))
-                      }} placeholder="Unlimited" />
-                      <span className="muted">Leave blank for no CPU limit.</span>
-                    </div>
-                    <div className="field">
-                      <label htmlFor="limits-memory">Memory limit (GB)</label>
-                      <input id="limits-memory" type="number" min={0} step="0.5" value={limitsForm.memory_limit_input} onChange={(event) => {
-                        setLimitsDirty(true)
-                        setLimitsForm((current) => ({ ...current, memory_limit_input: event.target.value }))
-                      }} placeholder="Unlimited" />
-                      <span className="muted">Current display: {formatMemoryLimit(parseMemoryInputToBytes(limitsForm.memory_limit_input))}</span>
-                    </div>
-                    <div className="field-full">
-                      <label>GPU access</label>
-                      <div className="checkbox-row">
-                        <input id="limits-gpu" type="checkbox" checked={limitsForm.gpu_enabled} onChange={(event) => {
-                          setLimitsDirty(true)
-                          setLimitsForm((current) => ({ ...current, gpu_enabled: event.target.checked }))
-                        }} />
-                        <label htmlFor="limits-gpu">Enable GPU for this project when the host supports it</label>
-                      </div>
-                    </div>
-                    <div className="button-row">
-                      <button className="button" type="submit" disabled={savingLimits}>{savingLimits ? 'Saving...' : 'Save Limits'}</button>
-                    </div>
-                  </form>
-                ) : null}
-              </div>
-            </div>
-          </section>
-
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Project work queue</h2>
-            </div>
-            <div className="panel-body">
-              <div className="jobs-list">
-                {(displayProject.recent_jobs || []).length === 0 ? <div className="empty-state">No recent jobs recorded for this project yet.</div> : null}
-                {(displayProject.recent_jobs || []).map((job) => (
-                  <article className="job-row" key={job.job_id}>
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Job history</h2>
+          </div>
+          <div className="panel-body">
+            <div className="jobs-list">
+              {(displayProject.recent_jobs || []).length === 0 ? <div className="empty-state">No recent jobs recorded for this project yet.</div> : null}
+              {(displayProject.recent_jobs || []).map((job) => (
+                <article className={classNames('job-row', jobStatusCardClass(job))} key={job.job_id}>
+                  <div className="job-row-header">
                     <div className="job-row-top">
                       <strong>{job.job_type}</strong>
-                      <span className={classNames('badge', job.status === 'failed' ? 'error' : job.status === 'running' ? 'running' : 'stopped')}>{job.status}</span>
+                      <span className="muted mono-copy">{job.job_id}</span>
                     </div>
-                    <span className="muted">{job.job_id}</span>
-                    <span className="muted">Created {formatDateTime(job.created_at)}</span>
-                    <span className="muted">Duration {formatDurationBetween(job.started_at || job.created_at, job.finished_at)}</span>
-                    {job.job_type === 'create_project' || job.job_type === 'update_environment' || job.job_type === 'reinstall_environment' ? (
-                      <JobLogPreview
-                        job={job}
-                        downloading={downloadingJobIds.includes(job.job_id)}
-                        onDownload={job.log_path ? downloadJobLog : undefined}
-                      />
-                    ) : null}
-                    {job.error_message ? <div className="error-banner">{job.error_message}</div> : null}
-                  </article>
-                ))}
-              </div>
+                    <strong>{displayJobStatus(job)}</strong>
+                  </div>
+                  <div className="meta-item">
+                    <span>Created</span>
+                    <div className="timestamp-row">
+                      <strong>{formatRelativeTime(job.created_at)}</strong>
+                      <span className="muted">{formatDateTime(job.created_at)}</span>
+                    </div>
+                  </div>
+                  <div className="meta-item">
+                    <span>Duration</span>
+                    <strong>{formatDurationBetween(job.started_at || job.created_at, job.finished_at)}</strong>
+                  </div>
+                  {job.job_type === 'create_project' || job.job_type === 'update_environment' || job.job_type === 'reinstall_environment' ? (
+                    <JobLogPreview
+                      job={job}
+                      downloading={downloadingJobIds.includes(job.job_id)}
+                      onDownload={job.log_path ? downloadJobLog : undefined}
+                    />
+                  ) : null}
+                  {job.error_message ? <div className="error-banner">{job.error_message}</div> : null}
+                </article>
+              ))}
             </div>
-          </section>
+          </div>
+        </section>
 
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Delete managed project</h2>
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Danger zone</h2>
+          </div>
+          <div className="panel-body">
+            <div className="button-row">
+              <button className="button-danger" type="button" onClick={onDeleteProject} disabled={deleting}>{deleting ? 'Deleting...' : 'Delete project'}</button>
             </div>
-            <div className="panel-body">
-              <p className="section-copy">Deletion stops the runtime if needed, removes the project root from disk, deletes controller metadata, and frees the project id for clean reuse.</p>
-              <div className="button-row">
-                <button className="button-danger" type="button" onClick={onDeleteProject} disabled={deleting}>{deleting ? 'Deleting...' : 'Delete Project'}</button>
-              </div>
-            </div>
-          </section>
-        </aside>
+          </div>
+        </section>
       </div>
     </AppChrome>
   )

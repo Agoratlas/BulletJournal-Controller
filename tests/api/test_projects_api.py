@@ -100,6 +100,59 @@ def test_invalid_request_shape_returns_422(instance_root, server_config) -> None
         assert response.status_code == 422
 
 
+def test_project_lockfile_download(instance_root, server_config) -> None:
+    app = create_app(instance_root=instance_root, server_config=server_config)
+    container: ServiceContainer = app.state.container
+    user = container.auth_service.create_user(
+        username="admin", display_name="Admin", password="secret-pass"
+    )
+    project = container.project_service.create_project(
+        project_id="study-a",
+        created_by_user_id=user.user_id,
+        python_version="3.11",
+        custom_requirements_text="bulletjournal-editor==0.3.0\n",
+        cpu_limit_millis=1000,
+        memory_limit_bytes=2048,
+        gpu_enabled=False,
+    )
+    lockfile_path = container.instance_paths.project_paths(project.project_id).uv_lock_path
+    lockfile_path.write_text("version = 1\n", encoding="utf-8")
+
+    with _auth_client(app) as client:
+        response = client.get(f"/api/v1/projects/{project.project_id}/lockfile")
+
+    assert response.status_code == 200
+    assert response.text == "version = 1\n"
+    assert 'attachment; filename="study-a__uv.lock"' in response.headers["content-disposition"]
+
+
+def test_project_lockfile_download_returns_404_when_missing(
+    instance_root, server_config
+) -> None:
+    app = create_app(instance_root=instance_root, server_config=server_config)
+    container: ServiceContainer = app.state.container
+    user = container.auth_service.create_user(
+        username="admin", display_name="Admin", password="secret-pass"
+    )
+    project = container.project_service.create_project(
+        project_id="study-a",
+        created_by_user_id=user.user_id,
+        python_version="3.11",
+        custom_requirements_text="bulletjournal-editor==0.3.0\n",
+        cpu_limit_millis=1000,
+        memory_limit_bytes=2048,
+        gpu_enabled=False,
+    )
+    lockfile_path = container.instance_paths.project_paths(project.project_id).uv_lock_path
+    if lockfile_path.exists():
+        lockfile_path.unlink()
+
+    with _auth_client(app) as client:
+        response = client.get(f"/api/v1/projects/{project.project_id}/lockfile")
+
+    assert response.status_code == 404
+
+
 def test_system_config_reports_additional_mounts(instance_root, server_config) -> None:
     app = create_app(instance_root=instance_root, server_config=server_config)
     container: ServiceContainer = app.state.container

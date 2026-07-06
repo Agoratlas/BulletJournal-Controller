@@ -18,6 +18,7 @@ def test_docker_command_construction_has_labels_and_mounts() -> None:
         controller_token="project-secret",
         cpu_limit_millis=2000,
         memory_limit_bytes=4096,
+        disk_soft_limit_bytes=None,
         gpu_enabled=False,
         network_mode="bridge",
         env_file=Path("/srv/runtime/.env"),
@@ -114,6 +115,7 @@ def test_docker_run_command_omits_limit_flags_when_unset() -> None:
         controller_token=None,
         cpu_limit_millis=None,
         memory_limit_bytes=None,
+        disk_soft_limit_bytes=None,
         gpu_enabled=False,
         network_mode="bridge",
     )

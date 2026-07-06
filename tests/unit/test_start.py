@@ -37,6 +37,7 @@ def test_service_container_start_backfills_missing_runtime_venv_size(
         custom_requirements_text="bulletjournal-editor==0.1.0\n",
         cpu_limit_millis=1000,
         memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
         gpu_enabled=False,
     )
     container.projects.update(

@@ -239,6 +239,7 @@ def test_delete_project_job_keeps_its_own_job_record(tmp_path: Path) -> None:
         custom_requirements_text="bulletjournal-editor==0.1.0\n",
         cpu_limit_millis=1000,
         memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
         gpu_enabled=False,
     )
     project_service.projects.update(

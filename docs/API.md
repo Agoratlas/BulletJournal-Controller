@@ -17,6 +17,7 @@ Base API prefix: `/api/v1`
 - `GET /projects`
 - `POST /projects`
 - `GET /projects/{project_id}`
+- `GET /projects/{project_id}/export`
 - `PATCH /projects/{project_id}`
 - `DELETE /projects/{project_id}`
 - `POST /projects/{project_id}/start`

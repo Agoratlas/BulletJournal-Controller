@@ -69,6 +69,7 @@ class RuntimeService:
             controller_token=project.controller_status_token,
             cpu_limit_millis=project.cpu_limit_millis,
             memory_limit_bytes=project.memory_limit_bytes,
+            disk_soft_limit_bytes=project.disk_soft_limit_bytes,
             gpu_enabled=project.gpu_enabled,
             network_mode=self.instance_config.docker_network_mode,
             env_file=self.runtime_config_service.env_file(),
@@ -338,13 +339,18 @@ class RuntimeService:
     def update_limits(self, *, project: ProjectRecord) -> None:
         if not project.container_name:
             return
-        if project.cpu_limit_millis is None and project.memory_limit_bytes is None:
+        if (
+            project.cpu_limit_millis is None
+            and project.memory_limit_bytes is None
+            and project.disk_soft_limit_bytes is None
+        ):
             return
         result = self.adapter.run(
             self.adapter.build_update_command(
                 container_name=project.container_name,
                 cpu_limit_millis=project.cpu_limit_millis,
                 memory_limit_bytes=project.memory_limit_bytes,
+                disk_soft_limit_bytes=project.disk_soft_limit_bytes,
             ),
             timeout=90,
         )

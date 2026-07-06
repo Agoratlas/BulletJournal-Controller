@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
-import type { SVGProps } from 'react'
+import type { CSSProperties, SVGProps } from 'react'
 
 type SessionUser = {
   user_id: string
@@ -34,6 +34,7 @@ type Project = {
   project_id: string
   status: string
   status_reason: string | null
+  has_active_job: boolean
   root_path: string
   created_at: string
   updated_at: string
@@ -49,6 +50,7 @@ type Project = {
   limits: {
     cpu_limit_millis: number | null
     memory_limit_bytes: number | null
+    disk_soft_limit_bytes: number | null
     gpu_enabled: boolean
   }
   runtime: {
@@ -141,6 +143,7 @@ style.textContent = `
     --info-soft: rgba(36, 107, 202, 0.14);
     --info-strong: #1f6ff0;
     --success-bg: rgba(113, 214, 170, 0.86);
+    --stopped-bg: rgba(170, 178, 176, 0.54);
     --error-bg: rgba(239, 131, 123, 0.84);
     --line: rgba(31, 41, 41, 0.12);
     --shadow: 0 18px 54px rgba(39, 42, 40, 0.12);
@@ -172,6 +175,7 @@ style.textContent = `
     --info-soft: rgba(124, 176, 255, 0.16);
     --info-strong: #5f96ff;
     --success-bg: rgba(32, 143, 118, 0.82);
+    --stopped-bg: rgba(98, 108, 108, 0.42);
     --error-bg: rgba(173, 68, 61, 0.82);
     --line: rgba(239, 231, 216, 0.12);
     --shadow: 0 18px 54px rgba(0, 0, 0, 0.28);
@@ -221,6 +225,7 @@ style.textContent = `
   .pill-link,
   .pill-button,
   .button,
+  .button-saved,
   .button-open,
   .button-neutral,
   .button-status-start,
@@ -294,6 +299,11 @@ style.textContent = `
     color: white;
     box-shadow: 0 12px 28px rgba(31, 111, 240, 0.22);
   }
+  .button-saved {
+    background: var(--accent-strong);
+    color: white;
+    box-shadow: 0 12px 28px rgba(52, 184, 90, 0.26);
+  }
   .button-neutral,
   .button-status-start,
   .button-status-stop {
@@ -340,6 +350,7 @@ style.textContent = `
     border: 1px solid var(--line);
     box-shadow: var(--shadow);
     backdrop-filter: blur(10px);
+    overflow: visible;
   }
   .panel-head {
     padding: 22px 24px 0;
@@ -417,6 +428,9 @@ style.textContent = `
   .project-card.state-busy .project-card-header {
     background: rgba(96, 165, 250, 0.88);
   }
+  .project-card.state-stopped .project-card-header {
+    background: var(--stopped-bg);
+  }
   .project-card.state-error .project-card-header {
     background: var(--error-bg);
   }
@@ -427,6 +441,7 @@ style.textContent = `
   .project-card h4 {
     margin: 0;
     font-size: 1.2rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .project-card-divider {
     border: 0;
@@ -469,14 +484,20 @@ style.textContent = `
   }
   .meta-item {
     display: grid;
-    gap: 2px;
+    gap: 6px;
   }
   .metrics-row .meta-item {
     text-align: center;
     justify-items: center;
   }
+  .metrics-row .metric-chip {
+    font-variant-numeric: tabular-nums;
+  }
   .meta-item strong {
     line-height: 1.2;
+  }
+  .metrics-row .meta-item strong {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .meta-item span:first-child {
     color: var(--muted);
@@ -511,6 +532,70 @@ style.textContent = `
     flex-wrap: wrap;
     gap: 10px;
   }
+  .action-menu {
+    position: relative;
+  }
+  .action-popover {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    z-index: 20;
+    min-width: 180px;
+    width: max-content;
+    max-width: min(260px, calc(100vw - 48px));
+    display: grid;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 16px;
+    border: 1px solid rgba(31, 41, 41, 0.14);
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
+  }
+  .action-option {
+    width: 100%;
+    display: grid;
+    gap: 4px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(31, 41, 41, 0.12);
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .action-option:hover:not(:disabled) {
+    border-color: rgba(29, 123, 108, 0.22);
+    background: var(--accent-soft);
+  }
+  .action-option:disabled {
+    opacity: 0.6;
+    cursor: wait;
+  }
+  .action-option strong {
+    font-size: 0.95rem;
+  }
+  .action-option span {
+    color: var(--muted);
+    font-size: 0.86rem;
+    line-height: 1.4;
+  }
+  @media (max-width: 640px) {
+    .action-popover {
+      left: 0;
+      right: auto;
+      max-width: calc(100vw - 48px);
+    }
+  }
+  .project-actions-row {
+    justify-content: flex-start;
+    align-items: center;
+  }
+  .button-row.centered {
+    justify-content: center;
+  }
+  .jobs-list-footer {
+    margin-bottom: -12px;
+  }
   .quick-actions {
     margin-top: 0;
   }
@@ -535,6 +620,15 @@ style.textContent = `
     border-color: rgba(29, 123, 108, 0.14);
     color: #145b50;
   }
+  .inline-feedback.subtle {
+    min-height: auto;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
   .field-grid {
     display: grid;
     gap: 14px;
@@ -552,6 +646,13 @@ style.textContent = `
     font-size: 0.9rem;
     color: var(--muted);
   }
+  .field label,
+  .field-full label,
+  .meta-item > span:first-child,
+  .detail-label,
+  .lockfile-label {
+    font-weight: 600;
+  }
   input,
   textarea,
   select {
@@ -561,6 +662,7 @@ style.textContent = `
     border: 1px solid rgba(31, 41, 41, 0.16);
     background: rgba(255, 255, 255, 0.78);
     color: var(--ink);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   :root[data-theme='dark'] input,
   :root[data-theme='dark'] textarea,
@@ -571,7 +673,6 @@ style.textContent = `
   :root[data-theme='dark'] .button-secondary,
   :root[data-theme='dark'] .button-neutral,
   :root[data-theme='dark'] .project-card:not(.state-running):not(.state-error),
-  :root[data-theme='dark'] .project-detail-card:not(.state-running):not(.state-error),
   :root[data-theme='dark'] .metric-chip:not(.metric-warning):not(.metric-danger),
   :root[data-theme='dark'] .job-row,
   :root[data-theme='dark'] .summary-block,
@@ -583,6 +684,20 @@ style.textContent = `
     background: rgba(255, 255, 255, 0.06);
     color: var(--ink);
     border-color: var(--line);
+  }
+  :root[data-theme='dark'] .project-detail-card {
+    background: var(--paper);
+    color: var(--ink);
+    border-color: var(--line);
+  }
+  :root[data-theme='dark'] .action-popover {
+    background: rgba(10, 10, 12, 0.98);
+    border-color: var(--line);
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.35);
+  }
+  :root[data-theme='dark'] .action-option {
+    border-color: var(--line);
+    background: rgba(255, 255, 255, 0.02);
   }
   textarea {
     min-height: 180px;
@@ -604,6 +719,7 @@ style.textContent = `
     border-radius: var(--radius-md);
     border: 1px solid rgba(31, 41, 41, 0.16);
     background: rgba(255, 255, 255, 0.78);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .checkbox-row input {
     width: auto;
@@ -672,6 +788,15 @@ style.textContent = `
     align-items: center;
     gap: 12px;
   }
+  .job-row-meta {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .job-row-meta .meta-item:last-child {
+    justify-items: end;
+    text-align: right;
+  }
   .detail-grid {
     display: grid;
     gap: 20px;
@@ -699,7 +824,7 @@ style.textContent = `
   }
   .summary-block.compact {
     display: grid;
-    gap: 8px;
+    gap: 6px;
   }
   .project-detail-card {
     display: grid;
@@ -725,6 +850,9 @@ style.textContent = `
   .project-detail-card.state-busy .project-detail-header {
     background: rgba(96, 165, 250, 0.88);
   }
+  .project-detail-card.state-stopped .project-detail-header {
+    background: var(--stopped-bg);
+  }
   .project-detail-card.state-error .project-detail-header {
     background: var(--error-bg);
   }
@@ -740,6 +868,7 @@ style.textContent = `
   }
   .project-detail-title h2 {
     font-size: 1.75rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .project-detail-status {
     justify-items: end;
@@ -748,6 +877,7 @@ style.textContent = `
   .detail-meta-grid {
     display: grid;
     gap: 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .detail-row {
     display: grid;
@@ -757,14 +887,8 @@ style.textContent = `
     border: 1px solid var(--line);
     background: rgba(255, 255, 255, 0.52);
   }
-  .detail-row-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-  .detail-row-header span {
+  .detail-label,
+  .lockfile-label {
     color: var(--muted);
     font-size: 0.85rem;
   }
@@ -776,6 +900,14 @@ style.textContent = `
   .project-env-grid {
     display: grid;
     gap: 16px;
+  }
+  .environment-overview-card {
+    display: grid;
+    gap: 14px;
+  }
+  .environment-overview-card .summary-grid {
+    gap: 14px;
+    grid-template-columns: minmax(0, 0.25fr) minmax(0, 0.75fr);
   }
   .lockfile-row {
     display: flex;
@@ -793,6 +925,13 @@ style.textContent = `
     gap: 6px;
     min-width: 0;
   }
+  .lockfile-row.compact {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    align-items: end;
+    box-shadow: none;
+  }
   .lockfile-meta code {
     overflow-wrap: anywhere;
   }
@@ -805,20 +944,22 @@ style.textContent = `
     background: rgba(255, 255, 255, 0.48);
   }
   .limits-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: start;
-    gap: 14px;
-    flex-wrap: wrap;
-  }
-  .limits-summary {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    display: grid;
+    gap: 6px;
   }
   .mono-copy {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.88rem;
+  }
+  .timestamp-pair {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .timestamp-pair strong,
+  .timestamp-pair .detail-value {
+    font-size: 0.95rem;
   }
   .modal-backdrop {
     position: fixed;
@@ -1093,13 +1234,18 @@ style.textContent = `
   }
   .job-log-preview {
     position: relative;
+    --job-log-scrollbar-width: 0px;
+  }
+  .job-log-frame {
+    border-radius: var(--radius-md);
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.4);
+    overflow: hidden;
   }
   .job-log-preview pre {
     margin: 0;
     padding: 12px 14px;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--line);
-    background: rgba(255, 255, 255, 0.4);
+    background: transparent;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.75rem;
     line-height: 1.45;
@@ -1107,11 +1253,27 @@ style.textContent = `
     word-break: break-word;
     max-height: 260px;
     overflow: auto;
+    scrollbar-color: rgba(31, 41, 41, 0.28) rgba(255, 255, 255, 0.4);
+  }
+  .job-log-preview pre::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  .job-log-preview pre::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.4);
+  }
+  .job-log-preview pre::-webkit-scrollbar-thumb {
+    background: rgba(31, 41, 41, 0.28);
+    border-radius: 999px;
+    border: 3px solid rgba(255, 255, 255, 0.4);
+  }
+  .job-log-preview pre::-webkit-scrollbar-corner {
+    background: rgba(255, 255, 255, 0.4);
   }
   .job-log-download {
     position: absolute;
     top: 10px;
-    right: 10px;
+    right: calc(10px + var(--job-log-scrollbar-width));
     display: inline-grid;
     place-items: center;
     align-items: center;
@@ -1157,6 +1319,26 @@ style.textContent = `
     color: rgba(239, 231, 216, 0.96);
     border-color: var(--line);
   }
+  :root[data-theme='dark'] .job-log-frame {
+    background: #000;
+  }
+  :root[data-theme='dark'] .job-log-preview pre {
+    scrollbar-color: rgba(239, 231, 216, 0.24) #000;
+  }
+  :root[data-theme='dark'] .job-log-preview pre::-webkit-scrollbar-track {
+    background: #000;
+  }
+  :root[data-theme='dark'] .job-log-preview pre::-webkit-scrollbar-thumb {
+    background: rgba(239, 231, 216, 0.24);
+    border-color: #000;
+  }
+  :root[data-theme='dark'] .job-log-preview pre::-webkit-scrollbar-corner {
+    background: #000;
+  }
+  :root[data-theme='dark'] .lockfile-row.compact {
+    background: transparent;
+    border-color: transparent;
+  }
   :root[data-theme='dark'] .theme-trigger {
     color: rgba(239, 231, 216, 0.96);
   }
@@ -1193,7 +1375,8 @@ style.textContent = `
     .field-grid,
     .summary-grid,
     .meta-grid,
-    .metrics-row {
+    .metrics-row,
+    .detail-meta-grid {
       grid-template-columns: 1fr;
     }
     .app-shell {
@@ -1338,6 +1521,10 @@ function formatMemoryLimit(value: number | null | undefined): string {
   return `${(value / (1024 ** 3)).toFixed(value >= 10 * 1024 ** 3 ? 0 : 1)} GB`
 }
 
+function formatDiskSoftLimit(value: number | null | undefined): string {
+  return formatMemoryLimit(value)
+}
+
 function formatCpuLimit(value: number | null | undefined): string {
   if (!Number.isFinite(value) || !value || value <= 0) {
     return 'No limit'
@@ -1370,6 +1557,10 @@ function parseMemoryInputToBytes(value: string): number | null {
   return Math.round(parsed * 1024 ** 3)
 }
 
+function parseDiskInputToBytes(value: string): number | null {
+  return parseMemoryInputToBytes(value)
+}
+
 function formatCpuInputValue(value: number | null | undefined): string {
   if (!Number.isFinite(value) || !value || value <= 0) {
     return ''
@@ -1384,6 +1575,10 @@ function formatMemoryInputValue(value: number | null | undefined): string {
   }
   const gb = value / (1024 ** 3)
   return gb >= 10 || gb % 1 === 0 ? gb.toFixed(0) : gb.toFixed(1)
+}
+
+function formatDiskInputValue(value: number | null | undefined): string {
+  return formatMemoryInputValue(value)
 }
 
 function formatPercentage(value: number | null | undefined): string {
@@ -1493,6 +1688,33 @@ function lockfileDownloadUrl(projectId: string): string {
   return `/api/v1/projects/${encodeURIComponent(projectId)}/lockfile`
 }
 
+function projectExportUrl(projectId: string, mode: 'code_only' | 'code_and_data' | 'full'): string {
+  return `/api/v1/projects/${encodeURIComponent(projectId)}/export?mode=${encodeURIComponent(mode)}`
+}
+
+function projectExportFilename(projectId: string, mode: 'code_only' | 'code_and_data' | 'full'): string {
+  const suffix = mode === 'code_only' ? 'code' : mode === 'code_and_data' ? 'code_and_data' : 'full'
+  return `bulletjournal_export_${projectId}_${suffix}.zip`
+}
+
+function responseDownloadFilename(response: Response): string | null {
+  const contentDisposition = response.headers.get('content-disposition') || ''
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    } catch {
+      return utf8Match[1]
+    }
+  }
+  const quotedMatch = contentDisposition.match(/filename="([^"]+)"/i)
+  if (quotedMatch) {
+    return quotedMatch[1]
+  }
+  const plainMatch = contentDisposition.match(/filename=([^;]+)/i)
+  return plainMatch ? plainMatch[1].trim() : null
+}
+
 function isProjectOpenable(project: Project): boolean {
   return project.status === 'running' && project.runtime.container_port !== null
 }
@@ -1507,6 +1729,13 @@ function displayProjectStatus(project: Project): string {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
+}
+
+function truncateContainerId(value: string | null | undefined): string {
+  if (!value) {
+    return 'Not running'
+  }
+  return value.slice(0, 12)
 }
 
 function jobStatusCardClass(job: JobRecord): string {
@@ -1540,9 +1769,9 @@ function projectStateLabel(project: Project): string {
   return project.status
 }
 
-function projectStateTone(project: Project): string {
-  if (project.status === 'creating' || project.status === 'installing' || project.status === 'starting' || project.status === 'stopping') {
-    return 'running'
+function projectVisualState(project: Project): 'busy' | 'running' | 'error' | 'stopped' {
+  if (project.has_active_job || project.status === 'creating' || project.status === 'installing' || project.status === 'starting' || project.status === 'stopping' || project.install_status === 'installing') {
+    return 'busy'
   }
   if (project.status === 'running') {
     return 'running'
@@ -1554,27 +1783,19 @@ function projectStateTone(project: Project): string {
 }
 
 function projectCardStateClass(project: Project): string {
-  if (project.status === 'creating' || project.status === 'installing' || project.status === 'starting' || project.status === 'stopping') {
-    return 'state-busy'
-  }
-  if (project.status === 'running') {
-    return 'state-running'
-  }
-  if (project.status === 'error' || project.status_reason === 'install_failed' || project.status_reason === 'start_failed' || project.status_reason === 'runtime_crashed') {
-    return 'state-error'
-  }
-  return ''
+  return `state-${projectVisualState(project)}`
 }
 
 function projectMetricDetails(project: Project): Array<{ label: string; value: string; tone: '' | 'metric-ok' | 'metric-warning' | 'metric-danger' }> {
   const cpuPercent = typeof project.metrics.cpu_percent === 'number' ? project.metrics.cpu_percent : null
   const memoryPercent = usagePercent(project.metrics.memory_used_bytes ?? null, project.metrics.memory_limit_bytes ?? null)
+  const diskPercent = usagePercent(project.metrics.disk_used_bytes ?? null, project.limits.disk_soft_limit_bytes ?? null)
 
   return [
     {
       label: 'Disk',
       value: formatBytes(project.metrics.disk_used_bytes ?? 0),
-      tone: '',
+      tone: metricTone(diskPercent),
     },
     {
       label: 'RAM',
@@ -1706,8 +1927,11 @@ function JobLogPreview({
   onDownload?: (job: JobRecord) => void | Promise<void>
 }) {
   const [logText, setLogText] = useState('')
+  const [scrollbarWidth, setScrollbarWidth] = useState(0)
   const latestJobRef = useLatestValue(job)
+  const logRef = useRef<HTMLPreElement | null>(null)
   const maxLines = 160
+  const trackedJobIds = isActiveJobStatus(job.status) ? [job.job_id] : []
 
   const loadLog = useCallback(async (signal: AbortSignal) => {
     try {
@@ -1727,7 +1951,7 @@ function JobLogPreview({
     return () => controller.abort()
   }, [job.job_id, loadLog])
 
-  useJobEvents([job.job_id], useCallback((eventJob, event) => {
+  useJobEvents(trackedJobIds, useCallback((eventJob, event) => {
     if (eventJob.job_id !== job.job_id) {
       return
     }
@@ -1745,12 +1969,46 @@ function JobLogPreview({
     }
   }, [job.job_id, loadLog]))
 
+  useEffect(() => {
+    const logNode = logRef.current
+    if (!logNode) {
+      return
+    }
+
+    const updateScrollbarWidth = () => {
+      const nextWidth = logNode.scrollHeight > logNode.clientHeight + 1
+        ? Math.max(0, logNode.offsetWidth - logNode.clientWidth)
+        : 0
+      setScrollbarWidth((current) => current === nextWidth ? current : nextWidth)
+    }
+
+    updateScrollbarWidth()
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateScrollbarWidth)
+      return () => window.removeEventListener('resize', updateScrollbarWidth)
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateScrollbarWidth()
+    })
+    observer.observe(logNode)
+
+    return () => {
+      observer.disconnect()
+    }
+  }, [logText])
+
   if (!logText) {
     return null
   }
 
+  const previewStyle: CSSProperties & Record<'--job-log-scrollbar-width', string> = {
+    '--job-log-scrollbar-width': `${scrollbarWidth}px`,
+  }
+
   return (
-    <div className="job-log-preview">
+    <div className="job-log-preview" style={previewStyle}>
       {onDownload ? (
         <button
           className="job-log-download"
@@ -1769,7 +2027,9 @@ function JobLogPreview({
           </svg>
         </button>
       ) : null}
-      <pre>{logText}</pre>
+      <div className="job-log-frame">
+        <pre ref={logRef}>{logText}</pre>
+      </div>
     </div>
   )
 }
@@ -2473,6 +2733,7 @@ function CreateProjectModal({
     custom_requirements_text: systemInfo.default_dependencies_text,
     cpu_limit_input: '',
     memory_limit_input: '',
+    disk_soft_limit_input: '',
     gpu_enabled: true,
   })
   const [submitting, setSubmitting] = useState(false)
@@ -2491,6 +2752,7 @@ function CreateProjectModal({
           custom_requirements_text: form.custom_requirements_text,
           cpu_limit_millis: parseCpuInputToMillis(form.cpu_limit_input),
           memory_limit_bytes: parseMemoryInputToBytes(form.memory_limit_input),
+          disk_soft_limit_bytes: parseDiskInputToBytes(form.disk_soft_limit_input),
           gpu_enabled: form.gpu_enabled,
         }),
       })
@@ -2537,7 +2799,7 @@ function CreateProjectModal({
                 <button className="button-secondary section-toggle" type="button" onClick={() => setShowLimitsForm((current) => !current)}>
                   <span className="status-stack">
                     <strong>Runtime limits</strong>
-                    <span className="muted">CPU {formatCpuLimit(parseCpuInputToMillis(form.cpu_limit_input))} · Memory {formatMemoryLimit(parseMemoryInputToBytes(form.memory_limit_input))} · GPU {form.gpu_enabled ? 'On' : 'Off'}</span>
+                    <span className="muted">CPU {formatCpuLimit(parseCpuInputToMillis(form.cpu_limit_input))} · Memory {formatMemoryLimit(parseMemoryInputToBytes(form.memory_limit_input))} · Disk {formatDiskSoftLimit(parseDiskInputToBytes(form.disk_soft_limit_input))} · GPU {form.gpu_enabled ? 'On' : 'Off'}</span>
                   </span>
                   <span>{showLimitsForm ? 'Hide' : 'Edit'}</span>
                 </button>
@@ -2550,8 +2812,13 @@ function CreateProjectModal({
                     </div>
                     <div className="field">
                       <label htmlFor="create-memory">Memory limit (GB)</label>
-                      <input id="create-memory" type="number" min={0} step="0.5" value={form.memory_limit_input} onChange={(event) => setForm((current) => ({ ...current, memory_limit_input: event.target.value }))} placeholder="Unlimited" />
+                      <input id="create-memory" type="number" min={0} step="0.1" value={form.memory_limit_input} onChange={(event) => setForm((current) => ({ ...current, memory_limit_input: event.target.value }))} placeholder="Unlimited" />
                       <span className="muted">Leave blank for no memory limit.</span>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="create-disk">Disk soft limit (GB)</label>
+                      <input id="create-disk" type="number" min={0} step="0.1" value={form.disk_soft_limit_input} onChange={(event) => setForm((current) => ({ ...current, disk_soft_limit_input: event.target.value }))} placeholder="Unlimited" />
+                      <span className="muted">Used for UI warnings only. It does not enforce a real container disk cap.</span>
                     </div>
                     <div className="field-full">
                       <label>GPU access</label>
@@ -2577,17 +2844,17 @@ function CreateProjectModal({
 }
 
 function ProjectPage() {
+  const defaultVisibleJobCount = 5
   const { projectId = '' } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const exportMenuRef = useRef<HTMLDivElement | null>(null)
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [flash, setFlash] = useState<string | null>(null)
   const [activeJobIds, setActiveJobIds] = useState<string[]>([])
   const [optimisticAction, setOptimisticAction] = useState<OptimisticProjectAction | null>(null)
   const [environmentForm, setEnvironmentForm] = useState({
-    python_version: '',
     custom_requirements_text: '',
     mark_all_artifacts_stale: true,
     restart_if_running: true,
@@ -2595,20 +2862,21 @@ function ProjectPage() {
   const [limitsForm, setLimitsForm] = useState({
     cpu_limit_input: '',
     memory_limit_input: '',
+    disk_soft_limit_input: '',
     gpu_enabled: false,
   })
   const [savingEnvironment, setSavingEnvironment] = useState(false)
   const [savingLimits, setSavingLimits] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const [downloadingExportMode, setDownloadingExportMode] = useState<'code_only' | 'code_and_data' | 'full' | null>(null)
   const [downloadingJobIds, setDownloadingJobIds] = useState<string[]>([])
-  const [showLimitsEditor, setShowLimitsEditor] = useState(false)
+  const [showAllJobs, setShowAllJobs] = useState(false)
   const [environmentSyncPending, setEnvironmentSyncPending] = useState(false)
   const [limitsDirty, setLimitsDirty] = useState(false)
-  const [environmentActionFeedback, setEnvironmentActionFeedback] = useState<{ tone: 'pending' | 'success', message: string } | null>(null)
-  const environmentInputsDirty = !!project && (
-    environmentForm.python_version !== project.python_version
-    || environmentForm.custom_requirements_text !== project.custom_requirements_text
-  )
+  const [environmentActionFeedback, setEnvironmentActionFeedback] = useState<{ tone: 'success', message: string } | null>(null)
+  const [limitsActionFeedback, setLimitsActionFeedback] = useState<{ tone: 'success', message: string } | null>(null)
+  const environmentInputsDirty = !!project && environmentForm.custom_requirements_text !== project.custom_requirements_text
   const projectIdRef = useLatestValue(projectId)
   const environmentInputsDirtyRef = useLatestValue(environmentInputsDirty)
   const environmentSyncPendingRef = useLatestValue(environmentSyncPending)
@@ -2620,7 +2888,6 @@ function ProjectPage() {
       setProject(nextProject)
       if (!environmentInputsDirtyRef.current && !environmentSyncPendingRef.current) {
         setEnvironmentForm((current) => ({
-          python_version: nextProject.python_version,
           custom_requirements_text: nextProject.custom_requirements_text,
           mark_all_artifacts_stale: current.mark_all_artifacts_stale,
           restart_if_running: current.restart_if_running,
@@ -2630,6 +2897,7 @@ function ProjectPage() {
         setLimitsForm({
           cpu_limit_input: formatCpuInputValue(nextProject.limits.cpu_limit_millis),
           memory_limit_input: formatMemoryInputValue(nextProject.limits.memory_limit_bytes),
+          disk_soft_limit_input: formatDiskInputValue(nextProject.limits.disk_soft_limit_bytes),
           gpu_enabled: nextProject.limits.gpu_enabled,
         })
       }
@@ -2646,6 +2914,10 @@ function ProjectPage() {
   usePolling((signal) => fetchProject(signal), environmentInputsDirty || environmentSyncPending || limitsDirty ? null : (activeJobIds.length > 0 ? 5000 : 15000), [activeJobIds.length, environmentInputsDirty, environmentSyncPending, fetchProject, limitsDirty], { hiddenDelay: 60000, errorDelay: 15000 })
 
   useEffect(() => {
+    setShowAllJobs(false)
+  }, [projectId])
+
+  useEffect(() => {
     if (!location.state || typeof location.state !== 'object') {
       return
     }
@@ -2657,7 +2929,6 @@ function ProjectPage() {
       return
     }
 
-    setFlash(`Queued create_project for ${createdProjectId}.`)
     setActiveJobIds((current) => Array.from(new Set([...current, createJobId])))
     navigate(location.pathname, { replace: true, state: null })
   }, [location.pathname, location.state, navigate, projectId])
@@ -2679,6 +2950,30 @@ function ProjectPage() {
     return () => window.clearTimeout(id)
   }, [environmentActionFeedback])
 
+  useEffect(() => {
+    if (limitsActionFeedback?.tone !== 'success') {
+      return
+    }
+    const id = window.setTimeout(() => {
+      setLimitsActionFeedback((current) => current?.tone === 'success' ? null : current)
+    }, 3500)
+    return () => window.clearTimeout(id)
+  }, [limitsActionFeedback])
+
+  useEffect(() => {
+    if (!exportMenuOpen) {
+      return
+    }
+    function onWindowClick(event: MouseEvent) {
+      if (exportMenuRef.current?.contains(event.target as Node)) {
+        return
+      }
+      setExportMenuOpen(false)
+    }
+    window.addEventListener('click', onWindowClick)
+    return () => window.removeEventListener('click', onWindowClick)
+  }, [exportMenuOpen])
+
   const handleTrackedJobUpdate = useCallback((job: JobRecord) => {
     if (isActiveJobStatus(job.status)) {
       setActiveJobIds((current) => current.includes(job.job_id) ? current : [...current, job.job_id])
@@ -2699,14 +2994,13 @@ function ProjectPage() {
       })
       if (response.job) {
         setOptimisticAction({ action, jobId: response.job.job_id })
-        setFlash(`Queued ${response.job.job_type}.`)
         setActiveJobIds((current) => Array.from(new Set([...current, response.job!.job_id])))
       } else if (response.already_running) {
         setOptimisticAction(null)
-        setFlash('Project is already running.')
+        setError('Project is already running.')
       } else if (response.already_stopped) {
         setOptimisticAction(null)
-        setFlash('Project is already stopped.')
+        setError('Project is already stopped.')
       } else {
         setOptimisticAction(null)
       }
@@ -2722,7 +3016,6 @@ function ProjectPage() {
     setSavingEnvironment(true)
     setError(null)
     const shouldSaveAndReinstall = environmentInputsDirty
-    setEnvironmentActionFeedback({ tone: 'pending', message: shouldSaveAndReinstall ? 'Saving and queueing reinstall...' : 'Queueing reinstall...' })
     try {
       const response = await request<ProjectActionJobResponse>(`/api/v1/projects/${projectId}/${shouldSaveAndReinstall ? 'update-environment' : 'reinstall-environment'}`, {
         method: 'POST',
@@ -2735,12 +3028,11 @@ function ProjectPage() {
         throw new Error('Environment action did not return a queued job.')
       }
       const job = response.job
-      setFlash(`Queued ${job.job_type}.`)
       setActiveJobIds((current) => Array.from(new Set([...current, job.job_id])))
       if (shouldSaveAndReinstall) {
         setEnvironmentSyncPending(true)
       }
-      setEnvironmentActionFeedback({ tone: 'success', message: shouldSaveAndReinstall ? 'Save and reinstall queued.' : 'Reinstall queued.' })
+      setEnvironmentActionFeedback({ tone: 'success', message: 'Saved' })
     } catch (nextError) {
       setEnvironmentActionFeedback(null)
       setError(nextError instanceof Error ? nextError.message : 'Failed to queue environment action.')
@@ -2759,6 +3051,7 @@ function ProjectPage() {
         body: JSON.stringify({
           cpu_limit_millis: parseCpuInputToMillis(limitsForm.cpu_limit_input),
           memory_limit_bytes: parseMemoryInputToBytes(limitsForm.memory_limit_input),
+          disk_soft_limit_bytes: parseDiskInputToBytes(limitsForm.disk_soft_limit_input),
           gpu_enabled: limitsForm.gpu_enabled,
         }),
       })
@@ -2766,10 +3059,11 @@ function ProjectPage() {
       setLimitsForm({
         cpu_limit_input: formatCpuInputValue(nextProject.limits.cpu_limit_millis),
         memory_limit_input: formatMemoryInputValue(nextProject.limits.memory_limit_bytes),
+        disk_soft_limit_input: formatDiskInputValue(nextProject.limits.disk_soft_limit_bytes),
         gpu_enabled: nextProject.limits.gpu_enabled,
       })
       setLimitsDirty(false)
-      setFlash('Updated runtime limits.')
+      setLimitsActionFeedback({ tone: 'success', message: 'Saved' })
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Failed to update limits.')
     } finally {
@@ -2785,7 +3079,6 @@ function ProjectPage() {
     try {
       const response = await request<ProjectActionJobResponse>(`/api/v1/projects/${projectId}`, { method: 'DELETE' })
       if (response.job) {
-        setFlash(`Queued ${response.job.job_type}.`)
         setActiveJobIds((current) => Array.from(new Set([...current, response.job!.job_id])))
       }
       navigate('/', { replace: true, state: response.job ? { deletedProjectId: projectId, deleteJobId: response.job.job_id } : null })
@@ -2844,6 +3137,34 @@ function ProjectPage() {
     }
   }
 
+  async function downloadProjectExport(mode: 'code_only' | 'code_and_data' | 'full') {
+    setError(null)
+    setDownloadingExportMode(mode)
+    try {
+      const response = await fetch(projectExportUrl(projectId, mode), { credentials: 'include' })
+      if (!response.ok) {
+        const contentType = response.headers.get('content-type') || ''
+        const payload = contentType.includes('application/json') ? await response.json() : await response.text()
+        const detail = typeof payload === 'object' && payload !== null && 'detail' in payload ? String((payload as { detail: unknown }).detail) : response.statusText
+        throw new Error(detail || 'Failed to export project.')
+      }
+      const blob = await response.blob()
+      const objectUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = responseDownloadFilename(response) || projectExportFilename(projectId, mode)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(objectUrl)
+      setExportMenuOpen(false)
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Failed to export project.')
+    } finally {
+      setDownloadingExportMode(null)
+    }
+  }
+
   if (loading) {
     return (
       <AppChrome>
@@ -2872,6 +3193,20 @@ function ProjectPage() {
   const runtimeTimestampValue = displayProject.status === 'running' || displayProject.status === 'starting'
     ? displayProject.runtime.runtime_started_at
     : displayProject.runtime.runtime_stopped_at
+  const limitsLocked = displayProject.status === 'running' || displayProject.status === 'starting' || displayProject.status === 'stopping'
+  const environmentButtonLabel = environmentActionFeedback?.tone === 'success'
+    ? 'Saved'
+    : savingEnvironment
+      ? environmentActionPendingLabel
+      : environmentActionLabel
+  const limitsButtonLabel = limitsActionFeedback?.tone === 'success'
+    ? 'Saved'
+    : savingLimits
+      ? 'Saving...'
+      : 'Save limits'
+  const recentJobs = displayProject.recent_jobs || []
+  const visibleJobs = showAllJobs ? recentJobs : recentJobs.slice(0, defaultVisibleJobCount)
+  const hasHiddenJobs = recentJobs.length > defaultVisibleJobCount && !showAllJobs
 
   return (
     <AppChrome>
@@ -2884,7 +3219,6 @@ function ProjectPage() {
         </div>
       </div>
 
-      {flash ? <div className="success-banner">{flash}</div> : null}
       {error ? <div className="error-banner">{error}</div> : null}
 
       <div className="project-detail-stack">
@@ -2963,13 +3297,28 @@ function ProjectPage() {
           </div>
           <div className="panel-body">
             <form className="project-env-grid" onSubmit={onSaveEnvironment}>
-              <div className="field-grid">
-                <div className="field">
-                  <label htmlFor="env-python">Python version</label>
-                  <input id="env-python" value={environmentForm.python_version} onChange={(event) => {
-                    setEnvironmentForm((current) => ({ ...current, python_version: event.target.value }))
-                  }} required />
+              <div className="environment-overview-card">
+                <div className="summary-grid">
+                  <div className="summary-block compact">
+                    <span className="detail-label">Python version</span>
+                    <div className="detail-value mono-copy">{displayProject.python_version}</div>
+                  </div>
+                  <div className="summary-block compact">
+                    <div className="lockfile-row compact">
+                      <div className="lockfile-meta">
+                        <span className="lockfile-label">Current lockfile SHA</span>
+                        <code className="mono-copy detail-value">{displayProject.lock_sha256 || 'Not recorded yet'}</code>
+                      </div>
+                      <button className="button-secondary icon-action" type="button" aria-label="Download lockfile" title="Download lockfile" onClick={() => {
+                        void downloadLockfile()
+                      }}>
+                        <DownloadIcon width={18} height={18} />
+                      </button>
+                    </div>
+                  </div>
                 </div>
+              </div>
+              <div className="field-grid">
                 <div className="field-full">
                   <label htmlFor="env-custom">Requirements</label>
                   <textarea id="env-custom" value={environmentForm.custom_requirements_text} onChange={(event) => {
@@ -2996,20 +3345,7 @@ function ProjectPage() {
                 </div>
               </div>
               <div className="button-row">
-                <button className="button-open" type="submit" disabled={savingEnvironment}>{savingEnvironment ? environmentActionPendingLabel : environmentActionLabel}</button>
-                {environmentActionFeedback ? <span className={classNames('inline-feedback', environmentActionFeedback.tone)}>{environmentActionFeedback.message}</span> : null}
-              </div>
-              <div className="lockfile-row">
-                <div className="lockfile-meta">
-                  <span className="muted">Current lockfile SHA</span>
-                  <code className="mono-copy">{displayProject.lock_sha256 || 'Not recorded yet'}</code>
-                </div>
-                <button className="button-secondary" type="button" onClick={() => {
-                  void downloadLockfile()
-                }}>
-                  <DownloadIcon width={18} height={18} />
-                  <span>Download lockfile</span>
-                </button>
+                <button className={classNames(environmentActionFeedback?.tone === 'success' ? 'button-saved' : 'button-open')} type="submit" disabled={savingEnvironment}>{environmentButtonLabel}</button>
               </div>
             </form>
           </div>
@@ -3022,80 +3358,72 @@ function ProjectPage() {
           <div className="panel-body layout-grid">
             <div className="detail-meta-grid">
               <div className="detail-row">
-                <div className="detail-row-header">
-                  <strong>Container name</strong>
-                </div>
+                <span className="detail-label">Container name</span>
                 <div className="detail-value mono-copy">{displayProject.runtime.container_name || 'Not running'}</div>
               </div>
               <div className="detail-row">
-                <div className="detail-row-header">
-                  <strong>Container id</strong>
-                </div>
-                <div className="detail-value mono-copy">{displayProject.runtime.container_id || 'Not running'}</div>
+                <span className="detail-label">Container id</span>
+                <div className="detail-value mono-copy">{truncateContainerId(displayProject.runtime.container_id)}</div>
               </div>
               <div className="detail-row">
-                <div className="detail-row-header">
-                  <strong>Host port</strong>
-                </div>
-                <div className="detail-value">{displayProject.runtime.container_port ?? 'Not running'}</div>
+                <span className="detail-label">Host port</span>
+                <div className="detail-value mono-copy">{displayProject.runtime.container_port ?? 'Not running'}</div>
               </div>
               <div className="detail-row">
-                <div className="detail-row-header">
-                  <strong>{runtimeTimestampLabel}</strong>
-                  <span>{formatDateTime(runtimeTimestampValue)}</span>
-                </div>
-                <div className="detail-value">{runtimeTimestampValue ? formatRelativeTime(runtimeTimestampValue) : '-'}</div>
+                <span className="detail-label">{runtimeTimestampLabel}</span>
+                {runtimeTimestampValue ? (
+                  <div className="timestamp-pair">
+                    <strong>{formatRelativeTime(runtimeTimestampValue)}</strong>
+                    <span className="muted">{formatDateTime(runtimeTimestampValue)}</span>
+                  </div>
+                ) : (
+                  <div className="detail-value mono-copy">-</div>
+                )}
               </div>
             </div>
             <div className="limits-card">
               <div className="limits-card-header">
                 <div className="status-stack">
-                  <strong>Adjust runtime constraints</strong>
-                  <span className="muted">CPU, memory, and GPU settings for this project</span>
-                </div>
-                <div className="limits-summary">
-                  <span className="badge neutral">CPU {formatCpuLimit(parseCpuInputToMillis(limitsForm.cpu_limit_input))}</span>
-                  <span className="badge neutral">Memory {formatMemoryLimit(parseMemoryInputToBytes(limitsForm.memory_limit_input))}</span>
-                  <span className="badge neutral">GPU {limitsForm.gpu_enabled ? 'On' : 'Off'}</span>
+                  <strong>Runtime limits</strong>
                 </div>
               </div>
-              <button className="button-secondary section-toggle" type="button" onClick={() => setShowLimitsEditor((current) => !current)}>
-                <span>{showLimitsEditor ? 'Hide editor' : 'Edit constraints'}</span>
-                <span className="muted">{showLimitsEditor ? 'Collapse' : 'Expand'}</span>
-              </button>
-              {showLimitsEditor ? (
-                <form className="field-grid" onSubmit={onSaveLimits}>
-                  <div className="field">
-                    <label htmlFor="limits-cpu">CPU limit (CPUs)</label>
-                    <input id="limits-cpu" type="number" min={0} step="0.1" value={limitsForm.cpu_limit_input} onChange={(event) => {
+              <form className="field-grid" onSubmit={onSaveLimits}>
+                <div className="field">
+                  <label htmlFor="limits-cpu">CPU limit (CPUs)</label>
+                  <input id="limits-cpu" className="mono-copy" type="number" min={0} step="0.1" value={limitsForm.cpu_limit_input} onChange={(event) => {
+                    setLimitsDirty(true)
+                    setLimitsForm((current) => ({ ...current, cpu_limit_input: event.target.value }))
+                  }} placeholder="Unlimited" disabled={limitsLocked} />
+                </div>
+                <div className="field">
+                  <label htmlFor="limits-memory">Memory limit (GB)</label>
+                  <input id="limits-memory" className="mono-copy" type="number" min={0} step="0.1" value={limitsForm.memory_limit_input} onChange={(event) => {
+                    setLimitsDirty(true)
+                    setLimitsForm((current) => ({ ...current, memory_limit_input: event.target.value }))
+                  }} placeholder="Unlimited" disabled={limitsLocked} />
+                </div>
+                <div className="field">
+                  <label htmlFor="limits-disk">Disk soft limit (GB)</label>
+                  <input id="limits-disk" className="mono-copy" type="number" min={0} step="0.1" value={limitsForm.disk_soft_limit_input} onChange={(event) => {
+                    setLimitsDirty(true)
+                    setLimitsForm((current) => ({ ...current, disk_soft_limit_input: event.target.value }))
+                  }} placeholder="Unlimited" disabled={limitsLocked} />
+                </div>
+                <div className="field">
+                  <label>GPU access</label>
+                  <div className="checkbox-row">
+                    <input id="limits-gpu" type="checkbox" checked={limitsForm.gpu_enabled} onChange={(event) => {
                       setLimitsDirty(true)
-                      setLimitsForm((current) => ({ ...current, cpu_limit_input: event.target.value }))
-                    }} placeholder="Unlimited" />
-                    <span className="muted">Leave blank for no CPU limit.</span>
+                      setLimitsForm((current) => ({ ...current, gpu_enabled: event.target.checked }))
+                    }} disabled={limitsLocked} />
+                    <label htmlFor="limits-gpu">Enable GPU if supported on the host</label>
                   </div>
-                  <div className="field">
-                    <label htmlFor="limits-memory">Memory limit (GB)</label>
-                    <input id="limits-memory" type="number" min={0} step="0.5" value={limitsForm.memory_limit_input} onChange={(event) => {
-                      setLimitsDirty(true)
-                      setLimitsForm((current) => ({ ...current, memory_limit_input: event.target.value }))
-                    }} placeholder="Unlimited" />
-                    <span className="muted">Leave blank for no memory limit.</span>
-                  </div>
-                  <div className="field-full">
-                    <label>GPU access</label>
-                    <div className="checkbox-row">
-                      <input id="limits-gpu" type="checkbox" checked={limitsForm.gpu_enabled} onChange={(event) => {
-                        setLimitsDirty(true)
-                        setLimitsForm((current) => ({ ...current, gpu_enabled: event.target.checked }))
-                      }} />
-                      <label htmlFor="limits-gpu">Enable GPU if supported on the host</label>
-                    </div>
-                  </div>
-                  <div className="button-row">
-                    <button className="button" type="submit" disabled={savingLimits}>{savingLimits ? 'Saving...' : 'Save limits'}</button>
-                  </div>
-                </form>
-              ) : null}
+                </div>
+                <div className="button-row">
+                  <button className={classNames(limitsLocked ? 'button-neutral' : limitsActionFeedback?.tone === 'success' ? 'button-saved' : 'button-open')} type="submit" disabled={savingLimits || limitsLocked}>{limitsButtonLabel}</button>
+                  {limitsLocked ? <span className="inline-feedback subtle">Runtime must be stopped before limits can change.</span> : null}
+                </div>
+              </form>
             </div>
           </div>
         </section>
@@ -3106,8 +3434,8 @@ function ProjectPage() {
           </div>
           <div className="panel-body">
             <div className="jobs-list">
-              {(displayProject.recent_jobs || []).length === 0 ? <div className="empty-state">No recent jobs recorded for this project yet.</div> : null}
-              {(displayProject.recent_jobs || []).map((job) => (
+              {recentJobs.length === 0 ? <div className="empty-state">No recent jobs recorded for this project yet.</div> : null}
+              {visibleJobs.map((job) => (
                 <article className={classNames('job-row', jobStatusCardClass(job))} key={job.job_id}>
                   <div className="job-row-header">
                     <div className="job-row-top">
@@ -3116,16 +3444,18 @@ function ProjectPage() {
                     </div>
                     <strong>{displayJobStatus(job)}</strong>
                   </div>
-                  <div className="meta-item">
-                    <span>Created</span>
-                    <div className="timestamp-row">
-                      <strong>{formatRelativeTime(job.created_at)}</strong>
-                      <span className="muted">{formatDateTime(job.created_at)}</span>
+                  <div className="job-row-meta">
+                    <div className="meta-item">
+                      <span>Created</span>
+                      <div className="timestamp-row">
+                        <strong>{formatRelativeTime(job.created_at)}</strong>
+                        <span className="muted">{formatDateTime(job.created_at)}</span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="meta-item">
-                    <span>Duration</span>
-                    <strong>{formatDurationBetween(job.started_at || job.created_at, job.finished_at)}</strong>
+                    <div className="meta-item">
+                      <span>Duration</span>
+                      <strong>{formatDurationBetween(job.started_at || job.created_at, job.finished_at)}</strong>
+                    </div>
                   </div>
                   {job.job_type === 'create_project' || job.job_type === 'update_environment' || job.job_type === 'reinstall_environment' ? (
                     <JobLogPreview
@@ -3137,16 +3467,75 @@ function ProjectPage() {
                   {job.error_message ? <div className="error-banner">{job.error_message}</div> : null}
                 </article>
               ))}
+              {hasHiddenJobs ? (
+                <div className="button-row centered jobs-list-footer">
+                  <button className="button-secondary" type="button" onClick={() => setShowAllJobs(true)}>
+                    Show more jobs ({recentJobs.length} total)
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
         </section>
 
         <section className="panel">
           <div className="panel-head">
-            <h2>Danger zone</h2>
+            <h2>Project actions</h2>
           </div>
           <div className="panel-body">
-            <div className="button-row">
+            <div className="button-row project-actions-row">
+              <div className="action-menu" ref={exportMenuRef}>
+                <button
+                  className="button-open"
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={exportMenuOpen}
+                  disabled={!!downloadingExportMode}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setExportMenuOpen((current) => !current)
+                  }}
+                >
+                  {downloadingExportMode ? 'Exporting...' : 'Export project'}
+                </button>
+                {exportMenuOpen ? (
+                  <div className="action-popover" role="menu" onClick={(event) => event.stopPropagation()}>
+                    <button
+                      className="action-option"
+                      type="button"
+                      role="menuitem"
+                      disabled={downloadingExportMode !== null}
+                      onClick={() => {
+                        void downloadProjectExport('code_only')
+                      }}
+                    >
+                      <strong>Code only</strong>
+                    </button>
+                    <button
+                      className="action-option"
+                      type="button"
+                      role="menuitem"
+                      disabled={downloadingExportMode !== null}
+                      onClick={() => {
+                        void downloadProjectExport('code_and_data')
+                      }}
+                    >
+                      <strong>Code and data</strong>
+                    </button>
+                    <button
+                      className="action-option"
+                      type="button"
+                      role="menuitem"
+                      disabled={downloadingExportMode !== null}
+                      onClick={() => {
+                        void downloadProjectExport('full')
+                      }}
+                    >
+                      <strong>Full</strong>
+                    </button>
+                  </div>
+                ) : null}
+              </div>
               <button className="button-danger" type="button" onClick={onDeleteProject} disabled={deleting}>{deleting ? 'Deleting...' : 'Delete project'}</button>
             </div>
           </div>

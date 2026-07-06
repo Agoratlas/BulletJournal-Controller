@@ -30,6 +30,7 @@ def test_proxy_redirects_to_controller_project_page_when_project_is_stopped(
         custom_requirements_text="bulletjournal-editor==0.1.0\n",
         cpu_limit_millis=1000,
         memory_limit_bytes=2048,
+        disk_soft_limit_bytes=None,
         gpu_enabled=False,
     )
     container.projects.update(

@@ -50,6 +50,7 @@ class DockerAdapter:
         controller_token: str | None = None,
         cpu_limit_millis: int | None,
         memory_limit_bytes: int | None,
+        disk_soft_limit_bytes: int | None,
         gpu_enabled: bool,
         network_mode: str,
         env_file: Path | None = None,
@@ -165,7 +166,9 @@ class DockerAdapter:
         container_name: str,
         cpu_limit_millis: int | None,
         memory_limit_bytes: int | None,
+        disk_soft_limit_bytes: int | None,
     ) -> list[str]:
+        _ = disk_soft_limit_bytes
         options = ["update"]
         if cpu_limit_millis is not None:
             options.extend(["--cpus", str(cpu_limit_millis / 1000.0)])

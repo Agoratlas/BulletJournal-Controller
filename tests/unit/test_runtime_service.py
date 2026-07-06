@@ -168,6 +168,7 @@ def test_start_project_passes_runtime_env_file_to_adapter(monkeypatch) -> None:
         controller_status_token="project-token",
         cpu_limit_millis=1000,
         memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
         gpu_enabled=False,
     )
     project_paths = SimpleNamespace(root="/srv/projects/study-a")
@@ -214,6 +215,7 @@ def test_start_project_passes_additional_mounts_to_adapter(monkeypatch) -> None:
         controller_status_token="project-token",
         cpu_limit_millis=1000,
         memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
         gpu_enabled=False,
     )
     project_paths = SimpleNamespace(root="/srv/projects/study-a")
@@ -259,6 +261,7 @@ def test_start_project_passes_controller_uid_gid_to_adapter(monkeypatch) -> None
         controller_status_token="project-token",
         cpu_limit_millis=1000,
         memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
         gpu_enabled=False,
     )
     project_paths = SimpleNamespace(root="/srv/projects/study-a")

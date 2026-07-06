@@ -14,6 +14,10 @@ def import_project(
     project_id_override: str | None = None,
     include_install: bool = False,
 ) -> dict[str, object]:
+    if project_id_override is not None:
+        raise ValueError(
+            "Project id override is not supported by the installed BulletJournal import implementation."
+        )
     instance_paths = require_instance_root(Path(instance_root))
     container = ServiceContainer(
         instance_paths=instance_paths,

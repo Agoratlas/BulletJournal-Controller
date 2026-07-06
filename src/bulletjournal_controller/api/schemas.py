@@ -27,6 +27,7 @@ class SessionResponse(StrictModel):
 class LimitsRequest(StrictModel):
     cpu_limit_millis: int | None = Field(default=None, ge=1)
     memory_limit_bytes: int | None = Field(default=None, ge=1)
+    disk_soft_limit_bytes: int | None = Field(default=None, ge=1)
     gpu_enabled: bool = False
 
 
@@ -42,7 +43,6 @@ class UpdateProjectRequest(LimitsRequest):
 
 
 class UpdateEnvironmentRequest(StrictModel):
-    python_version: str
     bulletjournal_version: str | None = None
     custom_requirements_text: str
     mark_all_artifacts_stale: bool = True

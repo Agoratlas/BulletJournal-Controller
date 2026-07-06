@@ -99,6 +99,7 @@ def test_mark_install_succeeded_clears_status_reason_without_duplicate_kwargs(
         custom_requirements_text="bulletjournal-editor==0.1.0\n",
         cpu_limit_millis=1000,
         memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
         gpu_enabled=False,
     )
     service.mark_installing(project.project_id)
@@ -139,6 +140,7 @@ def test_create_project_uses_recorded_environment_service(tmp_path) -> None:
         custom_requirements_text="bulletjournal-editor==0.2.0\nalpha==1\n",
         cpu_limit_millis=1000,
         memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
         gpu_enabled=False,
     )
 
@@ -185,6 +187,7 @@ def test_create_project_derives_bulletjournal_version_from_dependency_text(
         custom_requirements_text="bulletjournal-editor==0.4.0\nalpha==1\n",
         cpu_limit_millis=1000,
         memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
         gpu_enabled=False,
     )
 
@@ -223,6 +226,7 @@ def test_update_environment_inputs_derives_bulletjournal_version_from_dependency
         custom_requirements_text="bulletjournal-editor==0.1.0\n",
         cpu_limit_millis=1000,
         memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
         gpu_enabled=False,
     )
 
@@ -268,6 +272,7 @@ def test_mark_install_succeeded_updates_bulletjournal_version_from_venv_metadata
         custom_requirements_text="bulletjournal-editor @ git+https://github.com/Agoratlas/BulletJournal@main\n",
         cpu_limit_millis=1000,
         memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
         gpu_enabled=False,
     )
     dist_info = (
@@ -322,6 +327,7 @@ def test_mark_runtime_crashed_sets_error_and_clears_runtime(tmp_path) -> None:
         custom_requirements_text="bulletjournal-editor==0.1.0\n",
         cpu_limit_millis=1000,
         memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
         gpu_enabled=False,
     )
     service.projects.update(
@@ -373,6 +379,7 @@ def test_create_project_requires_bulletjournal_dependency_in_custom_requirements
             custom_requirements_text="alpha==1\n",
             cpu_limit_millis=1000,
             memory_limit_bytes=1024,
+            disk_soft_limit_bytes=None,
             gpu_enabled=False,
         )
 
@@ -408,6 +415,7 @@ def test_update_environment_inputs_requires_bulletjournal_dependency_in_custom_r
         custom_requirements_text="bulletjournal-editor==0.1.0\n",
         cpu_limit_millis=1000,
         memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
         gpu_enabled=False,
     )
 

@@ -201,4 +201,10 @@ MIGRATIONS: list[tuple[str, str]] = [
         ALTER TABLE projects ADD COLUMN runtime_venv_size_bytes INTEGER;
         """,
     ),
+    (
+        "007_project_disk_soft_limit_bytes",
+        """
+        ALTER TABLE projects ADD COLUMN disk_soft_limit_bytes INTEGER;
+        """,
+    ),
 ]

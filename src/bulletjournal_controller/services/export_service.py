@@ -1,24 +1,19 @@
 from __future__ import annotations
 
-import json
-import re
 import tomllib
-import zipfile
 from pathlib import Path
-from typing import cast
 
-from bulletjournal_controller import __version__
-from bulletjournal_controller.config import (
-    EXPORT_MANIFEST_VERSION,
-    MANAGED_RUNTIME_PACKAGE_ALIASES,
+from bulletjournal.storage.project_archive import (
+    ProjectExportMode,
+    export_project_archive,
+    import_project_archive,
 )
+
+from bulletjournal_controller.config import MANAGED_RUNTIME_PACKAGE_ALIASES
+from bulletjournal_controller.domain.enums import InstallStatus, ProjectStatus
 from bulletjournal_controller.domain.errors import ConflictError, ValidationError
 from bulletjournal_controller.domain.models import ProjectRecord
-from bulletjournal_controller.domain.enums import InstallStatus, ProjectStatus
-from bulletjournal_controller.storage.instance_fs import (
-    InstancePaths,
-    create_project_root,
-)
+from bulletjournal_controller.storage.instance_fs import InstancePaths
 from bulletjournal_controller.storage.repositories import ProjectRepository
 from bulletjournal_controller.utils import (
     normalize_package_name,
@@ -26,21 +21,6 @@ from bulletjournal_controller.utils import (
     sha256_file,
     utc_now_iso,
 )
-
-
-EXPORTABLE_NAMES = [
-    "graph",
-    "notebooks",
-    "objects",
-    "dashboards",
-    "metadata",
-    "checkpoints",
-    "temp",
-    "pyproject.toml",
-    "uv.lock",
-]
-DEPENDENCY_NAME_PATTERN = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
-MARIMO_DIRNAME = "__marimo__"
 
 
 class ExportService:
@@ -56,46 +36,14 @@ class ExportService:
         self.default_created_by_user_id = default_created_by_user_id
 
     def export_project(
-        self, *, project: ProjectRecord, archive_path: Path, include_artifacts: bool
+        self,
+        *,
+        project: ProjectRecord,
+        archive_path: Path,
+        mode: ProjectExportMode = ProjectExportMode.FULL,
     ) -> dict[str, object]:
         project_root = self.instance_paths.project_root(project.project_id)
-        manifest = {
-            "schema_version": EXPORT_MANIFEST_VERSION,
-            "project_id": project.project_id,
-            "exported_at": utc_now_iso(),
-            "controller_version": __version__,
-            "include_artifacts": include_artifacts,
-            "bulletjournal_version": project.bulletjournal_version,
-            "python_version": project.python_version,
-            "lock_sha256": project.lock_sha256,
-        }
-        archive_path.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(
-            archive_path, "w", compression=zipfile.ZIP_DEFLATED
-        ) as archive:
-            archive.writestr(
-                "export_manifest.json", json.dumps(manifest, indent=2) + "\n"
-            )
-            if not include_artifacts:
-                archive.writestr("project/artifacts/objects/", b"")
-            for name in EXPORTABLE_NAMES:
-                if name == "objects" and not include_artifacts:
-                    continue
-                path = project_root / name
-                if not path.exists():
-                    continue
-                if path.is_file():
-                    archive.write(path, f"project/{name}")
-                    continue
-                for child in sorted(path.rglob("*")):
-                    if child.is_file() and not self._should_skip_export_path(
-                        child.relative_to(project_root)
-                    ):
-                        archive.write(
-                            child,
-                            f"project/{child.relative_to(project_root).as_posix()}",
-                        )
-        return {"archive": str(archive_path), "manifest": manifest}
+        return export_project_archive(project_root, archive_path, mode=mode)
 
     def import_project(
         self,
@@ -104,51 +52,58 @@ class ExportService:
         project_id_override: str | None = None,
         include_install: bool = False,
     ) -> dict[str, object]:
-        with zipfile.ZipFile(archive_path, "r") as archive:
-            manifest = json.loads(archive.read("export_manifest.json").decode("utf-8"))
-            if not isinstance(manifest, dict):
-                raise ValidationError("Invalid export manifest.")
-            self._validate_manifest(manifest)
-            project_id = str(project_id_override or manifest["project_id"])
-            destination = self.instance_paths.project_root(project_id)
-            if destination.exists():
-                raise ConflictError(f"Project {project_id} already exists.")
-            if self.projects.get(project_id) is not None:
-                raise ConflictError(
-                    f"Project {project_id} already exists in controller metadata."
-                )
-            create_project_root(self.instance_paths, project_id)
-            for member in archive.namelist():
-                if not member.startswith("project/"):
-                    continue
-                relative = member.removeprefix("project/")
-                if not relative or relative.startswith(".runtime/"):
-                    continue
-                target = destination / relative
-                if member.endswith("/"):
-                    target.mkdir(parents=True, exist_ok=True)
-                    continue
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(archive.read(member))
+        archive_project_id = self._archive_project_id(archive_path)
+        target_project_id = project_id_override or archive_project_id
+        if project_id_override is not None and project_id_override != archive_project_id:
+            raise ValidationError(
+                "Project id override is not supported by the installed BulletJournal import implementation."
+            )
+        destination = self.instance_paths.project_root(target_project_id)
+        if destination.exists():
+            raise ConflictError(f"Project {target_project_id} already exists.")
+        if self.projects.get(target_project_id) is not None:
+            raise ConflictError(
+                f"Project {target_project_id} already exists in controller metadata."
+            )
+        imported = import_project_archive(
+            archive_path,
+            destination,
+        )
+        project_id = str(imported["project_id"])
         record = self._reconstruct_project_record(
             destination=destination,
             project_id=project_id,
-            manifest=manifest,
             include_install=include_install,
         )
         return {
             "project_id": project_id,
             "include_install": include_install,
-            "manifest": manifest,
             "project": record.to_api(),
         }
+
+    @staticmethod
+    def parse_export_mode(value: str | None) -> ProjectExportMode:
+        if value is None:
+            return ProjectExportMode.FULL
+        try:
+            return ProjectExportMode(value)
+        except ValueError as exc:
+            raise ValidationError(f"Unsupported export mode: {value}") from exc
+
+    @staticmethod
+    def download_filename(*, project_id: str, mode: ProjectExportMode) -> str:
+        suffix = {
+            ProjectExportMode.CODE_ONLY: "code",
+            ProjectExportMode.CODE_AND_DATA: "code_and_data",
+            ProjectExportMode.FULL: "full",
+        }[mode]
+        return f"bulletjournal_export_{project_id}_{suffix}.zip"
 
     def _reconstruct_project_record(
         self,
         *,
         destination: Path,
         project_id: str,
-        manifest: dict[str, object],
         include_install: bool,
     ) -> ProjectRecord:
         pyproject = tomllib.loads(
@@ -168,23 +123,12 @@ class ExportService:
             else []
         )
         bulletjournal_version = str(
-            manifest.get("bulletjournal_version")
-            or self._resolve_bulletjournal_version(resolved_dependencies)
-            or "0.1.0"
+            self._resolve_bulletjournal_version(resolved_dependencies) or "0.1.0"
         )
-        python_version = str(
-            manifest.get("python_version")
-            or self._resolve_python_version(project_section)
-            or "3.11"
-        )
-        custom_requirements = resolved_dependencies
+        python_version = str(self._resolve_python_version(project_section) or "3.11")
         now = utc_now_iso()
         lock_path = destination / "uv.lock"
-        lock_sha256 = (
-            str(manifest.get("lock_sha256") or sha256_file(lock_path))
-            if lock_path.is_file()
-            else None
-        )
+        lock_sha256 = sha256_file(lock_path) if lock_path.is_file() else None
         return self.projects.create(
             project_id=project_id,
             controller_status_token=random_token(),
@@ -202,7 +146,7 @@ class ExportService:
             python_version=python_version,
             bulletjournal_version=bulletjournal_version,
             custom_requirements_text="".join(
-                f"{line}\n" for line in custom_requirements
+                f"{line}\n" for line in resolved_dependencies
             ),
             lock_sha256=lock_sha256,
             runtime_venv_size_bytes=None,
@@ -212,6 +156,7 @@ class ExportService:
             last_install_at=now if include_install else None,
             cpu_limit_millis=1000,
             memory_limit_bytes=1073741824,
+            disk_soft_limit_bytes=None,
             gpu_enabled=False,
             container_name=None,
             container_id=None,
@@ -221,25 +166,20 @@ class ExportService:
         )
 
     @staticmethod
-    def _validate_manifest(manifest: dict[str, object]) -> None:
-        required = {
-            "schema_version": int,
-            "project_id": str,
-            "exported_at": str,
-            "controller_version": str,
-            "include_artifacts": bool,
-            "bulletjournal_version": str,
-            "python_version": str,
-        }
-        for key, expected_type in required.items():
-            value = manifest.get(key)
-            if type(value) is not expected_type:
-                raise ValidationError(f"Invalid export manifest field: {key}")
-        schema_version = cast(int, manifest["schema_version"])
-        if not isinstance(schema_version, int):
-            raise ValidationError("Invalid export manifest field: schema_version")
-        if schema_version != EXPORT_MANIFEST_VERSION:
-            raise ValidationError("Unsupported export manifest schema version.")
+    def _archive_project_id(archive_path: Path) -> str:
+        import json
+        import zipfile
+
+        with zipfile.ZipFile(archive_path, "r") as archive:
+            project_json = json.loads(
+                archive.read("metadata/project.json").decode("utf-8")
+            )
+        if not isinstance(project_json, dict):
+            raise ValidationError("Invalid project metadata in archive.")
+        project_id = str(project_json.get("project_id") or "")
+        if not project_id:
+            raise ValidationError("Archive project metadata is missing project_id.")
+        return project_id
 
     @staticmethod
     def _resolve_bulletjournal_version(dependencies: list[str]) -> str | None:
@@ -258,7 +198,10 @@ class ExportService:
 
     @staticmethod
     def _dependency_identity(line: str) -> str:
-        match = DEPENDENCY_NAME_PATTERN.match(line)
+        import re
+
+        pattern = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+        match = pattern.match(line)
         if match is None:
             return normalize_package_name(line.strip())
         return normalize_package_name(match.group(1))
@@ -272,17 +215,3 @@ class ExportService:
             return None
         candidate = requires_python.replace("==", "").replace(".*", "").strip()
         return candidate or None
-
-    @staticmethod
-    def _should_skip_export_path(relative_path: Path) -> bool:
-        parts = relative_path.parts
-        if len(parts) >= 2 and parts[0] == "notebooks" and MARIMO_DIRNAME in parts[1:]:
-            return True
-        if (
-            len(parts) >= 4
-            and parts[0] == "checkpoints"
-            and parts[2] == "notebooks"
-            and MARIMO_DIRNAME in parts[3:]
-        ):
-            return True
-        return False

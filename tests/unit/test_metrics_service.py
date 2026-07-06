@@ -81,6 +81,7 @@ def make_project(root: Path, **changes) -> ProjectRecord:
         "last_install_at": None,
         "cpu_limit_millis": 1000,
         "memory_limit_bytes": 1024,
+        "disk_soft_limit_bytes": None,
         "gpu_enabled": False,
         "container_name": None,
         "container_id": None,

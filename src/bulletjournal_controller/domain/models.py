@@ -53,6 +53,7 @@ class ProjectRecord:
     last_install_at: str | None
     cpu_limit_millis: int | None
     memory_limit_bytes: int | None
+    disk_soft_limit_bytes: int | None
     gpu_enabled: bool
     container_name: str | None
     container_id: str | None
@@ -82,6 +83,7 @@ class ProjectRecord:
             "limits": {
                 "cpu_limit_millis": self.cpu_limit_millis,
                 "memory_limit_bytes": self.memory_limit_bytes,
+                "disk_soft_limit_bytes": self.disk_soft_limit_bytes,
                 "gpu_enabled": self.gpu_enabled,
             },
             "runtime": {

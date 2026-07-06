@@ -66,6 +66,7 @@ class ProjectService:
         custom_requirements_text: str,
         cpu_limit_millis: int | None,
         memory_limit_bytes: int | None,
+        disk_soft_limit_bytes: int | None,
         gpu_enabled: bool,
     ) -> ProjectRecord:
         resolved_project_id = validate_project_id(project_id)
@@ -108,6 +109,7 @@ class ProjectService:
             last_install_at=None,
             cpu_limit_millis=cpu_limit_millis,
             memory_limit_bytes=memory_limit_bytes,
+            disk_soft_limit_bytes=disk_soft_limit_bytes,
             gpu_enabled=gpu_enabled,
             container_name=None,
             container_id=None,
@@ -142,12 +144,14 @@ class ProjectService:
         project_id: str,
         cpu_limit_millis: int | None,
         memory_limit_bytes: int | None,
+        disk_soft_limit_bytes: int | None,
         gpu_enabled: bool,
     ) -> ProjectRecord:
         project = self.projects.update(
             project_id,
             cpu_limit_millis=cpu_limit_millis,
             memory_limit_bytes=memory_limit_bytes,
+            disk_soft_limit_bytes=disk_soft_limit_bytes,
             gpu_enabled=gpu_enabled,
         )
         if project.container_name:

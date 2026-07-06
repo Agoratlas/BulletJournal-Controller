@@ -59,6 +59,7 @@ def test_repository_crud_behaves_deterministically(instance_root) -> None:
         last_install_at=None,
         cpu_limit_millis=1000,
         memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
         gpu_enabled=False,
         container_name=None,
         container_id=None,
@@ -84,3 +85,8 @@ def test_repository_crud_behaves_deterministically(instance_root) -> None:
         error_message=None,
     )
     assert jobs.get(job.job_id) == job
+    assert jobs.has_active_mutation(project.project_id) is True
+
+    completed = jobs.update(job.job_id, status="succeeded")
+    assert completed.status == "succeeded"
+    assert jobs.has_active_mutation(project.project_id) is False

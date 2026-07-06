@@ -4,10 +4,17 @@ from pathlib import Path
 
 from bulletjournal_controller.api.deps import ServiceContainer
 from bulletjournal_controller.config import ServerConfig
+from bulletjournal_controller.services.export_service import ProjectExportMode
 from bulletjournal_controller.storage import require_instance_root
 
 
-def export_project(instance_root: str, project_id: str, archive: str, *, include_artifacts: bool = True) -> dict[str, object]:
+def export_project(
+    instance_root: str,
+    project_id: str,
+    archive: str,
+    *,
+    include_artifacts: bool = True,
+) -> dict[str, object]:
     instance_paths = require_instance_root(Path(instance_root))
     container = ServiceContainer(
         instance_paths=instance_paths,
@@ -18,5 +25,5 @@ def export_project(instance_root: str, project_id: str, archive: str, *, include
     return container.export_service.export_project(
         project=project,
         archive_path=Path(archive).resolve(),
-        include_artifacts=include_artifacts,
+        mode=(ProjectExportMode.FULL if include_artifacts else ProjectExportMode.CODE_ONLY),
     )

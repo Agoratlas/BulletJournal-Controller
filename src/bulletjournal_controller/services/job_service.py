@@ -19,6 +19,7 @@ from bulletjournal_controller.domain.errors import (
     NotFoundError,
 )
 from bulletjournal_controller.domain.models import JobRecord
+from bulletjournal_controller.services.export_service import ExportService
 from bulletjournal_controller.services.job_events import JobEventBroker
 from bulletjournal_controller.storage.instance_fs import InstancePaths
 from bulletjournal_controller.storage.repositories import JobRepository
@@ -318,15 +319,27 @@ class JobService:
             }
         if job.job_type == JobType.EXPORT_PROJECT.value:
             project = self.project_service.get_project(job.project_id)
-            include_artifacts = bool(payload.get("include_artifacts", True))
+            export_mode = ExportService.parse_export_mode(
+                payload.get("export_mode")
+                if payload.get("export_mode") is not None
+                else (
+                    "full"
+                    if bool(payload.get("include_artifacts", True))
+                    else "code_only"
+                )
+            )
             archive_name = str(
-                payload.get("archive_name") or f"{project.project_id}.zip"
+                payload.get("archive_name")
+                or ExportService.download_filename(
+                    project_id=project.project_id,
+                    mode=export_mode,
+                )
             )
             archive_path = self.instance_paths.exports_dir / archive_name
             return self.export_service.export_project(
                 project=project,
                 archive_path=archive_path,
-                include_artifacts=include_artifacts,
+                mode=export_mode,
             )
         if job.job_type == JobType.IMPORT_PROJECT.value:
             imported = self.export_service.import_project(

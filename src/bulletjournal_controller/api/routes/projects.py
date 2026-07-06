@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request, status
+from fastapi import Query
 from fastapi.responses import FileResponse
 
 from bulletjournal_controller.api.auth import get_current_user, require_same_origin
@@ -14,6 +15,7 @@ from bulletjournal_controller.api.schemas import (
     UpdateProjectRequest,
 )
 from bulletjournal_controller.domain.errors import NotFoundError
+from bulletjournal_controller.services.export_service import ExportService
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -26,6 +28,7 @@ def _project_payload(container, project, metrics: dict[str, object] | None = Non
         if metrics is not None
         else container.metrics_service.project_metrics(project)
     )
+    payload["has_active_job"] = container.jobs.has_active_mutation(project.project_id)
     return payload
 
 
@@ -60,6 +63,7 @@ def create_project(
         custom_requirements_text=payload.custom_requirements_text,
         cpu_limit_millis=payload.cpu_limit_millis,
         memory_limit_bytes=payload.memory_limit_bytes,
+        disk_soft_limit_bytes=payload.disk_soft_limit_bytes,
         gpu_enabled=payload.gpu_enabled,
     )
     job = container.job_service.queue_job(
@@ -108,6 +112,35 @@ def download_project_lockfile(
     )
 
 
+@router.get("/{project_id}/export")
+def download_project_export(
+    project_id: str,
+    request: Request,
+    mode: str = Query(default="full"),
+    _user=Depends(get_current_user),
+):
+    container = request.app.state.container
+    project = container.project_service.get_project(project_id)
+    export_mode = ExportService.parse_export_mode(mode)
+    archive_path = (
+        container.instance_paths.exports_dir
+        / ExportService.download_filename(
+            project_id=project.project_id,
+            mode=export_mode,
+        )
+    )
+    container.export_service.export_project(
+        project=project,
+        archive_path=archive_path,
+        mode=export_mode,
+    )
+    return FileResponse(
+        archive_path,
+        media_type="application/zip",
+        filename=archive_path.name,
+    )
+
+
 @router.patch("/{project_id}", dependencies=[Depends(require_same_origin)])
 def update_project(
     project_id: str,
@@ -120,6 +153,7 @@ def update_project(
         project_id=project_id,
         cpu_limit_millis=payload.cpu_limit_millis,
         memory_limit_bytes=payload.memory_limit_bytes,
+        disk_soft_limit_bytes=payload.disk_soft_limit_bytes,
         gpu_enabled=payload.gpu_enabled,
     )
     return _project_payload(container, project)
@@ -228,6 +262,7 @@ def update_limits(
         project_id=project_id,
         cpu_limit_millis=payload.cpu_limit_millis,
         memory_limit_bytes=payload.memory_limit_bytes,
+        disk_soft_limit_bytes=payload.disk_soft_limit_bytes,
         gpu_enabled=payload.gpu_enabled,
     )
     return _project_payload(container, project)

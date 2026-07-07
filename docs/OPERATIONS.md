@@ -35,6 +35,10 @@ Changes to `instance_root/config/runtime/` are picked up on subsequent operation
 ## Cleanup
 
 - deleting a project triggers container cleanup for that project name
+- archiving a project creates a full BulletJournal export before deleting the project and container from the instance
+- archive targets default to `instance_root/archives/` and can be overridden with `BULLETJOURNAL_ARCHIVE_DIR`
+- if `BULLETJOURNAL_ARCHIVE_ENCRYPTION_KEY` is set, the controller encrypts archives with `openssl enc -aes-256-cbc -pbkdf2`
+- archive jobs refuse to overwrite an existing `<project_id>.zip` or `<project_id>.zip.enc` target
 - `bulletjournal-controller cleanup-instance <instance_root>` removes all containers labeled for the instance
 - when manually deleting an instance directory, run `cleanup-instance` first so no orphaned runtime containers remain
 

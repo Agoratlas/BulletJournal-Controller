@@ -91,6 +91,8 @@ class ServiceContainer:
             instance_paths=instance_paths,
             projects=self.projects,
             default_created_by_user_id=SYSTEM_USER_ID,
+            archive_dir=server_config.archive_dir,
+            archive_encryption_key=server_config.archive_encryption_key,
         )
         self.job_event_broker = JobEventBroker()
         self.job_service = JobService(

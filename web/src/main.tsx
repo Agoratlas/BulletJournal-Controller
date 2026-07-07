@@ -98,6 +98,15 @@ type ProjectActionJobResponse = {
   already_stopped?: boolean
 }
 
+type ProjectNavigationState = {
+  archivedProjectId?: unknown
+  archiveJobId?: unknown
+  deletedProjectId?: unknown
+  deleteJobId?: unknown
+}
+
+type ProjectRemovalKind = 'archive' | 'delete'
+
 type OptimisticProjectAction = {
   action: 'start' | 'stop'
   jobId?: string
@@ -167,7 +176,7 @@ style.textContent = `
     --warm-soft: rgba(216, 144, 99, 0.16);
     --danger: #ef8a7f;
     --danger-soft: rgba(239, 138, 127, 0.14);
-    --warning: #efb35f;
+    --warning: #d88a34;
     --warning-soft: rgba(239, 179, 95, 0.16);
     --warning-bg: rgba(190, 124, 43, 0.82);
     --danger-bg: rgba(196, 83, 76, 0.82);
@@ -231,6 +240,7 @@ style.textContent = `
   .button-status-start,
   .button-status-stop,
   .button-secondary,
+  .button-warning,
   .button-danger,
   .theme-option {
     display: inline-flex;
@@ -328,10 +338,31 @@ style.textContent = `
     color: white;
     box-shadow: 0 12px 28px rgba(209, 60, 54, 0.24);
   }
+  .button-warning {
+    background: var(--warning);
+    color: white;
+    box-shadow: 0 12px 28px rgba(195, 126, 44, 0.24);
+  }
+  .button-warning:disabled,
+  .button-danger:disabled {
+    background: color-mix(in srgb, var(--muted) 78%, white 22%);
+    color: rgba(255, 255, 255, 0.82);
+    border-color: transparent;
+    box-shadow: none;
+    cursor: not-allowed;
+    transform: none;
+    opacity: 1;
+  }
+  :root[data-theme='dark'] .button-warning:disabled,
+  :root[data-theme='dark'] .button-danger:disabled {
+    background: color-mix(in srgb, var(--muted) 72%, #252522 28%);
+    color: rgba(239, 231, 216, 0.74);
+  }
   .pill-link:hover,
   .pill-button:hover,
   .button:hover,
   .button-secondary:hover,
+  .button-warning:hover,
   .button-danger:hover {
     transform: translateY(-1px);
   }
@@ -375,6 +406,19 @@ style.textContent = `
     margin: 0;
     color: var(--muted);
     line-height: 1.55;
+  }
+  .inline-project-id {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 8px;
+    background: rgba(98, 108, 108, 0.16);
+    color: var(--ink);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.95em;
+  }
+  :root[data-theme='dark'] .inline-project-id {
+    background: rgba(255, 255, 255, 0.12);
   }
   .group-list {
     display: grid;
@@ -2453,12 +2497,12 @@ function DashboardPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [activeJobIds, setActiveJobIds] = useState<string[]>([])
   const [optimisticActions, setOptimisticActions] = useState<Record<string, OptimisticProjectAction>>({})
-  const [pendingDeletions, setPendingDeletions] = useState<Record<string, string>>({})
+  const [pendingRemovals, setPendingRemovals] = useState<Record<string, { projectId: string; verb: 'archive' | 'delete' }>>({})
   const [hiddenProjectIds, setHiddenProjectIds] = useState<string[]>([])
   const [showCreateModal, setShowCreateModal] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
-  const pendingDeletionsRef = useLatestValue(pendingDeletions)
+  const pendingRemovalsRef = useLatestValue(pendingRemovals)
 
   const fetchDashboard = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -2485,15 +2529,20 @@ function DashboardPage() {
     if (!location.state || typeof location.state !== 'object') {
       return
     }
-    const state = location.state as { deletedProjectId?: unknown; deleteJobId?: unknown }
+    const state = location.state as ProjectNavigationState
+    const archivedProjectId = typeof state.archivedProjectId === 'string' ? state.archivedProjectId : null
+    const archiveJobId = typeof state.archiveJobId === 'string' ? state.archiveJobId : null
     const deletedProjectId = typeof state.deletedProjectId === 'string' ? state.deletedProjectId : null
     const deleteJobId = typeof state.deleteJobId === 'string' ? state.deleteJobId : null
-    if (!deletedProjectId || !deleteJobId) {
+    const removalProjectId = archivedProjectId || deletedProjectId
+    const removalJobId = archiveJobId || deleteJobId
+    const removalVerb: 'archive' | 'delete' | null = archiveJobId ? 'archive' : deleteJobId ? 'delete' : null
+    if (!removalProjectId || !removalJobId || !removalVerb) {
       return
     }
-    setHiddenProjectIds((current) => Array.from(new Set([...current, deletedProjectId])))
-    setPendingDeletions((current) => ({ ...current, [deleteJobId]: deletedProjectId }))
-    setActiveJobIds((current) => Array.from(new Set([...current, deleteJobId])))
+    setHiddenProjectIds((current) => Array.from(new Set([...current, removalProjectId])))
+    setPendingRemovals((current) => ({ ...current, [removalJobId]: { projectId: removalProjectId, verb: removalVerb } }))
+    setActiveJobIds((current) => Array.from(new Set([...current, removalJobId])))
     void fetchDashboard()
     navigate(location.pathname, { replace: true, state: null })
   }, [fetchDashboard, location.pathname, location.state, navigate])
@@ -2505,16 +2554,16 @@ function DashboardPage() {
     }
 
     setActiveJobIds((current) => current.filter((jobId) => jobId !== job.job_id))
-    const deletedProjectId = pendingDeletionsRef.current[job.job_id]
-    if (deletedProjectId) {
-      setPendingDeletions((current) => {
+    const pendingRemoval = pendingRemovalsRef.current[job.job_id]
+    if (pendingRemoval) {
+      setPendingRemovals((current) => {
         const next = { ...current }
         delete next[job.job_id]
         return next
       })
       if (job.status !== 'succeeded') {
-        setHiddenProjectIds((current) => current.filter((projectId) => projectId !== deletedProjectId))
-        setActionError(job.error_message || `Failed to delete project ${deletedProjectId}.`)
+        setHiddenProjectIds((current) => current.filter((projectId) => projectId !== pendingRemoval.projectId))
+        setActionError(job.error_message || `Failed to ${pendingRemoval.verb} project ${pendingRemoval.projectId}.`)
       }
     }
     void fetchDashboard()
@@ -2843,6 +2892,63 @@ function CreateProjectModal({
   )
 }
 
+function ArchiveProjectModal({
+  kind,
+  projectId,
+  submitting,
+  typedProjectId,
+  setTypedProjectId,
+  onClose,
+  onConfirm,
+}: {
+  kind: ProjectRemovalKind
+  projectId: string
+  submitting: boolean
+  typedProjectId: string
+  setTypedProjectId: React.Dispatch<React.SetStateAction<string>>
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  const isArchive = kind === 'archive'
+  const title = isArchive ? 'Archive project?' : 'Delete project?'
+  const message = isArchive
+    ? 'This project will be moved to the archive directory and will be removed from active projects. Archived projects can only be restored via a manual operation.'
+    : 'This project will be permanently removed and cannot be restored.'
+  const buttonLabel = isArchive ? 'Archive project' : 'Delete project'
+  const buttonClassName = isArchive ? 'button-warning' : 'button-danger'
+  const confirmDisabled = submitting || typedProjectId !== projectId
+
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={() => {
+      if (!submitting) {
+        onClose()
+      }
+    }}>
+      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="archive-project-title" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <h2 id="archive-project-title">{title}</h2>
+            <p className="section-copy">{message}</p>
+          </div>
+          <button className="close-button" type="button" onClick={onClose} aria-label="Close dialog" disabled={submitting}>×</button>
+        </div>
+        <div className="modal-body">
+          <div className="layout-grid">
+            <div className="field-full">
+              <label htmlFor="project-removal-confirmation">Type the project ID <span className="inline-project-id">{projectId}</span> to proceed</label>
+              <input id="project-removal-confirmation" value={typedProjectId} onChange={(event) => setTypedProjectId(event.target.value)} autoCapitalize="off" autoCorrect="off" spellCheck={false} disabled={submitting} />
+            </div>
+            <div className="button-row">
+              <button className={buttonClassName} type="button" onClick={onConfirm} disabled={confirmDisabled}>{submitting ? `${buttonLabel.split(' ')[0]}ing...` : buttonLabel}</button>
+              <button className="button-secondary" type="button" onClick={onClose} disabled={submitting}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function ProjectPage() {
   const defaultVisibleJobCount = 5
   const { projectId = '' } = useParams()
@@ -2868,6 +2974,10 @@ function ProjectPage() {
   const [savingEnvironment, setSavingEnvironment] = useState(false)
   const [savingLimits, setSavingLimits] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [archiving, setArchiving] = useState(false)
+  const [typedRemovalProjectId, setTypedRemovalProjectId] = useState('')
+  const [pendingRemovalKind, setPendingRemovalKind] = useState<ProjectRemovalKind | null>(null)
+  const [showArchiveModal, setShowArchiveModal] = useState(false)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [downloadingExportMode, setDownloadingExportMode] = useState<'code_only' | 'code_and_data' | 'full' | null>(null)
   const [downloadingJobIds, setDownloadingJobIds] = useState<string[]>([])
@@ -3072,20 +3182,39 @@ function ProjectPage() {
   }
 
   async function onDeleteProject() {
-    if (!window.confirm(`Delete project ${projectId}? This removes controller metadata and the project root from disk.`)) {
-      return
-    }
     setDeleting(true)
     try {
       const response = await request<ProjectActionJobResponse>(`/api/v1/projects/${projectId}`, { method: 'DELETE' })
       if (response.job) {
         setActiveJobIds((current) => Array.from(new Set([...current, response.job!.job_id])))
       }
+      setShowArchiveModal(false)
+      setPendingRemovalKind(null)
+      setTypedRemovalProjectId('')
       navigate('/', { replace: true, state: response.job ? { deletedProjectId: projectId, deleteJobId: response.job.job_id } : null })
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Failed to delete project.')
     } finally {
       setDeleting(false)
+    }
+  }
+
+  async function onArchiveProject() {
+    setArchiving(true)
+    setError(null)
+    try {
+      const response = await request<ProjectActionJobResponse>(`/api/v1/projects/${projectId}/archive`, { method: 'POST' })
+      if (response.job) {
+        setActiveJobIds((current) => Array.from(new Set([...current, response.job!.job_id])))
+      }
+      setShowArchiveModal(false)
+      setPendingRemovalKind(null)
+      setTypedRemovalProjectId('')
+      navigate('/', { replace: true, state: response.job ? { archivedProjectId: projectId, archiveJobId: response.job.job_id } : null })
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Failed to archive project.')
+    } finally {
+      setArchiving(false)
     }
   }
 
@@ -3536,11 +3665,41 @@ function ProjectPage() {
                   </div>
                 ) : null}
               </div>
-              <button className="button-danger" type="button" onClick={onDeleteProject} disabled={deleting}>{deleting ? 'Deleting...' : 'Delete project'}</button>
+              <button className="button-warning" type="button" onClick={() => {
+                setPendingRemovalKind('archive')
+                setTypedRemovalProjectId('')
+                setShowArchiveModal(true)
+              }} disabled={archiving || deleting}>{archiving ? 'Archiving...' : 'Archive project'}</button>
+              <button className="button-danger" type="button" onClick={() => {
+                setPendingRemovalKind('delete')
+                setTypedRemovalProjectId('')
+                setShowArchiveModal(true)
+              }} disabled={deleting || archiving}>{deleting ? 'Deleting...' : 'Delete project'}</button>
             </div>
           </div>
         </section>
       </div>
+      {showArchiveModal && pendingRemovalKind ? (
+        <ArchiveProjectModal
+          kind={pendingRemovalKind}
+          projectId={projectId}
+          submitting={pendingRemovalKind === 'archive' ? archiving : deleting}
+          typedProjectId={typedRemovalProjectId}
+          setTypedProjectId={setTypedRemovalProjectId}
+          onClose={() => {
+            setShowArchiveModal(false)
+            setPendingRemovalKind(null)
+            setTypedRemovalProjectId('')
+          }}
+          onConfirm={() => {
+            if (pendingRemovalKind === 'archive') {
+              void onArchiveProject()
+              return
+            }
+            void onDeleteProject()
+          }}
+        />
+      ) : null}
     </AppChrome>
   )
 }

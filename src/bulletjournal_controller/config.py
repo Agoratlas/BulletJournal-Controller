@@ -51,6 +51,8 @@ class ServerConfig:
     public_origin: str | None = None
     log_level: str = "info"
     docker_host: str | None = None
+    archive_dir: str | None = None
+    archive_encryption_key: str | None = None
     enable_gpu: bool = False
     cookie_secure: bool = False
     session_secret: str = ""
@@ -193,6 +195,10 @@ def load_server_config_from_env() -> ServerConfig:
         log_level=(os.environ.get("BULLETJOURNAL_LOG_LEVEL") or "info").strip()
         or "info",
         docker_host=_optional_str(os.environ.get("BULLETJOURNAL_DOCKER_HOST")),
+        archive_dir=_optional_str(os.environ.get("BULLETJOURNAL_ARCHIVE_DIR")),
+        archive_encryption_key=_optional_str(
+            os.environ.get("BULLETJOURNAL_ARCHIVE_ENCRYPTION_KEY")
+        ),
         enable_gpu=bool(env_bool("BULLETJOURNAL_ENABLE_GPU", default=False)),
         cookie_secure=bool(cookie_secure),
         session_secret=session_secret,

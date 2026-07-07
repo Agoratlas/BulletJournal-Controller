@@ -32,3 +32,5 @@ def server_config() -> ServerConfig:
 def clean_env(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv('BULLETJOURNAL_SESSION_SECRET', raising=False)
     monkeypatch.delenv('BULLETJOURNAL_COOKIE_SECURE', raising=False)
+    monkeypatch.delenv('BULLETJOURNAL_ARCHIVE_DIR', raising=False)
+    monkeypatch.delenv('BULLETJOURNAL_ARCHIVE_ENCRYPTION_KEY', raising=False)

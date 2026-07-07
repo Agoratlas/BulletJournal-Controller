@@ -341,6 +341,15 @@ class JobService:
                 archive_path=archive_path,
                 mode=export_mode,
             )
+        if job.job_type == JobType.ARCHIVE_PROJECT.value:
+            project = self.project_service.get_project(job.project_id)
+            archived = self.export_service.archive_project(
+                project=project,
+                log_writer=log_writer,
+            )
+            log_writer(f"deleting project {project.project_id} after archive success")
+            self.project_service.delete_project(job.project_id, retain_job_id=job.job_id)
+            return {**archived, "deleted": True}
         if job.job_type == JobType.IMPORT_PROJECT.value:
             imported = self.export_service.import_project(
                 archive_path=Path(str(payload["archive_path"])),

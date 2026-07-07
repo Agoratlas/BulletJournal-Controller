@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+import sqlite3
 from pathlib import Path
 
+from bulletjournal.storage.project_fs import init_project_root
 from bulletjournal_controller.config import default_instance_config
 from bulletjournal_controller.runtime.docker_adapter import DockerAdapter
 from bulletjournal_controller.runtime.installer import InstallerRunner
@@ -268,6 +271,94 @@ def test_delete_project_job_keeps_its_own_job_record(tmp_path: Path) -> None:
 
     completed_job = service.get_job(job.job_id)
     assert completed_job is not None
+    if completed_job.status != "succeeded":
+        raise AssertionError(completed_job.error_message)
     assert completed_job.status == "succeeded"
     assert completed_job.result_json == '{"deleted": true, "project_id": "study-a"}'
     assert project_service.projects.get(project.project_id) is None
+
+
+def test_archive_project_job_keeps_its_own_job_record(tmp_path: Path) -> None:
+    instance_paths = init_instance_root(tmp_path / "instance")
+    archive_dir = tmp_path / "archives"
+    db = StateDB(instance_paths.state_db_path)
+    user = UserRepository(db).create(
+        user_id="user-1",
+        username="tester",
+        display_name="Tester",
+        password_hash="hash",
+        is_active=True,
+    )
+    environment_service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=InstallerRunner(DockerAdapter()),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+    project_service = ProjectService(
+        instance_paths=instance_paths,
+        projects=ProjectRepository(db),
+        jobs=JobRepository(db),
+        environment_service=environment_service,
+        runtime_service=DummyRuntimeService(),
+    )
+    project = project_service.create_project(
+        project_id="study-a",
+        created_by_user_id=user.user_id,
+        python_version="3.11",
+        custom_requirements_text="bulletjournal-editor==0.1.0\n",
+        cpu_limit_millis=1000,
+        memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
+        gpu_enabled=False,
+    )
+    project_service.projects.update(
+        project.project_id,
+        status="stopped",
+        install_status="ready",
+    )
+    project_root = instance_paths.project_root(project.project_id)
+    init_project_root(project_root, project_id="study-a")
+    (project_root / "pyproject.toml").write_text(
+        "[project]\nname='study-a'\ndependencies=['bulletjournal-editor==0.1.0']\n",
+        encoding="utf-8",
+    )
+    (project_root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    (project_root / "metadata" / "project.json").write_text(
+        json.dumps({"schema_version": 2, "project_id": "study-a"}),
+        encoding="utf-8",
+    )
+    sqlite3.connect(project_root / "metadata" / "state.db").close()
+
+    from bulletjournal_controller.services.export_service import ExportService
+
+    export_service = ExportService(
+        instance_paths=instance_paths,
+        projects=ProjectRepository(db),
+        default_created_by_user_id="user-system",
+        archive_dir=str(archive_dir),
+        archive_encryption_key="archive-secret",
+    )
+
+    service = JobService(instance_paths=instance_paths, jobs=JobRepository(db))
+    service.bind_services(
+        project_service=project_service,
+        export_service=export_service,
+        runtime_service=DummyRuntimeService(),
+        system_user_id="user-system",
+    )
+
+    job = service.queue_job(
+        job_type="archive_project",
+        requested_by_user_id=user.user_id,
+        payload={"project_id": project.project_id},
+        project_id=project.project_id,
+        reject_on_conflict=False,
+    )
+
+    service._run_job(job)
+
+    completed_job = service.get_job(job.job_id)
+    assert completed_job is not None
+    assert completed_job.status == "succeeded"
+    assert project_service.projects.get(project.project_id) is None
+    assert (archive_dir / "study-a.zip.enc").is_file()

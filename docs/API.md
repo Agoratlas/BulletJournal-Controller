@@ -20,6 +20,7 @@ Base API prefix: `/api/v1`
 - `GET /projects/{project_id}/export`
 - `PATCH /projects/{project_id}`
 - `DELETE /projects/{project_id}`
+- `POST /projects/{project_id}/archive`
 - `POST /projects/{project_id}/start`
 - `POST /projects/{project_id}/stop`
 - `POST /projects/{project_id}/reinstall-environment`
@@ -40,4 +41,4 @@ Base API prefix: `/api/v1`
 
 - all API routes except `/healthz` and login/logout shell assets require authentication
 - mutating routes enforce same-origin checks when `BULLETJOURNAL_PUBLIC_ORIGIN` is configured
-- project start/stop/environment mutations are queued as serialized jobs
+- project start/stop/environment/archive/delete mutations are queued as serialized jobs

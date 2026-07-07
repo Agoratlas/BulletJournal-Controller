@@ -11,6 +11,7 @@ It provides:
 - Docker-backed runtime isolation, one container per project
 - authenticated reverse proxying under `/p/{project_id}/...`
 - zip export and import for managed projects
+- project archiving with optional OpenSSL encryption
 
 ## Runtime Configuration
 
@@ -108,6 +109,19 @@ export BULLETJOURNAL_SESSION_SECRET="change-me"
 export BULLETJOURNAL_COOKIE_SECURE=false
 ```
 
+Optional archive settings:
+
+```bash
+export BULLETJOURNAL_ARCHIVE_DIR="/absolute/path/to/project-archives"
+export BULLETJOURNAL_ARCHIVE_ENCRYPTION_KEY="change-this-too"
+```
+
+- `BULLETJOURNAL_ARCHIVE_DIR` must be an absolute path when set
+- when `BULLETJOURNAL_ARCHIVE_DIR` is unset, archived projects are written to `instance_root/archives/`
+- when `BULLETJOURNAL_ARCHIVE_ENCRYPTION_KEY` is set, archive jobs write encrypted files as `<project_id>.zip.enc`
+- when `BULLETJOURNAL_ARCHIVE_ENCRYPTION_KEY` is unset, archive jobs write plaintext files as `<project_id>.zip`
+- archive creation aborts if the target filename already exists
+
 5. Create an initial user:
 
 ```bash
@@ -142,6 +156,7 @@ bulletjournal-controller start ./instance
 
 - project runtime containers are now namespaced by instance id, reducing cross-instance naming conflicts
 - deleting a project attempts to remove its managed container even if controller metadata says the project is stopped
+- archiving a project first creates a full project export, then removes the project metadata, on-disk project root, and managed container
 - you can remove all controller-managed containers for one instance with:
 
 ```bash

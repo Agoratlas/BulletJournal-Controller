@@ -37,6 +37,7 @@ class JobType(str, Enum):
     UPDATE_ENVIRONMENT = 'update_environment'
     REINSTALL_ENVIRONMENT = 'reinstall_environment'
     EXPORT_PROJECT = 'export_project'
+    ARCHIVE_PROJECT = 'archive_project'
     IMPORT_PROJECT = 'import_project'
     DELETE_PROJECT = 'delete_project'
 

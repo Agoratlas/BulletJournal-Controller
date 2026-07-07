@@ -235,6 +235,36 @@ def test_project_export_download_rejects_unknown_mode(instance_root, server_conf
     assert response.status_code == 422
 
 
+def test_project_archive_queues_archive_job(instance_root, server_config) -> None:
+    app = create_app(instance_root=instance_root, server_config=server_config)
+    container: ServiceContainer = app.state.container
+    user = container.auth_service.create_user(
+        username="admin", display_name="Admin", password="secret-pass"
+    )
+    project = container.project_service.create_project(
+        project_id="study-a",
+        created_by_user_id=user.user_id,
+        python_version="3.11",
+        custom_requirements_text="bulletjournal-editor==0.3.0\n",
+        cpu_limit_millis=1000,
+        memory_limit_bytes=2048,
+        disk_soft_limit_bytes=None,
+        gpu_enabled=False,
+    )
+    container.projects.update(
+        project.project_id, status="stopped", install_status="ready"
+    )
+
+    with _auth_client(app) as client:
+        response = client.post(
+            f"/api/v1/projects/{project.project_id}/archive",
+            headers={"origin": "http://testserver"},
+        )
+
+    assert response.status_code == 202
+    assert response.json()["job"]["job_type"] == "archive_project"
+
+
 def test_system_config_reports_additional_mounts(instance_root, server_config) -> None:
     app = create_app(instance_root=instance_root, server_config=server_config)
     container: ServiceContainer = app.state.container

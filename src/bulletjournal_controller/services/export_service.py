@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
+import tempfile
 import tomllib
 from pathlib import Path
 
@@ -30,10 +34,14 @@ class ExportService:
         instance_paths: InstancePaths,
         projects: ProjectRepository,
         default_created_by_user_id: str,
+        archive_dir: str | None = None,
+        archive_encryption_key: str | None = None,
     ):
         self.instance_paths = instance_paths
         self.projects = projects
         self.default_created_by_user_id = default_created_by_user_id
+        self.archive_dir = archive_dir
+        self.archive_encryption_key = archive_encryption_key
 
     def export_project(
         self,
@@ -81,6 +89,59 @@ class ExportService:
             "project": record.to_api(),
         }
 
+    def archive_project(
+        self,
+        *,
+        project: ProjectRecord,
+        log_writer,
+    ) -> dict[str, object]:
+        archive_dir = self.resolve_archive_dir()
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        encrypted = bool(self.archive_encryption_key)
+        target_path = archive_dir / self.archive_filename(
+            project.project_id, encrypted=encrypted
+        )
+        if target_path.exists():
+            raise ConflictError(
+                f"Archive already exists for project {project.project_id}: {target_path.name}"
+            )
+
+        with tempfile.TemporaryDirectory(dir=archive_dir) as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            export_path = temp_dir / self._plaintext_archive_filename(project.project_id)
+            log_writer(
+                f"creating full archive for project {project.project_id} at {export_path.name}"
+            )
+            self.export_project(
+                project=project,
+                archive_path=export_path,
+                mode=ProjectExportMode.FULL,
+            )
+            exported_size = export_path.stat().st_size
+            final_path = target_path
+            if encrypted:
+                log_writer(
+                    f"encrypting archive with openssl to {target_path.name}"
+                )
+                self._encrypt_archive(
+                    source_path=export_path,
+                    target_path=target_path,
+                )
+                export_path.unlink(missing_ok=True)
+            else:
+                log_writer(f"moving archive into place at {target_path.name}")
+                shutil.move(str(export_path), str(target_path))
+            final_size = final_path.stat().st_size
+
+        return {
+            "project_id": project.project_id,
+            "archive_path": str(final_path),
+            "archive_filename": final_path.name,
+            "encrypted": encrypted,
+            "exported_size_bytes": exported_size,
+            "archive_size_bytes": final_size,
+        }
+
     @staticmethod
     def parse_export_mode(value: str | None) -> ProjectExportMode:
         if value is None:
@@ -98,6 +159,60 @@ class ExportService:
             ProjectExportMode.FULL: "full",
         }[mode]
         return f"bulletjournal_export_{project_id}_{suffix}.zip"
+
+    @staticmethod
+    def archive_filename(project_id: str, *, encrypted: bool) -> str:
+        return f"{project_id}.zip.enc" if encrypted else f"{project_id}.zip"
+
+    @staticmethod
+    def _plaintext_archive_filename(project_id: str) -> str:
+        return f"{project_id}.zip"
+
+    def resolve_archive_dir(self) -> Path:
+        if self.archive_dir is None:
+            return self.instance_paths.root / "archives"
+        candidate = Path(self.archive_dir)
+        if not candidate.is_absolute():
+            raise ValidationError(
+                "BULLETJOURNAL_ARCHIVE_DIR must be an absolute path."
+            )
+        return candidate
+
+    def _encrypt_archive(self, *, source_path: Path, target_path: Path) -> None:
+        if not self.archive_encryption_key:
+            raise ValidationError("Archive encryption key is not configured.")
+        command = [
+            "openssl",
+            "enc",
+            "-aes-256-cbc",
+            "-pbkdf2",
+            "-salt",
+            "-in",
+            str(source_path),
+            "-out",
+            str(target_path),
+            "-pass",
+            "env:BULLETJOURNAL_ARCHIVE_ENCRYPTION_KEY",
+        ]
+        env = os.environ.copy()
+        env["BULLETJOURNAL_ARCHIVE_ENCRYPTION_KEY"] = self.archive_encryption_key
+        try:
+            subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+        except FileNotFoundError as exc:
+            raise ValidationError(
+                "OpenSSL is required to encrypt archives but was not found on PATH."
+            ) from exc
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or exc.stdout or "").strip()
+            raise ValidationError(
+                f"Archive encryption failed{': ' + detail if detail else '.'}"
+            ) from exc
 
     def _reconstruct_project_record(
         self,

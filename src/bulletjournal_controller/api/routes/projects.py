@@ -175,6 +175,21 @@ def delete_project(project_id: str, request: Request, user=Depends(get_current_u
 
 
 @router.post(
+    "/{project_id}/archive",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_same_origin)],
+)
+def archive_project(project_id: str, request: Request, user=Depends(get_current_user)):
+    job = request.app.state.container.job_service.queue_job(
+        job_type="archive_project",
+        requested_by_user_id=user.user_id,
+        payload={"project_id": project_id},
+        project_id=project_id,
+    )
+    return {"job": job.to_api()}
+
+
+@router.post(
     "/{project_id}/start",
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(require_same_origin)],

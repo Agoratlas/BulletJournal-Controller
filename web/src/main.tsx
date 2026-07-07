@@ -2975,6 +2975,7 @@ function ProjectPage() {
   const [savingLimits, setSavingLimits] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [archiving, setArchiving] = useState(false)
+  const [leavingProjectPage, setLeavingProjectPage] = useState(false)
   const [typedRemovalProjectId, setTypedRemovalProjectId] = useState('')
   const [pendingRemovalKind, setPendingRemovalKind] = useState<ProjectRemovalKind | null>(null)
   const [showArchiveModal, setShowArchiveModal] = useState(false)
@@ -2990,11 +2991,15 @@ function ProjectPage() {
   const projectIdRef = useLatestValue(projectId)
   const environmentInputsDirtyRef = useLatestValue(environmentInputsDirty)
   const environmentSyncPendingRef = useLatestValue(environmentSyncPending)
+  const leavingProjectPageRef = useLatestValue(leavingProjectPage)
   const limitsDirtyRef = useLatestValue(limitsDirty)
 
   const fetchProject = useCallback(async (signal?: AbortSignal) => {
     try {
       const nextProject = await request<Project>(`/api/v1/projects/${projectIdRef.current}`, { signal })
+      if (leavingProjectPageRef.current) {
+        return
+      }
       setProject(nextProject)
       if (!environmentInputsDirtyRef.current && !environmentSyncPendingRef.current) {
         setEnvironmentForm((current) => ({
@@ -3013,15 +3018,17 @@ function ProjectPage() {
       }
       setError(null)
     } catch (nextError) {
-      if (!isAbortError(nextError)) {
+      if (!isAbortError(nextError) && !leavingProjectPageRef.current) {
         setError(nextError instanceof Error ? nextError.message : 'Failed to load project.')
       }
     } finally {
-      setLoading(false)
+      if (!leavingProjectPageRef.current) {
+        setLoading(false)
+      }
     }
-  }, [environmentInputsDirtyRef, environmentSyncPendingRef, limitsDirtyRef, projectIdRef])
+  }, [environmentInputsDirtyRef, environmentSyncPendingRef, leavingProjectPageRef, limitsDirtyRef, projectIdRef])
 
-  usePolling((signal) => fetchProject(signal), environmentInputsDirty || environmentSyncPending || limitsDirty ? null : (activeJobIds.length > 0 ? 5000 : 15000), [activeJobIds.length, environmentInputsDirty, environmentSyncPending, fetchProject, limitsDirty], { hiddenDelay: 60000, errorDelay: 15000 })
+  usePolling((signal) => fetchProject(signal), environmentInputsDirty || environmentSyncPending || limitsDirty || leavingProjectPage ? null : (activeJobIds.length > 0 ? 5000 : 15000), [activeJobIds.length, environmentInputsDirty, environmentSyncPending, fetchProject, leavingProjectPage, limitsDirty], { hiddenDelay: 60000, errorDelay: 15000 })
 
   useEffect(() => {
     setShowAllJobs(false)
@@ -3091,8 +3098,11 @@ function ProjectPage() {
     }
     setActiveJobIds((current) => current.filter((jobId) => jobId !== job.job_id))
     setEnvironmentSyncPending(false)
+    if (leavingProjectPageRef.current) {
+      return
+    }
     void fetchProject()
-  }, [fetchProject])
+  }, [fetchProject, leavingProjectPageRef])
 
   useJobEvents(activeJobIds, handleTrackedJobUpdate)
 
@@ -3182,17 +3192,19 @@ function ProjectPage() {
   }
 
   async function onDeleteProject() {
+    setLeavingProjectPage(true)
     setDeleting(true)
     try {
       const response = await request<ProjectActionJobResponse>(`/api/v1/projects/${projectId}`, { method: 'DELETE' })
       if (response.job) {
-        setActiveJobIds((current) => Array.from(new Set([...current, response.job!.job_id])))
+        setActiveJobIds((current) => current.filter((jobId) => jobId !== response.job!.job_id))
       }
       setShowArchiveModal(false)
       setPendingRemovalKind(null)
       setTypedRemovalProjectId('')
       navigate('/', { replace: true, state: response.job ? { deletedProjectId: projectId, deleteJobId: response.job.job_id } : null })
     } catch (nextError) {
+      setLeavingProjectPage(false)
       setError(nextError instanceof Error ? nextError.message : 'Failed to delete project.')
     } finally {
       setDeleting(false)
@@ -3200,18 +3212,20 @@ function ProjectPage() {
   }
 
   async function onArchiveProject() {
+    setLeavingProjectPage(true)
     setArchiving(true)
     setError(null)
     try {
       const response = await request<ProjectActionJobResponse>(`/api/v1/projects/${projectId}/archive`, { method: 'POST' })
       if (response.job) {
-        setActiveJobIds((current) => Array.from(new Set([...current, response.job!.job_id])))
+        setActiveJobIds((current) => current.filter((jobId) => jobId !== response.job!.job_id))
       }
       setShowArchiveModal(false)
       setPendingRemovalKind(null)
       setTypedRemovalProjectId('')
       navigate('/', { replace: true, state: response.job ? { archivedProjectId: projectId, archiveJobId: response.job.job_id } : null })
     } catch (nextError) {
+      setLeavingProjectPage(false)
       setError(nextError instanceof Error ? nextError.message : 'Failed to archive project.')
     } finally {
       setArchiving(false)

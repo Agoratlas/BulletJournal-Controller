@@ -267,6 +267,13 @@ class ProjectService:
             status_reason=None,
         )
         project = self.get_project(project_id)
+        try:
+            status_payload = self.runtime_service.fetch_project_status(project=project)
+        except Exception:
+            status_payload = None
+        if status_payload is not None:
+            self.apply_runtime_status(project_id=project_id, status_payload=status_payload)
+            project = self.get_project(project_id)
         self.runtime_service.stop_project(project=project)
         return self.set_status(
             project_id=project_id,

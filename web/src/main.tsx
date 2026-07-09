@@ -2036,6 +2036,27 @@ function projectWithOptimisticAction(project: Project, optimisticAction: Optimis
   }
 }
 
+function projectEffectiveLastEditAt(project: Project): string {
+  return project.last_edit_at || project.created_at
+}
+
+function compareProjectsForDashboard(a: Project, b: Project): number {
+  if (a.has_active_job !== b.has_active_job) {
+    return a.has_active_job ? -1 : 1
+  }
+
+  const aTimestamp = new Date(projectEffectiveLastEditAt(a)).getTime()
+  const bTimestamp = new Date(projectEffectiveLastEditAt(b)).getTime()
+  const normalizedA = Number.isNaN(aTimestamp) ? 0 : aTimestamp
+  const normalizedB = Number.isNaN(bTimestamp) ? 0 : bTimestamp
+
+  if (normalizedA !== normalizedB) {
+    return normalizedB - normalizedA
+  }
+
+  return a.project_id.localeCompare(b.project_id)
+}
+
 function isActiveJobStatus(status: string): boolean {
   return status === 'queued' || status === 'running'
 }
@@ -2688,7 +2709,8 @@ function DashboardPage() {
 
   const visibleProjects = useMemo(() => projects
     .filter((project) => !hiddenProjectIds.includes(project.project_id))
-    .map((project) => projectWithOptimisticAction(project, optimisticActions[project.project_id] || null, activeJobIds)), [activeJobIds, hiddenProjectIds, optimisticActions, projects])
+    .map((project) => projectWithOptimisticAction(project, optimisticActions[project.project_id] || null, activeJobIds))
+    .sort(compareProjectsForDashboard), [activeJobIds, hiddenProjectIds, optimisticActions, projects])
 
   const groupedProjects = useMemo(() => {
     const groups: Record<'Running' | 'Stopped' | 'Error', Project[]> = {
@@ -2812,14 +2834,10 @@ function DashboardPage() {
                                 </div>
                                 <div className="meta-item">
                                   <span>Last edit</span>
-                                  {project.last_edit_at ? (
-                                    <div className="timestamp-row">
-                                      <strong>{formatRelativeTime(project.last_edit_at)}</strong>
-                                      <span className="muted">{formatDateTime(project.last_edit_at)}</span>
-                                    </div>
-                                  ) : (
-                                    <strong>-</strong>
-                                  )}
+                                  <div className="timestamp-row">
+                                    <strong>{formatRelativeTime(projectEffectiveLastEditAt(project))}</strong>
+                                    <span className="muted">{formatDateTime(projectEffectiveLastEditAt(project))}</span>
+                                  </div>
                                 </div>
                               </div>
                               <div className="quick-actions">
@@ -3515,14 +3533,10 @@ function ProjectPage() {
           <div className="summary-grid">
             <div className="summary-block compact">
               <h3>Last edit</h3>
-              {displayProject.last_edit_at ? (
-                <div className="timestamp-row">
-                  <strong>{formatRelativeTime(displayProject.last_edit_at)}</strong>
-                  <span className="muted">{formatDateTime(displayProject.last_edit_at)}</span>
-                </div>
-              ) : (
-                <strong>-</strong>
-              )}
+              <div className="timestamp-row">
+                <strong>{formatRelativeTime(projectEffectiveLastEditAt(displayProject))}</strong>
+                <span className="muted">{formatDateTime(projectEffectiveLastEditAt(displayProject))}</span>
+              </div>
             </div>
             <div className="summary-block compact">
               <h3>Last run</h3>

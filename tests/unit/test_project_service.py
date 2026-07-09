@@ -33,8 +33,22 @@ class DummyRuntimeConfigService:
 
 
 class DummyRuntimeService:
+    def __init__(self):
+        self.stop_calls: list[object] = []
+        self.status_payload: dict[str, object] | None = None
+        self.fetch_status_calls: list[object] = []
+
     def update_limits(self, *, project):
         return None
+
+    def fetch_project_status(self, *, project):
+        self.fetch_status_calls.append(project)
+        if self.status_payload is None:
+            raise RuntimeError("status unavailable")
+        return self.status_payload
+
+    def stop_project(self, *, project) -> None:
+        self.stop_calls.append(project)
 
 
 class RecordingEnvironmentService(EnvironmentService):
@@ -344,6 +358,116 @@ def test_mark_runtime_crashed_sets_error_and_clears_runtime(tmp_path) -> None:
     assert updated.status_reason == "runtime_crashed"
     assert updated.container_name is None
     assert updated.container_port is None
+
+
+def test_stop_project_refreshes_runtime_status_before_shutdown(tmp_path) -> None:
+    instance_paths = init_instance_root(tmp_path / "instance")
+    db = StateDB(instance_paths.state_db_path)
+    user = UserRepository(db).create(
+        user_id="user-1",
+        username="admin",
+        display_name="Admin",
+        password_hash="hash",
+        is_active=True,
+    )
+    environment_service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=InstallerRunner(DockerAdapter()),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+    runtime_service = DummyRuntimeService()
+    runtime_service.status_payload = {
+        "last_graph_edit_at": "2026-07-09T15:00:00Z",
+        "last_notebook_edit_at": "2026-07-09T15:02:00Z",
+        "last_run_finished_at": "2026-07-09T14:30:00Z",
+        "idle_shutdown_eligible_since": "2026-07-09T14:45:00Z",
+    }
+    service = ProjectService(
+        instance_paths=instance_paths,
+        projects=ProjectRepository(db),
+        jobs=JobRepository(db),
+        environment_service=environment_service,
+        runtime_service=runtime_service,
+    )
+    project = service.create_project(
+        project_id="study-a",
+        created_by_user_id=user.user_id,
+        python_version="3.11",
+        custom_requirements_text="bulletjournal-editor==0.1.0\n",
+        cpu_limit_millis=1000,
+        memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
+        gpu_enabled=False,
+    )
+    service.projects.update(
+        project.project_id,
+        status="running",
+        container_name="bulletjournal-main-study-a",
+        container_id="container-1",
+        container_port=8765,
+    )
+
+    updated = service.stop_project(project.project_id, reason="manual_stop")
+
+    assert len(runtime_service.fetch_status_calls) == 1
+    assert len(runtime_service.stop_calls) == 1
+    assert updated.status == "stopped"
+    assert updated.status_reason == "manual_stop"
+    assert updated.last_graph_edit_at == "2026-07-09T15:00:00Z"
+    assert updated.last_notebook_edit_at == "2026-07-09T15:02:00Z"
+    assert updated.last_edit_at == "2026-07-09T15:02:00Z"
+    assert updated.last_run_finished_at == "2026-07-09T14:30:00Z"
+    assert updated.idle_shutdown_eligible_at == "2026-07-09T14:45:00Z"
+
+
+def test_stop_project_still_stops_when_runtime_status_refresh_fails(tmp_path) -> None:
+    instance_paths = init_instance_root(tmp_path / "instance")
+    db = StateDB(instance_paths.state_db_path)
+    user = UserRepository(db).create(
+        user_id="user-1",
+        username="admin",
+        display_name="Admin",
+        password_hash="hash",
+        is_active=True,
+    )
+    environment_service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=InstallerRunner(DockerAdapter()),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+    runtime_service = DummyRuntimeService()
+    service = ProjectService(
+        instance_paths=instance_paths,
+        projects=ProjectRepository(db),
+        jobs=JobRepository(db),
+        environment_service=environment_service,
+        runtime_service=runtime_service,
+    )
+    project = service.create_project(
+        project_id="study-a",
+        created_by_user_id=user.user_id,
+        python_version="3.11",
+        custom_requirements_text="bulletjournal-editor==0.1.0\n",
+        cpu_limit_millis=1000,
+        memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
+        gpu_enabled=False,
+    )
+    service.projects.update(
+        project.project_id,
+        status="running",
+        container_name="bulletjournal-main-study-a",
+        container_id="container-1",
+        container_port=8765,
+        last_edit_at="2026-07-09T12:00:00Z",
+    )
+
+    updated = service.stop_project(project.project_id, reason="manual_stop")
+
+    assert len(runtime_service.fetch_status_calls) == 1
+    assert len(runtime_service.stop_calls) == 1
+    assert updated.status == "stopped"
+    assert updated.last_edit_at == "2026-07-09T12:00:00Z"
 
 
 def test_create_project_requires_bulletjournal_dependency_in_custom_requirements(

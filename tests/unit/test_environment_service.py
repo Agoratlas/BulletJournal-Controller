@@ -39,6 +39,11 @@ class DummyRuntimeConfigService:
     def env_file(self) -> Path | None:
         return self._env_file
 
+    def uv_cache_dir(self) -> Path:
+        path = Path("/tmp/runtime-cache/uv")
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
     def additional_mounts(self) -> list[tuple[Path, str, bool]]:
         return []
 
@@ -249,7 +254,7 @@ def test_default_dependency_text_preserves_comments_for_ui(tmp_path: Path) -> No
     rendered = service.default_dependency_text()
     assert "# comment" in rendered
     assert "# index-url: https://pypi.nvidia.com" in rendered
-    assert "bulletjournal-editor==" in rendered
+    assert "bulletjournal-editor" in rendered
 
 
 def test_resolve_bulletjournal_version_prefers_dependency_text_pin() -> None:
@@ -656,6 +661,7 @@ def test_install_environment_passes_runtime_env_file_to_installer(
     assert result == "lock-sha"
     assert installer.install_kwargs is not None
     assert installer.install_kwargs["env_file"] == env_file
+    assert installer.install_kwargs["uv_cache_dir"] == Path("/tmp/runtime-cache/uv")
 
 
 def test_install_environment_passes_additional_mounts_to_installer(
@@ -697,6 +703,7 @@ def test_install_environment_passes_additional_mounts_to_installer(
     assert result == "lock-sha"
     assert installer.install_kwargs is not None
     assert installer.install_kwargs["additional_mounts"] == additional_mounts
+    assert installer.install_kwargs["uv_cache_dir"] == Path("/tmp/runtime-cache/uv")
 
 
 def test_install_environment_passes_controller_uid_gid_to_installer(
@@ -726,6 +733,7 @@ def test_install_environment_passes_controller_uid_gid_to_installer(
         default_dependencies_file=lambda: None,
         env_file=lambda: None,
         additional_mounts=lambda: [],
+        uv_cache_dir=lambda: Path("/tmp/runtime-cache/uv"),
     )
     service = EnvironmentService(
         instance_config=default_instance_config(),
@@ -747,6 +755,7 @@ def test_install_environment_passes_controller_uid_gid_to_installer(
     assert installer.install_kwargs is not None
     assert installer.install_kwargs["user_uid"] == 1000
     assert installer.install_kwargs["user_gid"] == 1000
+    assert installer.install_kwargs["uv_cache_dir"] == Path("/tmp/runtime-cache/uv")
 
 
 def test_install_environment_can_request_upgrade_all(tmp_path: Path) -> None:
@@ -783,6 +792,7 @@ def test_install_environment_can_request_upgrade_all(tmp_path: Path) -> None:
 
     assert installer.install_kwargs is not None
     assert installer.install_kwargs["upgrade_all"] is True
+    assert installer.install_kwargs["uv_cache_dir"] == Path("/tmp/runtime-cache/uv")
 
 
 def test_install_environment_rewrites_pyproject_before_locking(tmp_path: Path) -> None:

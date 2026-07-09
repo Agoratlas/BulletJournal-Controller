@@ -69,14 +69,14 @@ class UserRepository(BaseRepository[UserRecord]):
         return self._row_to_model(row)  # type: ignore[return-value]
 
     def get_by_username(self, username: str) -> UserRecord | None:
-        with self.db.transaction() as connection:
+        with self.db.read() as connection:
             row = connection.execute(
                 "SELECT * FROM users WHERE username = ?", (username,)
             ).fetchone()
         return self._row_to_model(row)
 
     def get(self, user_id: str) -> UserRecord | None:
-        with self.db.transaction() as connection:
+        with self.db.read() as connection:
             row = connection.execute(
                 "SELECT * FROM users WHERE user_id = ?", (user_id,)
             ).fetchone()
@@ -141,7 +141,7 @@ class SessionRepository(BaseRepository[SessionRecord]):
         return self._row_to_model(row)  # type: ignore[return-value]
 
     def get(self, session_id: str) -> SessionRecord | None:
-        with self.db.transaction() as connection:
+        with self.db.read() as connection:
             row = connection.execute(
                 "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
             ).fetchone()
@@ -196,7 +196,7 @@ class ProjectRepository(BaseRepository[ProjectRecord]):
         return self._row_to_model(row)  # type: ignore[return-value]
 
     def get(self, project_id: str) -> ProjectRecord | None:
-        with self.db.transaction() as connection:
+        with self.db.read() as connection:
             row = connection.execute(
                 "SELECT * FROM projects WHERE project_id = ?", (project_id,)
             ).fetchone()
@@ -209,7 +209,7 @@ class ProjectRepository(BaseRepository[ProjectRecord]):
         return project
 
     def list_all(self) -> list[ProjectRecord]:
-        with self.db.transaction() as connection:
+        with self.db.read() as connection:
             rows = connection.execute(
                 "SELECT * FROM projects ORDER BY project_id"
             ).fetchall()
@@ -271,7 +271,7 @@ class JobRepository(BaseRepository[JobRecord]):
         return self._row_to_model(row)  # type: ignore[return-value]
 
     def get(self, job_id: str) -> JobRecord | None:
-        with self.db.transaction() as connection:
+        with self.db.read() as connection:
             row = connection.execute(
                 "SELECT * FROM jobs WHERE job_id = ?", (job_id,)
             ).fetchone()
@@ -290,7 +290,7 @@ class JobRepository(BaseRepository[JobRecord]):
         return self._row_to_model(row)  # type: ignore[return-value]
 
     def list_for_project(self, project_id: str, *, limit: int = 20) -> list[JobRecord]:
-        with self.db.transaction() as connection:
+        with self.db.read() as connection:
             rows = connection.execute(
                 "SELECT * FROM jobs WHERE project_id = ? ORDER BY created_at DESC, job_id DESC LIMIT ?",
                 (project_id, limit),
@@ -298,7 +298,7 @@ class JobRepository(BaseRepository[JobRecord]):
         return [self._row_to_model(row) for row in rows if row is not None]  # type: ignore[list-item]
 
     def list_log_paths_for_project(self, project_id: str) -> list[str]:
-        with self.db.transaction() as connection:
+        with self.db.read() as connection:
             rows = connection.execute(
                 "SELECT log_path FROM jobs WHERE project_id = ? AND log_path IS NOT NULL",
                 (project_id,),
@@ -306,7 +306,7 @@ class JobRepository(BaseRepository[JobRecord]):
         return [str(row[0]) for row in rows if row and row[0]]
 
     def has_active_mutation(self, project_id: str) -> bool:
-        with self.db.transaction() as connection:
+        with self.db.read() as connection:
             row = connection.execute(
                 "SELECT 1 FROM jobs WHERE project_id = ? AND status IN (?, ?) LIMIT 1",
                 (project_id, JobStatus.QUEUED.value, JobStatus.RUNNING.value),

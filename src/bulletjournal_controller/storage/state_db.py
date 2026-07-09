@@ -22,9 +22,15 @@ class StateDB:
         connection.row_factory = sqlite3.Row
         connection.execute(f"PRAGMA busy_timeout = {int(DB_TIMEOUT_SECONDS * 1000)}")
         connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA journal_mode = WAL")
-        connection.execute("PRAGMA synchronous = NORMAL")
         return connection
+
+    @contextmanager
+    def read(self) -> Iterator[sqlite3.Connection]:
+        connection = self.connect()
+        try:
+            yield connection
+        finally:
+            connection.close()
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
@@ -32,11 +38,16 @@ class StateDB:
         try:
             yield connection
             connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
         finally:
             connection.close()
 
     def _initialize(self) -> None:
-        with self.transaction() as connection:
+        with self.connect() as connection:
+            connection.execute("PRAGMA journal_mode = WAL")
+            connection.execute("PRAGMA synchronous = NORMAL")
             table_exists = (
                 connection.execute(
                     "SELECT 1 FROM sqlite_master WHERE type = ? AND name = ?",

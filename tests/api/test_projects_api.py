@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import zipfile
 
 from bulletjournal.storage.project_fs import init_project_root
@@ -89,6 +90,64 @@ def test_project_create_list_detail_update_delete(instance_root, server_config) 
         )
         assert deleted.status_code == 202
         assert deleted.json()["job"]["job_type"] == "delete_project"
+
+
+def test_project_list_does_not_require_journal_mode_reset(
+    instance_root, server_config, monkeypatch
+) -> None:
+    original_connect = sqlite3.connect
+
+    class GuardedConnection:
+        def __init__(self, connection: sqlite3.Connection):
+            object.__setattr__(self, "_connection", connection)
+
+        def execute(self, sql: str, parameters=()):
+            if sql == "PRAGMA journal_mode = WAL":
+                raise AssertionError("request path should not reset journal mode")
+            return self._connection.execute(sql, parameters)
+
+        def __setattr__(self, name: str, value):
+            setattr(self._connection, name, value)
+
+        def __getattr__(self, name: str):
+            return getattr(self._connection, name)
+
+        def __enter__(self):
+            self._connection.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return self._connection.__exit__(exc_type, exc, tb)
+
+    app = create_app(instance_root=instance_root, server_config=server_config)
+    container: ServiceContainer = app.state.container
+    container.auth_service.create_user(
+        username="admin", display_name="Admin", password="secret-pass"
+    )
+    with _auth_client(app) as client:
+        create_response = client.post(
+            "/api/v1/projects",
+            headers={"origin": "http://testserver"},
+            json={
+                "project_id": "study-a",
+                "python_version": "3.11",
+                "custom_requirements_text": "bulletjournal-editor==0.3.0\nalpha\n",
+                "cpu_limit_millis": 2000,
+                "memory_limit_bytes": 4096,
+                "disk_soft_limit_bytes": 8192,
+                "gpu_enabled": False,
+            },
+        )
+        assert create_response.status_code == 201
+
+        def guarded_connect(*args, **kwargs):
+            return GuardedConnection(original_connect(*args, **kwargs))
+
+        monkeypatch.setattr(sqlite3, "connect", guarded_connect)
+
+        projects = client.get("/api/v1/projects")
+
+    assert projects.status_code == 200
 
 
 def test_invalid_request_shape_returns_422(instance_root, server_config) -> None:

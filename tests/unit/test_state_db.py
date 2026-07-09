@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
 from bulletjournal_controller.storage.state_db import StateDB
 from bulletjournal_controller.utils import utc_now_iso
@@ -72,3 +73,44 @@ def test_existing_projects_table_gains_runtime_venv_size_column(tmp_path) -> Non
         }
 
     assert "runtime_venv_size_bytes" in columns
+
+
+def test_connect_does_not_reapply_journal_mode_after_initialization(monkeypatch, tmp_path) -> None:
+    recorded_statements: list[str] = []
+    original_connect = sqlite3.connect
+
+    class RecordingConnection:
+        def __init__(self, connection: sqlite3.Connection):
+            object.__setattr__(self, "_connection", connection)
+
+        def execute(self, sql: str, parameters=()):
+            recorded_statements.append(sql)
+            return self._connection.execute(sql, parameters)
+
+        def __setattr__(self, name: str, value):
+            setattr(self._connection, name, value)
+
+        def __getattr__(self, name: str):
+            return getattr(self._connection, name)
+
+        def __enter__(self):
+            self._connection.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return self._connection.__exit__(exc_type, exc, tb)
+
+    def recording_connect(path: str | Path, *args, **kwargs):
+        return RecordingConnection(original_connect(path, *args, **kwargs))
+
+    monkeypatch.setattr(sqlite3, "connect", recording_connect)
+
+    db = StateDB(tmp_path / "state.db")
+    recorded_after_init = list(recorded_statements)
+
+    with db.read() as connection:
+        connection.execute("SELECT 1").fetchone()
+
+    assert "PRAGMA journal_mode = WAL" in recorded_after_init
+    assert recorded_statements.count("PRAGMA journal_mode = WAL") == 1
+    assert recorded_statements[-1] == "SELECT 1"

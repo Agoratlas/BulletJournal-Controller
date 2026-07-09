@@ -425,3 +425,40 @@ def test_update_environment_inputs_requires_bulletjournal_dependency_in_custom_r
             python_version="3.12",
             custom_requirements_text="alpha==1\n",
         )
+
+
+def test_create_project_rejects_gpu_when_instance_gpu_disabled(tmp_path) -> None:
+    instance_paths = init_instance_root(tmp_path / "instance")
+    db = StateDB(instance_paths.state_db_path)
+    user = UserRepository(db).create(
+        user_id="user-1",
+        username="admin",
+        display_name="Admin",
+        password_hash="hash",
+        is_active=True,
+    )
+    environment_service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=InstallerRunner(DockerAdapter()),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+    service = ProjectService(
+        instance_paths=instance_paths,
+        projects=ProjectRepository(db),
+        jobs=JobRepository(db),
+        environment_service=environment_service,
+        runtime_service=DummyRuntimeService(),
+        gpu_enabled=False,
+    )
+
+    with pytest.raises(ValidationError, match="GPU is not supported on this instance."):
+        service.create_project(
+            project_id="study-a",
+            created_by_user_id=user.user_id,
+            python_version="3.11",
+            custom_requirements_text="bulletjournal-editor\n",
+            cpu_limit_millis=None,
+            memory_limit_bytes=None,
+            disk_soft_limit_bytes=None,
+            gpu_enabled=True,
+        )

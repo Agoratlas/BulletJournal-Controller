@@ -73,7 +73,10 @@ type SystemInfo = {
   instance_id: string
   title: string
   default_python_version: string
-  default_bulletjournal_version: string
+  default_cpu_limit_cpus: number | null
+  default_memory_limit_gb: number | null
+  default_disk_soft_limit_gb: number | null
+  gpu_supported: boolean
   default_dependencies_text: string
   project_count: number
   metrics: {
@@ -765,9 +768,68 @@ style.textContent = `
     background: rgba(255, 255, 255, 0.78);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
+  .checkbox-row label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 1 auto;
+  }
+  .checkbox-row.is-disabled {
+    color: var(--muted);
+    background: rgba(255, 255, 255, 0.5);
+    border-style: dashed;
+  }
+  :root[data-theme='dark'] .checkbox-row.is-disabled {
+    background: rgba(255, 255, 255, 0.03);
+  }
   .checkbox-row input {
     width: auto;
     margin: 0;
+  }
+  .checkbox-row input:disabled {
+    cursor: not-allowed;
+  }
+  .info-bubble {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: help;
+    flex: 0 0 auto;
+    position: relative;
+  }
+  .info-bubble::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    transform: translateX(-50%);
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(20, 24, 24, 0.96);
+    color: #f7f3eb;
+    white-space: nowrap;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 80ms ease-out;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+    z-index: 10;
+  }
+  .info-bubble:hover::after,
+  .info-bubble:focus-visible::after {
+    opacity: 1;
+  }
+  :root[data-theme='dark'] .info-bubble::after {
+    background: rgba(243, 237, 225, 0.96);
+    color: #1f2929;
   }
   .notice,
   .error-banner,
@@ -1205,6 +1267,35 @@ style.textContent = `
     position: relative;
     z-index: 1;
   }
+  .footer-metric.has-tooltip {
+    overflow: visible;
+  }
+  .footer-metric-tooltip {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    transform: translateX(-50%);
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(20, 24, 24, 0.96);
+    color: #f7f3eb;
+    white-space: nowrap;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 80ms ease-out;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+    z-index: 5;
+  }
+  .footer-metric.has-tooltip:hover .footer-metric-tooltip,
+  .footer-metric.has-tooltip:focus-visible .footer-metric-tooltip {
+    opacity: 1;
+  }
+  :root[data-theme='dark'] .footer-metric-tooltip {
+    background: rgba(243, 237, 225, 0.96);
+    color: #1f2929;
+  }
   .footer-metric::after {
     content: '';
     position: absolute;
@@ -1275,6 +1366,8 @@ style.textContent = `
   .status-stack {
     display: grid;
     gap: 6px;
+    justify-items: start;
+    text-align: left;
   }
   .job-log-preview {
     position: relative;
@@ -1562,7 +1655,8 @@ function formatMemoryLimit(value: number | null | undefined): string {
   if (!Number.isFinite(value) || !value || value <= 0) {
     return 'No limit'
   }
-  return `${(value / (1024 ** 3)).toFixed(value >= 10 * 1024 ** 3 ? 0 : 1)} GB`
+  const gb = value / (1024 ** 3)
+  return `${gb % 1 === 0 ? gb.toFixed(0) : gb.toFixed(1)} GB`
 }
 
 function formatDiskSoftLimit(value: number | null | undefined): string {
@@ -1618,11 +1712,18 @@ function formatMemoryInputValue(value: number | null | undefined): string {
     return ''
   }
   const gb = value / (1024 ** 3)
-  return gb >= 10 || gb % 1 === 0 ? gb.toFixed(0) : gb.toFixed(1)
+  return gb % 1 === 0 ? gb.toFixed(0) : gb.toFixed(1)
 }
 
 function formatDiskInputValue(value: number | null | undefined): string {
   return formatMemoryInputValue(value)
+}
+
+function formatConfigLimitInputValue(value: number | null | undefined): string {
+  if (!Number.isFinite(value) || !value || value <= 0) {
+    return ''
+  }
+  return value % 1 === 0 ? value.toFixed(0) : value.toFixed(1)
 }
 
 function formatPercentage(value: number | null | undefined): string {
@@ -1860,24 +1961,28 @@ function FooterSystemMetrics({ systemInfo }: { systemInfo: SystemInfo | null }) 
   const cpuTone = metricTone(systemInfo?.metrics.cpu_percent)
   const memoryPercent = usagePercent(systemInfo?.metrics.memory?.used_bytes ?? null, systemInfo?.metrics.memory?.total_bytes ?? null)
   const diskPercent = usagePercent(systemInfo?.metrics.disk?.used_bytes ?? null, systemInfo?.metrics.disk?.total_bytes ?? null)
+  const diskTooltip = systemInfo?.metrics.disk ? `${formatBytes(systemInfo.metrics.disk.used_bytes)} / ${formatBytes(systemInfo.metrics.disk.total_bytes)}` : 'Not available'
+  const memoryTooltip = systemInfo?.metrics.memory ? `${formatBytes(systemInfo.metrics.memory.used_bytes)} / ${formatBytes(systemInfo.metrics.memory.total_bytes)}` : 'Not available'
 
   return (
     <div className="footer-metrics">
       <span
-        className={classNames('footer-metric', metricTone(diskPercent))}
+        className={classNames('footer-metric', 'has-tooltip', metricTone(diskPercent))}
         style={metricFillStyle(diskPercent)}
-        title={systemInfo?.metrics.disk ? `${formatBytes(systemInfo.metrics.disk.used_bytes)} / ${formatBytes(systemInfo.metrics.disk.total_bytes)}` : 'Not available'}
+        tabIndex={0}
       >
         <span className="muted">Disk</span>
         <strong>{formatPercentage(diskPercent)}</strong>
+        <span className="footer-metric-tooltip">{diskTooltip}</span>
       </span>
       <span
-        className={classNames('footer-metric', metricTone(memoryPercent))}
+        className={classNames('footer-metric', 'has-tooltip', metricTone(memoryPercent))}
         style={metricFillStyle(memoryPercent)}
-        title={systemInfo?.metrics.memory ? `${formatBytes(systemInfo.metrics.memory.used_bytes)} / ${formatBytes(systemInfo.metrics.memory.total_bytes)}` : 'Not available'}
+        tabIndex={0}
       >
         <span className="muted">RAM</span>
         <strong>{formatPercentage(memoryPercent)}</strong>
+        <span className="footer-metric-tooltip">{memoryTooltip}</span>
       </span>
       <span className={classNames('footer-metric', cpuTone)} style={metricFillStyle(systemInfo?.metrics.cpu_percent)}>
         <span className="muted">CPU</span>
@@ -2777,13 +2882,14 @@ function CreateProjectModal({
   onClose: () => void
 }) {
   const navigate = useNavigate()
+  const gpuSupported = systemInfo.gpu_supported
   const [form, setForm] = useState({
     project_id: '',
     custom_requirements_text: systemInfo.default_dependencies_text,
-    cpu_limit_input: '',
-    memory_limit_input: '',
-    disk_soft_limit_input: '',
-    gpu_enabled: true,
+    cpu_limit_input: formatConfigLimitInputValue(systemInfo.default_cpu_limit_cpus),
+    memory_limit_input: formatConfigLimitInputValue(systemInfo.default_memory_limit_gb),
+    disk_soft_limit_input: formatConfigLimitInputValue(systemInfo.default_disk_soft_limit_gb),
+    gpu_enabled: gpuSupported,
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -2827,8 +2933,7 @@ function CreateProjectModal({
       <section className="modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
         <div className="modal-head">
           <div>
-            <h2>Provision a managed BulletJournal runtime</h2>
-            <p className="section-copy">Project ids become both filesystem roots and runtime identifiers. Creation installs dependencies and starts the container in the background after the project record is created.</p>
+            <h2>New BulletJournal project</h2>
           </div>
           <button className="close-button" type="button" onClick={onClose} aria-label="Close dialog" disabled={submitting}>×</button>
         </div>
@@ -2842,7 +2947,6 @@ function CreateProjectModal({
               <div className="field-full">
                 <label htmlFor="create-dependencies">Dependency text</label>
                 <textarea id="create-dependencies" value={form.custom_requirements_text} onChange={(event) => setForm((current) => ({ ...current, custom_requirements_text: event.target.value }))} />
-                <span className="muted">The dependency text starts from the controller defaults. Edit the BulletJournal line there if you want a different package source or pinned version.</span>
               </div>
               <div className="field-full collapsible-panel">
                 <button className="button-secondary section-toggle" type="button" onClick={() => setShowLimitsForm((current) => !current)}>
@@ -2857,23 +2961,23 @@ function CreateProjectModal({
                     <div className="field">
                       <label htmlFor="create-cpu">CPU limit (CPUs)</label>
                       <input id="create-cpu" type="number" min={0} step="0.1" value={form.cpu_limit_input} onChange={(event) => setForm((current) => ({ ...current, cpu_limit_input: event.target.value }))} placeholder="Unlimited" />
-                      <span className="muted">Leave blank for no CPU limit.</span>
                     </div>
                     <div className="field">
                       <label htmlFor="create-memory">Memory limit (GB)</label>
                       <input id="create-memory" type="number" min={0} step="0.1" value={form.memory_limit_input} onChange={(event) => setForm((current) => ({ ...current, memory_limit_input: event.target.value }))} placeholder="Unlimited" />
-                      <span className="muted">Leave blank for no memory limit.</span>
                     </div>
                     <div className="field">
                       <label htmlFor="create-disk">Disk soft limit (GB)</label>
                       <input id="create-disk" type="number" min={0} step="0.1" value={form.disk_soft_limit_input} onChange={(event) => setForm((current) => ({ ...current, disk_soft_limit_input: event.target.value }))} placeholder="Unlimited" />
-                      <span className="muted">Used for UI warnings only. It does not enforce a real container disk cap.</span>
                     </div>
-                    <div className="field-full">
-                      <label>GPU access</label>
-                      <div className="checkbox-row">
-                        <input id="create-gpu" type="checkbox" checked={form.gpu_enabled} onChange={(event) => setForm((current) => ({ ...current, gpu_enabled: event.target.checked }))} />
-                        <label htmlFor="create-gpu">Enable GPU if supported on the host</label>
+                    <div className="field">
+                    <label>GPU access</label>
+                      <div className={classNames('checkbox-row', !gpuSupported && 'is-disabled')}>
+                        <input id="create-gpu" type="checkbox" checked={form.gpu_enabled} onChange={(event) => setForm((current) => ({ ...current, gpu_enabled: event.target.checked }))} disabled={!gpuSupported} />
+                        <label htmlFor="create-gpu">
+                          <span>Enable GPU</span>
+                          {!gpuSupported ? <span className="info-bubble" aria-label="GPU not enabled on this instance" data-tooltip="GPU not enabled on this instance" tabIndex={0}>i</span> : null}
+                        </label>
                       </div>
                     </div>
                   </div>

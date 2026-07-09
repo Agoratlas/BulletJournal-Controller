@@ -5,7 +5,11 @@ from bulletjournal_controller.domain.enums import (
     ProjectStatus,
     ProjectStatusReason,
 )
-from bulletjournal_controller.domain.errors import ConflictError, RuntimeOperationError
+from bulletjournal_controller.domain.errors import (
+    ConflictError,
+    RuntimeOperationError,
+    ValidationError,
+)
 from bulletjournal_controller.domain.models import ProjectRecord
 from bulletjournal_controller.domain.rules import (
     ensure_transition_allowed,
@@ -34,12 +38,14 @@ class ProjectService:
         jobs: JobRepository,
         environment_service,
         runtime_service,
+        gpu_enabled: bool = False,
     ):
         self.instance_paths = instance_paths
         self.projects = projects
         self.jobs = jobs
         self.environment_service = environment_service
         self.runtime_service = runtime_service
+        self.gpu_enabled = gpu_enabled
 
     def list_projects(self) -> list[ProjectRecord]:
         return self.projects.list_all()
@@ -69,6 +75,7 @@ class ProjectService:
         disk_soft_limit_bytes: int | None,
         gpu_enabled: bool,
     ) -> ProjectRecord:
+        self._require_gpu_supported(gpu_enabled)
         resolved_project_id = validate_project_id(project_id)
         if self.projects.get(resolved_project_id) is not None:
             raise ConflictError(f"Project {resolved_project_id} already exists.")
@@ -147,6 +154,7 @@ class ProjectService:
         disk_soft_limit_bytes: int | None,
         gpu_enabled: bool,
     ) -> ProjectRecord:
+        self._require_gpu_supported(gpu_enabled)
         project = self.projects.update(
             project_id,
             cpu_limit_millis=cpu_limit_millis,
@@ -157,6 +165,10 @@ class ProjectService:
         if project.container_name:
             self.runtime_service.update_limits(project=project)
         return self.get_project(project_id)
+
+    def _require_gpu_supported(self, gpu_enabled: bool) -> None:
+        if gpu_enabled and not self.gpu_enabled:
+            raise ValidationError("GPU is not supported on this instance.")
 
     def mark_installing(self, project_id: str) -> ProjectRecord:
         project = self.get_project(project_id)

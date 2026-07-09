@@ -48,7 +48,7 @@ class FakeAdapter:
 
 def _instance_config() -> InstanceConfig:
     return InstanceConfig(
-        schema_version=1,
+        schema_version=2,
         instance_id="Main Instance",
         title="Controller",
         project_root_dir="projects",
@@ -57,7 +57,9 @@ def _instance_config() -> InstanceConfig:
         docker_runtime_image="unused",
         docker_network_mode="bridge",
         default_python_version="3.11",
-        default_bulletjournal_version="0.1.0",
+        default_cpu_limit_cpus=None,
+        default_memory_limit_gb=None,
+        default_disk_soft_limit_gb=None,
         default_dependencies_file=None,
         runtime_dockerfile=None,
         runtime_build_context=None,

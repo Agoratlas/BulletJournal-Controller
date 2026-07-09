@@ -76,7 +76,7 @@ class EnvironmentService:
         self.runtime_config_service = runtime_config_service
 
     def default_dependency_text(self) -> str:
-        required = f"{MANAGED_RUNTIME_PACKAGE_NAME}=={self.instance_config.default_bulletjournal_version}"
+        required = MANAGED_RUNTIME_PACKAGE_NAME
         runtime_defaults = self.runtime_config_service.default_dependencies_file()
         path = (
             str(runtime_defaults)

@@ -30,7 +30,7 @@ Canonical non-secret instance configuration:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "instance_id": "main",
   "title": "BulletJournal Controller",
   "project_root_dir": "projects",
@@ -39,12 +39,21 @@ Canonical non-secret instance configuration:
   "docker_runtime_image": "ghcr.io/agoratlas/bulletjournal-runtime:py311",
   "docker_network_mode": "bridge",
   "default_python_version": "3.11",
-  "default_bulletjournal_version": "0.1.0",
+  "default_cpu_limit_cpus": 2,
+  "default_memory_limit_gb": 8,
+  "default_disk_soft_limit_gb": 50,
   "default_dependencies_file": "/etc/bulletjournal/default-dependencies.txt"
 }
 ```
 
 Secrets are never written into this file.
+
+- `default_cpu_limit_cpus`, `default_memory_limit_gb`, and `default_disk_soft_limit_gb` are optional
+- these values are used to prefill the create-project form only
+- users can still edit or clear the fields before creating a project
+- disk remains a UI-only soft threshold and is not enforced as a container quota
+- the managed BulletJournal dependency defaults to the latest available release
+- to pin a different BulletJournal source or version, add it to `config/runtime/default-dependencies.txt`
 
 ## `config/runtime/.env`
 

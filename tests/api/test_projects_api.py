@@ -106,6 +106,30 @@ def test_invalid_request_shape_returns_422(instance_root, server_config) -> None
         assert response.status_code == 422
 
 
+def test_project_create_rejects_gpu_when_instance_gpu_disabled(
+    instance_root, server_config
+) -> None:
+    app = create_app(instance_root=instance_root, server_config=server_config)
+    container: ServiceContainer = app.state.container
+    container.auth_service.create_user(
+        username="admin", display_name="Admin", password="secret-pass"
+    )
+    with _auth_client(app) as client:
+        response = client.post(
+            "/api/v1/projects",
+            headers={"origin": "http://testserver"},
+            json={
+                "project_id": "gpu-test",
+                "python_version": "3.11",
+                "custom_requirements_text": "bulletjournal-editor\n",
+                "gpu_enabled": True,
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "GPU is not supported on this instance."
+
+
 def test_project_lockfile_download(instance_root, server_config) -> None:
     app = create_app(instance_root=instance_root, server_config=server_config)
     container: ServiceContainer = app.state.container

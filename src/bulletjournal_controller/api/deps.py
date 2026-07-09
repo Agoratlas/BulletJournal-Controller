@@ -80,6 +80,7 @@ class ServiceContainer:
             jobs=self.jobs,
             environment_service=self.environment_service,
             runtime_service=self.runtime_service,
+            gpu_enabled=server_config.enable_gpu,
         )
         self.metrics_service = MetricsService(
             instance_paths=instance_paths,
@@ -137,7 +138,10 @@ class ServiceContainer:
             "instance_id": self.instance_config.instance_id,
             "title": self.instance_config.title,
             "default_python_version": self.instance_config.default_python_version,
-            "default_bulletjournal_version": self.instance_config.default_bulletjournal_version,
+            "default_cpu_limit_cpus": self.instance_config.default_cpu_limit_cpus,
+            "default_memory_limit_gb": self.instance_config.default_memory_limit_gb,
+            "default_disk_soft_limit_gb": self.instance_config.default_disk_soft_limit_gb,
+            "gpu_supported": self.server_config.enable_gpu,
             "default_dependencies_text": self.environment_service.default_dependency_text(),
             "runtime_image_name": self.runtime_config_service.runtime_config.runtime_image_name,
             "config_dir": str(self.instance_paths.local_config_dir),

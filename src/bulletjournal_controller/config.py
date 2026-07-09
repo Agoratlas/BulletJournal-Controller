@@ -11,7 +11,7 @@ from bulletjournal_controller.utils import env_bool
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8780
-INSTANCE_SCHEMA_VERSION = 1
+INSTANCE_SCHEMA_VERSION = 2
 EXPORT_MANIFEST_VERSION = 1
 DEFAULT_IDLE_TIMEOUT_SECONDS = 86400
 DEFAULT_SESSION_LIFETIME_SECONDS = 7 * 24 * 60 * 60
@@ -38,7 +38,9 @@ class InstanceConfig:
     docker_runtime_image: str
     docker_network_mode: str
     default_python_version: str
-    default_bulletjournal_version: str
+    default_cpu_limit_cpus: float | None = None
+    default_memory_limit_gb: float | None = None
+    default_disk_soft_limit_gb: float | None = None
     default_dependencies_file: str | None = None
     runtime_dockerfile: str | None = None
     runtime_build_context: str | None = None
@@ -93,7 +95,9 @@ def default_instance_config() -> InstanceConfig:
         docker_runtime_image="bulletjournal-runtime:local",
         docker_network_mode="bridge",
         default_python_version="3.11",
-        default_bulletjournal_version="0.1.0",
+        default_cpu_limit_cpus=None,
+        default_memory_limit_gb=None,
+        default_disk_soft_limit_gb=None,
         default_dependencies_file=str(
             runtime_defaults_root / "default-dependencies.txt"
         ),
@@ -114,8 +118,14 @@ def instance_config_from_dict(data: dict[str, object]) -> InstanceConfig:
             docker_runtime_image=_required_str(data, "docker_runtime_image"),
             docker_network_mode=_required_str(data, "docker_network_mode"),
             default_python_version=_required_str(data, "default_python_version"),
-            default_bulletjournal_version=_required_str(
-                data, "default_bulletjournal_version"
+            default_cpu_limit_cpus=_optional_positive_float(
+                data.get("default_cpu_limit_cpus")
+            ),
+            default_memory_limit_gb=_optional_positive_float(
+                data.get("default_memory_limit_gb")
+            ),
+            default_disk_soft_limit_gb=_optional_positive_float(
+                data.get("default_disk_soft_limit_gb")
             ),
             default_dependencies_file=_optional_str(
                 data.get("default_dependencies_file")
@@ -148,8 +158,15 @@ def validate_instance_config(config: InstanceConfig) -> None:
         raise ConfigurationError("docker_runtime_image must not be empty.")
     if not config.default_python_version:
         raise ConfigurationError("default_python_version must not be empty.")
-    if not config.default_bulletjournal_version:
-        raise ConfigurationError("default_bulletjournal_version must not be empty.")
+    if config.default_cpu_limit_cpus is not None and config.default_cpu_limit_cpus <= 0:
+        raise ConfigurationError("default_cpu_limit_cpus must be positive.")
+    if config.default_memory_limit_gb is not None and config.default_memory_limit_gb <= 0:
+        raise ConfigurationError("default_memory_limit_gb must be positive.")
+    if (
+        config.default_disk_soft_limit_gb is not None
+        and config.default_disk_soft_limit_gb <= 0
+    ):
+        raise ConfigurationError("default_disk_soft_limit_gb must be positive.")
 
 
 def load_instance_config(path: Path) -> InstanceConfig:
@@ -172,7 +189,9 @@ def instance_config_json(config: InstanceConfig) -> str:
         "docker_runtime_image": config.docker_runtime_image,
         "docker_network_mode": config.docker_network_mode,
         "default_python_version": config.default_python_version,
-        "default_bulletjournal_version": config.default_bulletjournal_version,
+        "default_cpu_limit_cpus": config.default_cpu_limit_cpus,
+        "default_memory_limit_gb": config.default_memory_limit_gb,
+        "default_disk_soft_limit_gb": config.default_disk_soft_limit_gb,
         "default_dependencies_file": config.default_dependencies_file,
         "runtime_dockerfile": config.runtime_dockerfile,
         "runtime_build_context": config.runtime_build_context,
@@ -231,3 +250,17 @@ def _required_int(data: dict[str, object], key: str) -> int:
         return int(str(value))
     except (TypeError, ValueError) as exc:
         raise ConfigurationError(f"{key} must be an integer.") from exc
+
+
+def _optional_positive_float(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ConfigurationError("Expected a positive number.")
+    try:
+        parsed = float(str(value).strip())
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError("Expected a positive number.") from exc
+    if parsed <= 0:
+        raise ConfigurationError("Expected a positive number.")
+    return parsed

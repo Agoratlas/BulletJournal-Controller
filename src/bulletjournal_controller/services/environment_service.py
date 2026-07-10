@@ -307,7 +307,7 @@ class EnvironmentService:
         )
         common_mount_paths = [
             project_paths.root,
-            self.runtime_config_service.uv_cache_dir(),
+            project_paths.runtime_uv_cache_dir,
             *[
                 mount_path
                 for mount_path, _target, _readonly in self.runtime_config_service.additional_mounts()
@@ -316,7 +316,6 @@ class EnvironmentService:
         init_command = self.installer.build_project_init_command(
             image=self.runtime_config_service.runtime_config.runtime_image_name,
             project_root=project_paths.root,
-            uv_cache_dir=self.runtime_config_service.uv_cache_dir(),
             project_id=project.project_id,
             network_mode=self.instance_config.docker_network_mode,
             env_file=self.runtime_config_service.env_file(),
@@ -343,7 +342,6 @@ class EnvironmentService:
         install_command = self.installer.build_install_command(
             image=self.runtime_config_service.runtime_config.runtime_image_name,
             project_root=project_paths.root,
-            uv_cache_dir=self.runtime_config_service.uv_cache_dir(),
             network_mode=self.instance_config.docker_network_mode,
             gpu_enabled=project.gpu_enabled,
             env_file=self.runtime_config_service.env_file(),
@@ -372,7 +370,6 @@ class EnvironmentService:
             validate_command = self.installer.build_validate_environment_command(
                 image=self.runtime_config_service.runtime_config.runtime_image_name,
                 project_root=project_paths.root,
-                uv_cache_dir=self.runtime_config_service.uv_cache_dir(),
                 network_mode=self.instance_config.docker_network_mode,
                 env_file=self.runtime_config_service.env_file(),
                 additional_mounts=self.runtime_config_service.additional_mounts(),
@@ -393,7 +390,6 @@ class EnvironmentService:
             stale_command = self.installer.build_mark_stale_command(
                 image=self.runtime_config_service.runtime_config.runtime_image_name,
                 project_root=project_paths.root,
-                uv_cache_dir=self.runtime_config_service.uv_cache_dir(),
                 network_mode=self.instance_config.docker_network_mode,
                 reason=reason,
                 env_file=self.runtime_config_service.env_file(),

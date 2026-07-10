@@ -11,14 +11,13 @@ def test_install_command_uses_no_install_project_flag() -> None:
     command = runner.build_install_command(
         image="bulletjournal-runtime:local",
         project_root=Path("/srv/project"),
-        uv_cache_dir=Path("/srv/runtime/cache/uv"),
         network_mode="bridge",
         gpu_enabled=False,
     )
     joined = " ".join(command)
     assert "uv sync --project /project --locked --no-install-project" in joined
-    assert "type=bind,src=/srv/runtime/cache/uv,dst=/home/bulletjournal/.cache/uv" in joined
-    assert "UV_CACHE_DIR=/home/bulletjournal/.cache/uv" in joined
+    assert "type=bind,src=/srv/project,dst=/project" in joined
+    assert "UV_CACHE_DIR=/project/.runtime/uv-cache" in joined
 
 
 def test_install_command_supports_runtime_env_file() -> None:
@@ -26,7 +25,6 @@ def test_install_command_supports_runtime_env_file() -> None:
     command = runner.build_install_command(
         image="bulletjournal-runtime:local",
         project_root=Path("/srv/project"),
-        uv_cache_dir=Path("/srv/runtime/cache/uv"),
         network_mode="bridge",
         gpu_enabled=False,
         env_file=Path("/srv/instance/config/runtime/.env"),
@@ -40,7 +38,6 @@ def test_install_command_runs_as_supplied_uid_gid() -> None:
     command = runner.build_install_command(
         image="bulletjournal-runtime:local",
         project_root=Path("/srv/project"),
-        uv_cache_dir=Path("/srv/runtime/cache/uv"),
         network_mode="bridge",
         gpu_enabled=False,
         user_uid=1000,
@@ -56,7 +53,6 @@ def test_install_command_supports_upgrading_all_packages_during_lock() -> None:
     command = runner.build_install_command(
         image="bulletjournal-runtime:local",
         project_root=Path("/srv/project"),
-        uv_cache_dir=Path("/srv/runtime/cache/uv"),
         network_mode="bridge",
         gpu_enabled=False,
         upgrade_all=True,
@@ -70,7 +66,6 @@ def test_project_init_command_invokes_bulletjournal_init_without_environment() -
     command = runner.build_project_init_command(
         image="bulletjournal-runtime:local",
         project_root=Path("/srv/project"),
-        uv_cache_dir=Path("/srv/runtime/cache/uv"),
         project_id="study-a",
         network_mode="bridge",
     )
@@ -79,8 +74,7 @@ def test_project_init_command_invokes_bulletjournal_init_without_environment() -
         "uv run --project /project bulletjournal init /project --project-id study-a --skip-environment"
         in joined
     )
-    assert "type=bind,src=/srv/runtime/cache/uv,dst=/home/bulletjournal/.cache/uv" in joined
-    assert "UV_CACHE_DIR=/home/bulletjournal/.cache/uv" in joined
+    assert "UV_CACHE_DIR=/project/.runtime/uv-cache" in joined
 
 
 def test_validate_environment_command_uses_runtime_cli() -> None:
@@ -88,22 +82,19 @@ def test_validate_environment_command_uses_runtime_cli() -> None:
     command = runner.build_validate_environment_command(
         image="bulletjournal-runtime:local",
         project_root=Path("/srv/project"),
-        uv_cache_dir=Path("/srv/runtime/cache/uv"),
         network_mode="bridge",
     )
     joined = " ".join(command)
     assert "/project/.runtime/venv/bin/bulletjournal --help" in joined
 
 
-def test_mark_stale_command_mounts_shared_uv_cache() -> None:
+def test_mark_stale_command_mounts_project_local_uv_cache() -> None:
     runner = InstallerRunner(DockerAdapter())
     command = runner.build_mark_stale_command(
         image="bulletjournal-runtime:local",
         project_root=Path("/srv/project"),
-        uv_cache_dir=Path("/srv/runtime/cache/uv"),
         network_mode="bridge",
         reason="test",
     )
     joined = " ".join(command)
-    assert "type=bind,src=/srv/runtime/cache/uv,dst=/home/bulletjournal/.cache/uv" in joined
-    assert "UV_CACHE_DIR=/home/bulletjournal/.cache/uv" in joined
+    assert "UV_CACHE_DIR=/project/.runtime/uv-cache" in joined

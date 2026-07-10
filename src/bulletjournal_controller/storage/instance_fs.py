@@ -96,6 +96,10 @@ class ProjectPaths:
     def runtime_logs_dir(self) -> Path:
         return self.runtime_dir / "logs"
 
+    @property
+    def runtime_uv_cache_dir(self) -> Path:
+        return self.runtime_dir / "uv-cache"
+
 
 @dataclass(slots=True, frozen=True)
 class InstancePaths:
@@ -260,6 +264,7 @@ def create_project_root(
     ensure_directory(project_paths.worker_temp_dir)
     ensure_directory(project_paths.runtime_venv_dir)
     ensure_directory(project_paths.runtime_logs_dir)
+    ensure_directory(project_paths.runtime_uv_cache_dir)
     return project_paths
 
 

@@ -78,13 +78,6 @@ def test_runtime_config_additional_mounts_defaults_read_only_to_false(
     )
 
 
-def test_runtime_config_exposes_shared_uv_cache_dir(tmp_path: Path) -> None:
-    instance_paths = init_instance_root(tmp_path / "instance")
-    service = RuntimeConfigService(instance_paths=instance_paths)
-
-    assert service.uv_cache_dir() == instance_paths.runtime_cache_dir / "uv"
-
-
 @pytest.mark.parametrize(
     ("mounts", "message"),
     [

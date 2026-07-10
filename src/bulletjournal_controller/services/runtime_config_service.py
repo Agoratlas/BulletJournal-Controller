@@ -49,11 +49,6 @@ class RuntimeConfigService:
     def env_file(self) -> Path | None:
         return self.runtime_config.env_file
 
-    def uv_cache_dir(self) -> Path:
-        path = self.instance_paths.runtime_cache_dir / "uv"
-        path.mkdir(parents=True, exist_ok=True)
-        return path
-
     def ensure_runtime_image(self, installer) -> None:
         result = installer.build_image(
             image_name=self.runtime_config.runtime_image_name,

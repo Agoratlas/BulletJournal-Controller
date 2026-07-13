@@ -288,9 +288,12 @@ class JobService:
                     project.project_id, reason=ProjectStatusReason.MANUAL_STOP.value
                 )
             if job.job_type == JobType.UPDATE_ENVIRONMENT.value:
+                python_version = str(
+                    payload.get("python_version") or project.python_version
+                )
                 project = self.project_service.update_environment_inputs(
                     project_id=project.project_id,
-                    python_version=str(payload["python_version"]),
+                    python_version=python_version,
                     custom_requirements_text=str(payload["custom_requirements_text"]),
                 )
             self.project_service.mark_installing(project.project_id)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 from importlib import import_module
 
 import pytest
@@ -21,6 +22,22 @@ def test_create_user_accepts_password_hash(instance_root) -> None:
 
     assert payload["username"] == "admin"
     assert payload["display_name"] == "Admin"
+
+
+def test_create_user_does_not_require_prometheus_api_key(instance_root) -> None:
+    instance_json_path = instance_root / "config" / "instance.json"
+    instance_config = json.loads(instance_json_path.read_text(encoding="utf-8"))
+    instance_config["prometheus_metrics_mode"] = "authenticated"
+    instance_json_path.write_text(json.dumps(instance_config), encoding="utf-8")
+
+    payload = create_user(
+        str(instance_root),
+        username="admin",
+        display_name="Admin",
+        password_hash=import_module("argon2").PasswordHasher().hash("secret-pass"),
+    )
+
+    assert payload["username"] == "admin"
 
 
 def test_create_user_rejects_both_password_and_password_hash(instance_root) -> None:

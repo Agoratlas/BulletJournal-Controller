@@ -23,6 +23,7 @@ def import_project(
         instance_paths=instance_paths,
         server_config=ServerConfig(session_secret='cli-session-secret', cookie_secure=False),
         ensure_runtime_image=False,
+        validate_server_config=False,
     )
     return container.export_service.import_project(
         archive_path=Path(archive).resolve(),

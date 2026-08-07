@@ -20,6 +20,7 @@ def export_project(
         instance_paths=instance_paths,
         server_config=ServerConfig(session_secret='cli-session-secret', cookie_secure=False),
         ensure_runtime_image=False,
+        validate_server_config=False,
     )
     project = container.project_service.get_project(project_id)
     return container.export_service.export_project(

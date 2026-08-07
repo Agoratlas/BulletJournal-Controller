@@ -41,6 +41,7 @@ def create_user(
         instance_paths=instance_paths,
         server_config=server_config,
         ensure_runtime_image=False,
+        validate_server_config=False,
     )
     if password_hash is not None:
         resolved_password_hash = password_hash

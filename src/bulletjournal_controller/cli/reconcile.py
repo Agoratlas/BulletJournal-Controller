@@ -13,6 +13,7 @@ def reconcile(instance_root: str) -> dict[str, object]:
         instance_paths=instance_paths,
         server_config=ServerConfig(session_secret='cli-session-secret', cookie_secure=False),
         ensure_runtime_image=False,
+        validate_server_config=False,
     )
     container.reconcile_service.run_once()
     return {'status': 'ok'}

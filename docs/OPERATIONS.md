@@ -9,8 +9,8 @@ The runtime image is built locally from a configured Dockerfile.
 - default Dockerfile: `src/bulletjournal_controller/defaults/runtime/Dockerfile`
 - instance-local override root: `instance_root/config/runtime/`
 - build CLI: `bulletjournal-controller build-runtime <instance_root>`
-- `build-runtime` does not require server-only environment variables, including
-  `BULLETJOURNAL_PROMETHEUS_API_KEY`.
+- Offline administrative commands do not require server-only environment
+  variables, including `BULLETJOURNAL_PROMETHEUS_API_KEY`.
 
 Each project container:
 
@@ -68,7 +68,8 @@ Prometheus exposition is disabled by default. Set `prometheus_metrics_mode` in
 
 `BULLETJOURNAL_PROMETHEUS_API_KEY` is required when starting a controller whose
 metrics mode is `authenticated`; offline commands such as `build-runtime` do
-not require it.
+not require it. This also applies to `create-user`, `cleanup-instance`,
+`export-project`, `import-project`, and `reconcile`.
 
 Keep `/metrics` on a trusted network even when API-key authentication is
 enabled. The endpoint exports normalized endpoint latencies across projects,

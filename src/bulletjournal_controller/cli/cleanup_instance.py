@@ -13,6 +13,7 @@ def cleanup_instance(instance_root: str) -> dict[str, object]:
         instance_paths=instance_paths,
         server_config=ServerConfig(session_secret='cli-session-secret', cookie_secure=False),
         ensure_runtime_image=False,
+        validate_server_config=False,
     )
     removed = container.runtime_service.cleanup_instance_containers()
     return {'removed_containers': removed, 'instance_id': container.instance_config.instance_id}

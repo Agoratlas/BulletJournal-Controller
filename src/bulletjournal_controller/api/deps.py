@@ -42,17 +42,13 @@ class ServiceContainer:
         server_config,
         recover_inflight_jobs: bool = False,
         ensure_runtime_image: bool = True,
+        validate_server_config: bool = True,
     ) -> None:
         self.instance_paths = instance_paths
         self.server_config = server_config
         self.instance_config = load_instance_config(instance_paths.instance_json_path)
-        if (
-            self.instance_config.prometheus_metrics_mode == "authenticated"
-            and not self.server_config.prometheus_api_key
-        ):
-            raise ConfigurationError(
-                "BULLETJOURNAL_PROMETHEUS_API_KEY is required when prometheus_metrics_mode is `authenticated`."
-            )
+        if validate_server_config:
+            self._validate_server_config()
         self.state_db = StateDB(instance_paths.state_db_path)
         if recover_inflight_jobs:
             self.state_db.abort_inflight_jobs()
@@ -132,6 +128,15 @@ class ServiceContainer:
         )
         self._prometheus_resource_thread: threading.Thread | None = None
         self._prometheus_resource_stop_event = threading.Event()
+
+    def _validate_server_config(self) -> None:
+        if (
+            self.instance_config.prometheus_metrics_mode == "authenticated"
+            and not self.server_config.prometheus_api_key
+        ):
+            raise ConfigurationError(
+                "BULLETJOURNAL_PROMETHEUS_API_KEY is required when prometheus_metrics_mode is `authenticated`."
+            )
 
     def start(self) -> None:
         self.project_service.backfill_runtime_venv_size_bytes()

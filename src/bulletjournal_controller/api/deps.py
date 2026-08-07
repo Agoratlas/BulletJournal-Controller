@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import threading
+
 from bulletjournal_controller.config import load_instance_config
+from bulletjournal_controller.domain.errors import ConfigurationError
+from bulletjournal_controller.observability import Observability
 from bulletjournal_controller.runtime.docker_adapter import DockerAdapter
 from bulletjournal_controller.runtime.installer import InstallerRunner
 from bulletjournal_controller.services.auth_service import AuthService
@@ -25,9 +29,9 @@ from bulletjournal_controller.storage import (
     UserRepository,
 )
 
-
 SYSTEM_USER_ID = "user-system"
 SYSTEM_USERNAME = "system"
+PROMETHEUS_RESOURCE_REFRESH_SECONDS = 15.0
 
 
 class ServiceContainer:
@@ -42,6 +46,13 @@ class ServiceContainer:
         self.instance_paths = instance_paths
         self.server_config = server_config
         self.instance_config = load_instance_config(instance_paths.instance_json_path)
+        if (
+            self.instance_config.prometheus_metrics_mode == "authenticated"
+            and not self.server_config.prometheus_api_key
+        ):
+            raise ConfigurationError(
+                "BULLETJOURNAL_PROMETHEUS_API_KEY is required when prometheus_metrics_mode is `authenticated`."
+            )
         self.state_db = StateDB(instance_paths.state_db_path)
         if recover_inflight_jobs:
             self.state_db.abort_inflight_jobs()
@@ -88,6 +99,7 @@ class ServiceContainer:
             runtime_config_service=self.runtime_config_service,
             jobs=self.jobs,
         )
+        self.observability = Observability()
         self.export_service = ExportService(
             instance_paths=instance_paths,
             projects=self.projects,
@@ -108,7 +120,9 @@ class ServiceContainer:
             system_user_id=SYSTEM_USER_ID,
         )
         self.proxy_service = ProxyService(
-            project_service=self.project_service, job_service=self.job_service
+            project_service=self.project_service,
+            job_service=self.job_service,
+            observability=self.observability,
         )
         self.reconcile_service = ReconcileService(
             project_service=self.project_service,
@@ -116,6 +130,8 @@ class ServiceContainer:
             idle_timeout_seconds=self.instance_config.idle_timeout_seconds,
             job_service=self.job_service,
         )
+        self._prometheus_resource_thread: threading.Thread | None = None
+        self._prometheus_resource_stop_event = threading.Event()
 
     def start(self) -> None:
         self.project_service.backfill_runtime_venv_size_bytes()
@@ -124,10 +140,12 @@ class ServiceContainer:
         )
         self.job_service.start()
         self.reconcile_service.start()
+        self._start_prometheus_resource_sampler()
 
     def stop(self) -> None:
         self.reconcile_service.stop()
         self.job_service.stop()
+        self._stop_prometheus_resource_sampler()
         self.job_event_broker.close()
 
     async def aclose(self) -> None:
@@ -148,6 +166,50 @@ class ServiceContainer:
             "project_count": len(self.project_service.list_projects()),
             "metrics": self.metrics_service.system_metrics(),
         }
+
+    def refresh_prometheus_resources(self) -> None:
+        projects = self.project_service.list_projects()
+        metrics_map = self.metrics_service.project_metrics_map(projects)
+        self.observability.update_resources(
+            system=self.metrics_service.system_metrics(),
+            projects=[
+                {
+                    "project_id": project.project_id,
+                    "status": project.status,
+                    **metrics_map.get(project.project_id, {}),
+                }
+                for project in projects
+            ],
+        )
+
+    def _start_prometheus_resource_sampler(self) -> None:
+        if self.instance_config.prometheus_metrics_mode == "off":
+            return
+        if self._prometheus_resource_thread is not None:
+            return
+        self._prometheus_resource_stop_event.clear()
+        self._prometheus_resource_thread = threading.Thread(
+            target=self._run_prometheus_resource_sampler,
+            name="prometheus-resource-sampler",
+            daemon=True,
+        )
+        self._prometheus_resource_thread.start()
+
+    def _stop_prometheus_resource_sampler(self) -> None:
+        self._prometheus_resource_stop_event.set()
+        if self._prometheus_resource_thread is not None:
+            self._prometheus_resource_thread.join(timeout=2.0)
+            self._prometheus_resource_thread = None
+
+    def _run_prometheus_resource_sampler(self) -> None:
+        while not self._prometheus_resource_stop_event.is_set():
+            try:
+                self.refresh_prometheus_resources()
+            except Exception:
+                pass
+            self._prometheus_resource_stop_event.wait(
+                PROMETHEUS_RESOURCE_REFRESH_SECONDS
+            )
 
     def _ensure_system_user(self) -> None:
         if self.users.get(SYSTEM_USER_ID) is not None:

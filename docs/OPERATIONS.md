@@ -53,3 +53,20 @@ Changes to `instance_root/config/runtime/` are picked up on subsequent operation
 - the reconciler polls running projects every five minutes
 - it reads BulletJournal controller status
 - it stops projects only when BulletJournal reports idle shutdown is safe
+
+## Prometheus Metrics
+
+Prometheus exposition is disabled by default. Set `prometheus_metrics_mode` in
+`config/instance.json` to one of:
+
+- `off`: `/metrics` returns 404.
+- `unauthenticated`: `/metrics` is available without application authentication.
+- `authenticated`: `/metrics` requires the `X-API-Key` header to match
+  `BULLETJOURNAL_PROMETHEUS_API_KEY`.
+
+Keep `/metrics` on a trusted network even when API-key authentication is
+enabled. The endpoint exports normalized endpoint latencies across projects,
+project-level latency aggregates, and controller/project resource gauges. When
+metrics are enabled, the controller refreshes system and project resources in a
+background sampler every 15 seconds, independently of the web UI and scrape
+requests. Serving `/metrics` itself performs no Docker call or filesystem scan.

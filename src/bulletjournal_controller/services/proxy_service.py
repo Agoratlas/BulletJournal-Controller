@@ -3,11 +3,15 @@ from __future__ import annotations
 import asyncio
 import time
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlsplit, urlunsplit
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from bulletjournal_controller.domain.enums import ProjectStatus
 from bulletjournal_controller.domain.errors import RuntimeOperationError
+from bulletjournal_controller.observability import (
+    is_long_lived_endpoint,
+    normalized_project_endpoint,
+    server_timing_app_seconds,
+)
 
 if TYPE_CHECKING:
     from fastapi import Request, WebSocket
@@ -29,9 +33,10 @@ RUNNING_PROJECT_CHECK_TTL_SECONDS = 1.0
 
 
 class ProxyService:
-    def __init__(self, *, project_service, job_service):
+    def __init__(self, *, project_service, job_service, observability=None):
         self.project_service = project_service
         self.job_service = job_service
+        self.observability = observability
         self._http_client = None
         self._running_project_check_deadlines: dict[str, tuple[str, float]] = {}
 
@@ -90,7 +95,17 @@ class ProxyService:
         from fastapi.responses import Response, StreamingResponse
 
         _ = path
-        project = self.require_running_project(project_id)
+        started_at = time.perf_counter()
+        endpoint = normalized_project_endpoint(
+            method=request.method, path=target_path_override or request.url.path
+        )
+        try:
+            project = self.require_running_project(project_id)
+        except RuntimeOperationError:
+            self._observe_proxy_failure(
+                project_id, endpoint, request.method, started_at, "runtime_unavailable"
+            )
+            raise
         query = urlencode(list(request.query_params.multi_items()))
         target_path = target_path_override or request.url.path
         target = f"http://127.0.0.1:{project.container_port}{target_path}"
@@ -101,50 +116,121 @@ class ProxyService:
         if client is None:
             client = httpx.AsyncClient(timeout=None, follow_redirects=False)
             self._http_client = client
+        upstream = client.build_request(
+            request.method,
+            target,
+            content=body,
+            headers=self._forward_headers(
+                request.headers,
+                request=request,
+                project_id=project_id,
+                username=authenticated_username,
+                target_path=target_path,
+            ),
+        )
         try:
-            upstream = client.build_request(
-                request.method,
-                target,
-                content=body,
-                headers=self._forward_headers(
-                    request.headers,
-                    request=request,
-                    project_id=project_id,
-                    username=authenticated_username,
-                    target_path=target_path,
-                ),
+            response = await client.send(upstream, stream=True)
+        except httpx.HTTPError as exc:
+            self._observe_proxy_failure(
+                project_id, endpoint, request.method, started_at, "upstream_error"
             )
+            return Response(
+                status_code=502, content=f"Upstream proxy request failed: {exc}"
+            )
+
+        app_duration = server_timing_app_seconds(response.headers.get("server-timing"))
+        outcome = self._outcome_for_status(response.status_code)
+
+        async def body_iterator():
+            stream_outcome = outcome
             try:
-                response = await client.send(upstream, stream=True)
-            except httpx.HTTPError as exc:
-                return Response(
-                    status_code=502, content=f"Upstream proxy request failed: {exc}"
+                async for chunk in response.aiter_bytes():
+                    yield chunk
+            except httpx.HTTPError:
+                stream_outcome = "upstream_error"
+            finally:
+                await response.aclose()
+                self._observe_proxy_completion(
+                    project_id=project_id,
+                    endpoint=endpoint,
+                    method=request.method,
+                    status_code=response.status_code,
+                    outcome=stream_outcome,
+                    started_at=started_at,
+                    app_duration=app_duration,
                 )
 
-            async def body_iterator():
-                try:
-                    async for chunk in response.aiter_bytes():
-                        yield chunk
-                except httpx.HTTPError:
-                    return
-                finally:
-                    await response.aclose()
+        response_headers = self._response_headers(
+            response.headers,
+            project_id=project_id,
+            upstream_port=project.container_port,
+            request_host=request.headers.get("host", ""),
+            request_scheme=request.url.scheme,
+        )
+        return StreamingResponse(
+            body_iterator(),
+            status_code=response.status_code,
+            headers=response_headers,
+            media_type=response.headers.get("content-type"),
+        )
 
-            response_headers = self._response_headers(
-                response.headers,
+    def _observe_proxy_failure(
+        self,
+        project_id: str,
+        endpoint: str,
+        method: str,
+        started_at: float,
+        outcome: str,
+    ) -> None:
+        self._observe_proxy_completion(
+            project_id=project_id,
+            endpoint=endpoint,
+            method=method,
+            status_code=None,
+            outcome=outcome,
+            started_at=started_at,
+            app_duration=None,
+        )
+
+    def _observe_proxy_completion(
+        self,
+        *,
+        project_id: str,
+        endpoint: str,
+        method: str,
+        status_code: int | None,
+        outcome: str,
+        started_at: float,
+        app_duration: float | None,
+    ) -> None:
+        metrics = self.observability
+        if metrics is None:
+            return
+        duration = max(0.0, time.perf_counter() - started_at)
+        if not is_long_lived_endpoint(endpoint):
+            metrics.observe_project_request(
                 project_id=project_id,
-                upstream_port=project.container_port,
-                request_host=request.headers.get("host", ""),
-                request_scheme=request.url.scheme,
+                outcome=outcome,
+                duration=duration,
+                app_duration=app_duration,
             )
-            return StreamingResponse(
-                body_iterator(),
-                status_code=response.status_code,
-                headers=response_headers,
-                media_type=response.headers.get("content-type"),
-            )
-        except Exception:
-            raise
+        if is_long_lived_endpoint(endpoint):
+            return
+        status_class = "error" if status_code is None else f"{status_code // 100}xx"
+        metrics.endpoint_requests.labels(
+            endpoint=endpoint, method=method, status_class=status_class
+        ).inc()
+        metrics.endpoint_duration.labels(
+            endpoint=endpoint, method=method, status_class=status_class
+        ).observe(duration)
+
+    @staticmethod
+    def _outcome_for_status(status_code: int) -> str:
+        if status_code < 400:
+            return "success"
+        if status_code < 500:
+            return "client_error"
+        return "server_error"
 
     async def aclose(self) -> None:
         client = self._http_client
@@ -272,9 +358,7 @@ class ProxyService:
         request_scheme: str,
     ) -> str:
         prefix = f"/p/{project_id}"
-        if location.startswith("http://127.0.0.1:") or location.startswith(
-            "http://localhost:"
-        ):
+        if location.startswith(("http://127.0.0.1:", "http://localhost:")):
             parsed = urlsplit(location)
             if parsed.port == upstream_port and parsed.path:
                 path = (

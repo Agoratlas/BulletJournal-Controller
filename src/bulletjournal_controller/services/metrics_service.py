@@ -10,10 +10,10 @@ from pathlib import Path
 from bulletjournal_controller.domain.models import ProjectRecord
 from bulletjournal_controller.utils import path_size_bytes
 
-
 PROJECT_DISK_USAGE_TTL_SECONDS = 15.0
 DOCKER_STATS_TTL_SECONDS = 5.0
 CONTAINER_RW_SIZE_TTL_SECONDS = 15.0
+SYSTEM_METRICS_TTL_SECONDS = 5.0
 
 
 class MetricsService:
@@ -36,10 +36,15 @@ class MetricsService:
             tuple[str, ...], tuple[float, dict[str, dict[str, object]]]
         ] = {}
         self._container_rw_size_cache: dict[str, tuple[float, int | None]] = {}
+        self._system_metrics_cache: tuple[float, dict[str, object]] | None = None
 
     def system_metrics(self) -> dict[str, object]:
+        cached = self._system_metrics_cache
+        now = time.monotonic()
+        if cached is not None and now < cached[0]:
+            return cached[1]
         disk = shutil.disk_usage(self.instance_paths.root)
-        return {
+        metrics = {
             "cpu_percent": self._system_cpu_percent(),
             "memory": self._system_memory_metrics(),
             "disk": {
@@ -47,6 +52,8 @@ class MetricsService:
                 "total_bytes": int(disk.total),
             },
         }
+        self._system_metrics_cache = (now + SYSTEM_METRICS_TTL_SECONDS, metrics)
+        return metrics
 
     def project_metrics_map(
         self, projects: list[ProjectRecord]
@@ -78,6 +85,28 @@ class MetricsService:
 
     def project_metrics(self, project: ProjectRecord) -> dict[str, object]:
         return self.project_metrics_map([project]).get(project.project_id, {})
+
+    def cached_project_metrics_map(
+        self, projects: list[ProjectRecord]
+    ) -> dict[str, dict[str, object]]:
+        """Return only values already collected for the UI, without I/O on a scrape."""
+        now = time.monotonic()
+        metrics: dict[str, dict[str, object]] = {}
+        for project in projects:
+            project_metrics: dict[str, object] = {}
+            cached_disk = self._project_disk_usage_cache.get(project.project_id)
+            if cached_disk is not None:
+                _, _, deadline, total = cached_disk
+                if now < deadline:
+                    project_metrics["disk_used_bytes"] = total
+            if project.container_name:
+                for deadline, stats in self._docker_stats_cache.values():
+                    runtime = stats.get(project.container_name)
+                    if now < deadline and runtime is not None:
+                        project_metrics.update(runtime)
+                        break
+            metrics[project.project_id] = project_metrics
+        return metrics
 
     def _project_disk_usage(self, project: ProjectRecord) -> int:
         cached = self._project_disk_usage_cache.get(project.project_id)

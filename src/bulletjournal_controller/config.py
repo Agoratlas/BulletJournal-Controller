@@ -8,7 +8,6 @@ from pathlib import Path
 from bulletjournal_controller.domain.errors import ConfigurationError
 from bulletjournal_controller.utils import env_bool
 
-
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8780
 INSTANCE_SCHEMA_VERSION = 2
@@ -44,6 +43,7 @@ class InstanceConfig:
     default_dependencies_file: str | None = None
     runtime_dockerfile: str | None = None
     runtime_build_context: str | None = None
+    prometheus_metrics_mode: str = "off"
 
 
 @dataclass(slots=True, frozen=True)
@@ -59,6 +59,7 @@ class ServerConfig:
     cookie_secure: bool = False
     session_secret: str = ""
     dev_frontend_url: str | None = None
+    prometheus_api_key: str | None = None
 
 
 def package_root() -> Path:
@@ -103,6 +104,7 @@ def default_instance_config() -> InstanceConfig:
         ),
         runtime_dockerfile=str(runtime_defaults_root / "Dockerfile"),
         runtime_build_context=str(runtime_defaults_root),
+        prometheus_metrics_mode="off",
     )
 
 
@@ -132,6 +134,7 @@ def instance_config_from_dict(data: dict[str, object]) -> InstanceConfig:
             ),
             runtime_dockerfile=_optional_str(data.get("runtime_dockerfile")),
             runtime_build_context=_optional_str(data.get("runtime_build_context")),
+            prometheus_metrics_mode=_metrics_mode(data.get("prometheus_metrics_mode")),
         )
     except KeyError as exc:
         raise ConfigurationError(
@@ -158,6 +161,10 @@ def validate_instance_config(config: InstanceConfig) -> None:
         raise ConfigurationError("docker_runtime_image must not be empty.")
     if not config.default_python_version:
         raise ConfigurationError("default_python_version must not be empty.")
+    if config.prometheus_metrics_mode not in {"off", "unauthenticated", "authenticated"}:
+        raise ConfigurationError(
+            "prometheus_metrics_mode must be `off`, `unauthenticated`, or `authenticated`."
+        )
     if config.default_cpu_limit_cpus is not None and config.default_cpu_limit_cpus <= 0:
         raise ConfigurationError("default_cpu_limit_cpus must be positive.")
     if config.default_memory_limit_gb is not None and config.default_memory_limit_gb <= 0:
@@ -195,6 +202,7 @@ def instance_config_json(config: InstanceConfig) -> str:
         "default_dependencies_file": config.default_dependencies_file,
         "runtime_dockerfile": config.runtime_dockerfile,
         "runtime_build_context": config.runtime_build_context,
+        "prometheus_metrics_mode": config.prometheus_metrics_mode,
     }
     return json.dumps(data, indent=2, sort_keys=False) + "\n"
 
@@ -223,6 +231,9 @@ def load_server_config_from_env() -> ServerConfig:
         session_secret=session_secret,
         dev_frontend_url=_optional_str(
             os.environ.get("BULLETJOURNAL_DEV_FRONTEND_URL")
+        ),
+        prometheus_api_key=_optional_str(
+            os.environ.get("BULLETJOURNAL_PROMETHEUS_API_KEY")
         ),
     )
 
@@ -264,3 +275,9 @@ def _optional_positive_float(value: object) -> float | None:
     if parsed <= 0:
         raise ConfigurationError("Expected a positive number.")
     return parsed
+
+
+def _metrics_mode(value: object) -> str:
+    if value is None:
+        return "off"
+    return str(value).strip().lower() or "off"

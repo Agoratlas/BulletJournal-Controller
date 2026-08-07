@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import hmac
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 
 from bulletjournal_controller.api.auth import get_current_user
@@ -39,6 +46,15 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
         ensure_runtime_image=False,
     )
     install_error_handlers(app)
+
+    @app.get("/metrics", include_in_schema=False)
+    def prometheus_metrics(request: Request):
+        _require_metrics_access(request)
+        container = request.app.state.container
+        return Response(
+            content=container.observability.render(),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
 
     api_prefix = "/api/v1"
     app.include_router(auth.router, prefix=api_prefix)
@@ -106,3 +122,16 @@ def _serve_spa(web_root: Path, *, route: str | None = None):
 def _session_bundle_from_request(request: Request):
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
     return request.app.state.container.auth_service.resolve_session(cookie)
+
+
+def _require_metrics_access(request: Request) -> None:
+    instance_config = request.app.state.container.instance_config
+    mode = instance_config.prometheus_metrics_mode
+    if mode == "off":
+        raise HTTPException(status_code=404, detail="Not found.")
+    if mode == "unauthenticated":
+        return
+    expected_key = request.app.state.server_config.prometheus_api_key
+    provided_key = request.headers.get("x-api-key", "")
+    if not expected_key or not hmac.compare_digest(provided_key, expected_key):
+        raise HTTPException(status_code=401, detail="Prometheus API key required.")

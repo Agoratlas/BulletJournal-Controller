@@ -67,3 +67,30 @@ def test_authenticated_metrics_requires_server_api_key(instance_root, server_con
     _configure_metrics(instance_root, "authenticated")
     with pytest.raises(ConfigurationError, match="BULLETJOURNAL_PROMETHEUS_API_KEY"):
         create_app(instance_root=instance_root, server_config=server_config)
+
+
+def test_controller_http_metrics_use_route_templates_and_exclude_metrics(
+    instance_root, server_config
+) -> None:
+    _configure_metrics(instance_root, "unauthenticated")
+    app = create_app(instance_root=instance_root, server_config=server_config)
+    container = app.state.container
+    container.auth_service.create_user(
+        username="admin", display_name="Admin", password="secret-pass"
+    )
+    with TestClient(app) as client:
+        login = client.post(
+            "/api/v1/session/login",
+            json={"username": "admin", "password": "secret-pass"},
+        )
+        assert login.status_code == 200
+        response = client.get("/api/v1/system/info")
+        assert response.status_code == 200
+        client.get("/metrics")
+
+    output = container.observability.render().decode("utf-8")
+    assert (
+        'bulletjournal_controller_http_requests_total{method="GET",route="/api/v1/system/info",status_class="2xx"} 1.0'
+        in output
+    )
+    assert 'route="/metrics"' not in output

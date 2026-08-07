@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from bulletjournal_controller.api.errors import install_error_handlers
 from bulletjournal_controller.api.proxy import router as proxy_router
 from bulletjournal_controller.api.routes import auth, events, jobs, projects, system
 from bulletjournal_controller.config import ServerConfig, bundled_web_root
+from bulletjournal_controller.observability import normalized_controller_route
 from bulletjournal_controller.services import SESSION_COOKIE_NAME
 from bulletjournal_controller.storage import require_instance_root
 
@@ -46,6 +48,23 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
         ensure_runtime_image=False,
     )
     install_error_handlers(app)
+
+    @app.middleware("http")
+    async def observe_controller_http(request: Request, call_next):
+        if request.url.path == "/metrics" or request.url.path.startswith("/p/"):
+            return await call_next(request)
+        method = request.method
+        started_at = time.perf_counter()
+        response = await call_next(request)
+        route = normalized_controller_route(request.url.path)
+        duration = max(0.0, time.perf_counter() - started_at)
+        app.state.container.observability.observe_http_request(
+            route=route,
+            method=method,
+            status_code=response.status_code,
+            duration=duration,
+        )
+        return response
 
     @app.get("/metrics", include_in_schema=False)
     def prometheus_metrics(request: Request):

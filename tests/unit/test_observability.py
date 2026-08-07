@@ -4,7 +4,9 @@ import pytest
 
 from bulletjournal_controller.observability import (
     Observability,
+    controller_route,
     normalized_project_endpoint,
+    normalized_controller_route,
     server_timing_app_seconds,
 )
 
@@ -130,3 +132,11 @@ def test_project_unlimited_configured_limits_are_not_exported() -> None:
     assert 'bulletjournal_controller_project_cpu_limit_cores{project_id="unlimited-project"}' not in output
     assert 'bulletjournal_controller_project_memory_limit_bytes{project_id="unlimited-project"}' not in output
     assert 'bulletjournal_controller_project_disk_soft_limit_bytes{project_id="unlimited-project"}' not in output
+
+
+def test_controller_route_uses_template_or_bounded_fallback() -> None:
+    assert controller_route({"route": type("Route", (), {"path": "/api/v1/projects/{project_id}"})()}) == "/api/v1/projects/{project_id}"
+    assert controller_route({"path": "/assets/app-abc.js"}) == "/assets/{path}"
+    assert controller_route({"path": "/unknown"}) == "/unmatched"
+    assert normalized_controller_route("/api/v1/system/info") == "/api/v1/system/info"
+    assert normalized_controller_route("/api/v1/projects/study-a") == "/api/v1/projects/{project_id}"

@@ -32,6 +32,19 @@ class Observability:
             buckets=LATENCY_BUCKETS,
             registry=self.registry,
         )
+        self.http_requests = Counter(
+            "bulletjournal_controller_http_requests_total",
+            "Controller HTTP requests by normalized route.",
+            ("route", "method", "status_class"),
+            registry=self.registry,
+        )
+        self.http_request_duration = Histogram(
+            "bulletjournal_controller_http_request_duration_seconds",
+            "Controller HTTP request handling duration by normalized route.",
+            ("route", "method", "status_class"),
+            buckets=LATENCY_BUCKETS,
+            registry=self.registry,
+        )
         self.project_requests = Counter(
             "bulletjournal_controller_project_requests_total",
             "Proxied project requests by project.",
@@ -199,6 +212,21 @@ class Observability:
                 max(0.0, duration - app_duration)
             )
 
+    def observe_http_request(
+        self,
+        *,
+        route: str,
+        method: str,
+        status_code: int,
+        duration: float,
+    ) -> None:
+        status_class = f"{status_code // 100}xx"
+        labels = {"route": route, "method": method}
+        self.http_requests.labels(**labels, status_class=status_class).inc()
+        self.http_request_duration.labels(**labels, status_class=status_class).observe(
+            duration
+        )
+
     def _remove_project(self, project_id: str) -> None:
         _remove_labels(self.project_cpu_percent, project_id)
         _remove_labels(self.project_cpu_limit, project_id)
@@ -214,6 +242,56 @@ class Observability:
             _remove_labels(self.project_app_duration, project_id, outcome)
             _remove_labels(self.project_proxy_overhead, project_id, outcome)
 
+
+def controller_route(scope: dict[str, object]) -> str:
+    route = scope.get("route")
+    path = getattr(route, "path", None)
+    if isinstance(path, str):
+        return path
+    request_path = scope.get("path")
+    if isinstance(request_path, str):
+        return normalized_controller_route(request_path)
+    return "/unmatched"
+
+
+def normalized_controller_route(path: str) -> str:
+    normalized = path.rstrip("/") or "/"
+    exact_routes = {
+        "/",
+        "/healthz",
+        "/login",
+        "/favicon.svg",
+        "/api/v1/session/login",
+        "/api/v1/session/logout",
+        "/api/v1/session/current",
+        "/api/v1/system/info",
+        "/api/v1/system/metrics",
+        "/api/v1/system/config",
+        "/api/v1/projects",
+        "/api/v1/jobs",
+        "/api/v1/events/jobs",
+    }
+    if normalized in exact_routes:
+        return normalized
+    if normalized.startswith("/assets/"):
+        return "/assets/{path}"
+    if normalized.startswith("/projects/"):
+        return "/projects/{project_id}"
+    if normalized.startswith("/api/v1/projects/"):
+        suffix = normalized.removeprefix("/api/v1/projects/").split("/", 1)
+        return (
+            "/api/v1/projects/{project_id}"
+            if len(suffix) == 1
+            else f"/api/v1/projects/{{project_id}}/{suffix[1]}"
+        )
+    if normalized.startswith("/api/v1/jobs/"):
+        suffix = normalized.removeprefix("/api/v1/jobs/").split("/", 1)
+        return (
+            "/api/v1/jobs/{job_id}"
+            if len(suffix) == 1
+            else f"/api/v1/jobs/{{job_id}}/{suffix[1]}"
+        )
+    return "/unmatched"
 
 def normalized_project_endpoint(*, method: str, path: str) -> str:
     parts = path.split("/", 3)

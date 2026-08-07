@@ -75,6 +75,49 @@ def test_existing_projects_table_gains_runtime_venv_size_column(tmp_path) -> Non
     assert "runtime_venv_size_bytes" in columns
 
 
+def test_existing_projects_table_gains_runtime_uv_cache_size_column(tmp_path) -> None:
+    db = StateDB(tmp_path / "state.db")
+    now = utc_now_iso()
+    with db.transaction() as connection:
+        connection.execute(
+            "INSERT INTO users (user_id, username, display_name, password_hash, is_active, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("user-1", "admin", "Admin", "hash", 1, now, now),
+        )
+        connection.execute(
+            "INSERT INTO projects (project_id, controller_status_token, status, root_path, created_by_user_id, "
+            "created_at, updated_at, python_version, bulletjournal_version, custom_requirements_text, "
+            "runtime_venv_size_bytes, install_status, gpu_enabled) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "study-a",
+                "token",
+                "stopped",
+                str(tmp_path / "study-a"),
+                "user-1",
+                now,
+                now,
+                "3.11",
+                "0.1.0",
+                "",
+                17,
+                "ready",
+                0,
+            ),
+        )
+        connection.execute("DELETE FROM schema_migrations WHERE name = ?", ("008_project_runtime_uv_cache_size_bytes",))
+
+    StateDB(db.path)
+
+    with db.read() as connection:
+        stored_sizes = connection.execute(
+            "SELECT runtime_venv_size_bytes, runtime_uv_cache_size_bytes FROM projects WHERE project_id = ?",
+            ("study-a",),
+        ).fetchone()
+
+    assert tuple(stored_sizes) == (17, None)
+
+
 def test_connect_does_not_reapply_journal_mode_after_initialization(monkeypatch, tmp_path) -> None:
     recorded_statements: list[str] = []
     original_connect = sqlite3.connect

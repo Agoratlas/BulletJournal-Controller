@@ -31,7 +31,7 @@ from bulletjournal_controller.storage import (
 
 SYSTEM_USER_ID = "user-system"
 SYSTEM_USERNAME = "system"
-PROMETHEUS_RESOURCE_REFRESH_SECONDS = 15.0
+RESOURCE_REFRESH_SECONDS = 5.0
 
 
 class ServiceContainer:
@@ -139,7 +139,7 @@ class ServiceContainer:
             )
 
     def start(self) -> None:
-        self.project_service.backfill_runtime_venv_size_bytes()
+        self.project_service.backfill_runtime_size_bytes()
         self.runtime_service.reconcile_instance_projects(
             projects=self.project_service.list_projects(), projects_repo=self.projects
         )
@@ -191,8 +191,6 @@ class ServiceContainer:
         )
 
     def _start_prometheus_resource_sampler(self) -> None:
-        if self.instance_config.prometheus_metrics_mode == "off":
-            return
         if self._prometheus_resource_thread is not None:
             return
         self._prometheus_resource_stop_event.clear()
@@ -216,7 +214,7 @@ class ServiceContainer:
             except Exception:
                 pass
             self._prometheus_resource_stop_event.wait(
-                PROMETHEUS_RESOURCE_REFRESH_SECONDS
+                RESOURCE_REFRESH_SECONDS
             )
 
     def _ensure_system_user(self) -> None:

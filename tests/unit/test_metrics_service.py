@@ -77,6 +77,7 @@ def make_project(root: Path, **changes) -> ProjectRecord:
         "custom_requirements_text": "",
         "lock_sha256": None,
         "runtime_venv_size_bytes": None,
+        "runtime_uv_cache_size_bytes": None,
         "install_status": "ready",
         "last_install_at": None,
         "cpu_limit_millis": 1000,
@@ -99,13 +100,19 @@ def test_project_disk_usage_uses_cached_runtime_venv_size(
     project_root = tmp_path / "study-a"
     (project_root / "graph").mkdir(parents=True)
     (project_root / ".runtime" / "venv").mkdir(parents=True)
+    (project_root / ".runtime" / "uv-cache").mkdir(parents=True)
     (project_root / ".runtime" / "logs").mkdir(parents=True)
     (project_root / "graph" / "nodes.json").write_text("12345", encoding="utf-8")
     (project_root / ".runtime" / "logs" / "server.log").write_text(
         "1234567", encoding="utf-8"
     )
     (project_root / ".runtime" / "venv" / "cached.bin").write_bytes(b"x" * 11)
-    project = make_project(project_root, runtime_venv_size_bytes=11)
+    (project_root / ".runtime" / "uv-cache" / "archive.bin").write_bytes(b"x" * 13)
+    project = make_project(
+        project_root,
+        runtime_venv_size_bytes=11,
+        runtime_uv_cache_size_bytes=13,
+    )
     calls: list[tuple[Path, tuple[Path, ...]]] = []
     original = metrics_module.path_size_bytes
 
@@ -123,9 +130,15 @@ def test_project_disk_usage_uses_cached_runtime_venv_size(
 
     metrics = service.project_metrics(project)
 
-    assert metrics["disk_used_bytes"] == 23
+    assert metrics["disk_used_bytes"] == 36
     assert calls == [
-        (project_root, (project_root / ".runtime" / "venv",)),
+        (
+            project_root,
+            (
+                project_root / ".runtime" / "venv",
+                project_root / ".runtime" / "uv-cache",
+            ),
+        ),
     ]
 
 
@@ -166,3 +179,32 @@ def test_project_metrics_cache_avoids_repeated_filesystem_and_docker_work(
     assert first["cpu_percent"] == 1.5
     assert path_size_calls == 1
     assert len(docker.calls) == 2
+
+
+def test_cached_project_metrics_returns_stale_snapshot_without_io(
+    tmp_path, monkeypatch
+) -> None:
+    project_root = tmp_path / "study-a"
+    project_root.mkdir()
+    project = make_project(
+        project_root,
+        container_name="container-a",
+        container_id="container-id",
+        container_port=8765,
+    )
+    docker = RecordingDockerAdapter()
+    service = MetricsService(
+        instance_paths=type("InstancePaths", (), {"root": tmp_path})(),
+        docker_adapter=docker,
+        runtime_config_service=object(),
+        jobs=DummyJobs(),
+    )
+    service.project_metrics(project)
+    docker.calls.clear()
+    monkeypatch.setattr(metrics_module.time, "monotonic", lambda: float("inf"))
+
+    metrics = service.cached_project_metrics_map([project])
+
+    assert metrics[project.project_id]["cpu_percent"] == 1.5
+    assert metrics[project.project_id]["disk_used_bytes"] == 1234
+    assert docker.calls == []

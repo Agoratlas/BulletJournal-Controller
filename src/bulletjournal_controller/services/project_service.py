@@ -50,15 +50,24 @@ class ProjectService:
     def list_projects(self) -> list[ProjectRecord]:
         return self.projects.list_all()
 
-    def backfill_runtime_venv_size_bytes(self) -> None:
+    def backfill_runtime_size_bytes(self) -> None:
         for project in self.projects.list_all():
-            if project.runtime_venv_size_bytes is not None:
+            if (
+                project.runtime_venv_size_bytes is not None
+                and project.runtime_uv_cache_size_bytes is not None
+            ):
                 continue
             project_paths = self.instance_paths.project_paths(project.project_id)
-            self.projects.update(
-                project.project_id,
-                runtime_venv_size_bytes=path_size_bytes(project_paths.runtime_venv_dir),
-            )
+            updates = {}
+            if project.runtime_venv_size_bytes is None:
+                updates["runtime_venv_size_bytes"] = path_size_bytes(
+                    project_paths.runtime_venv_dir
+                )
+            if project.runtime_uv_cache_size_bytes is None:
+                updates["runtime_uv_cache_size_bytes"] = path_size_bytes(
+                    project_paths.runtime_uv_cache_dir
+                )
+            self.projects.update(project.project_id, **updates)
 
     def get_project(self, project_id: str) -> ProjectRecord:
         return self.projects.require(validate_project_id(project_id))
@@ -112,6 +121,7 @@ class ProjectService:
             custom_requirements_text=custom_requirements_text,
             lock_sha256=None,
             runtime_venv_size_bytes=None,
+            runtime_uv_cache_size_bytes=None,
             install_status=InstallStatus.PENDING.value,
             last_install_at=None,
             cpu_limit_millis=cpu_limit_millis,
@@ -188,12 +198,14 @@ class ProjectService:
         *,
         lock_sha256: str,
         runtime_venv_size_bytes: int | None = None,
+        runtime_uv_cache_size_bytes: int | None = None,
     ) -> ProjectRecord:
         project = self.get_project(project_id)
         updates = {
             "install_status": InstallStatus.READY.value,
             "lock_sha256": lock_sha256,
             "runtime_venv_size_bytes": runtime_venv_size_bytes,
+            "runtime_uv_cache_size_bytes": runtime_uv_cache_size_bytes,
             "last_install_at": utc_now_iso(),
         }
         installed_version = (

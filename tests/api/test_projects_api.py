@@ -150,6 +150,45 @@ def test_project_list_does_not_require_journal_mode_reset(
     assert projects.status_code == 200
 
 
+def test_project_reads_use_cached_metrics(instance_root, server_config) -> None:
+    app = create_app(instance_root=instance_root, server_config=server_config)
+    container: ServiceContainer = app.state.container
+    user = container.auth_service.create_user(
+        username="admin", display_name="Admin", password="secret-pass"
+    )
+    project = container.project_service.create_project(
+        project_id="study-a",
+        created_by_user_id=user.user_id,
+        python_version="3.11",
+        custom_requirements_text="bulletjournal-editor==0.3.0\n",
+        cpu_limit_millis=1000,
+        memory_limit_bytes=2048,
+        disk_soft_limit_bytes=None,
+        gpu_enabled=False,
+    )
+    container.metrics_service._project_disk_usage_cache[project.project_id] = (
+        project.root_path,
+        project.runtime_venv_size_bytes,
+        project.runtime_uv_cache_size_bytes,
+        0.0,
+        123,
+    )
+
+    def fail_if_refreshed(*_args, **_kwargs):
+        raise AssertionError("project request must not refresh metrics")
+
+    container.metrics_service.project_metrics_map = fail_if_refreshed
+
+    with _auth_client(app) as client:
+        projects = client.get("/api/v1/projects")
+        detail = client.get("/api/v1/projects/study-a")
+
+    assert projects.status_code == 200
+    assert projects.json()[0]["metrics"]["disk_used_bytes"] == 123
+    assert detail.status_code == 200
+    assert detail.json()["metrics"]["disk_used_bytes"] == 123
+
+
 def test_invalid_request_shape_returns_422(instance_root, server_config) -> None:
     app = create_app(instance_root=instance_root, server_config=server_config)
     container: ServiceContainer = app.state.container

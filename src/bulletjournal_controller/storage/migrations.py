@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 MIGRATIONS: list[tuple[str, str]] = [
     (
         "001_initial",
@@ -51,6 +50,7 @@ MIGRATIONS: list[tuple[str, str]] = [
             custom_requirements_text TEXT NOT NULL,
             lock_sha256 TEXT,
             runtime_venv_size_bytes INTEGER,
+            runtime_uv_cache_size_bytes INTEGER,
             install_status TEXT NOT NULL,
             last_install_at TEXT,
             cpu_limit_millis INTEGER NOT NULL,
@@ -159,6 +159,7 @@ MIGRATIONS: list[tuple[str, str]] = [
             custom_requirements_text TEXT NOT NULL,
             lock_sha256 TEXT,
             runtime_venv_size_bytes INTEGER,
+            runtime_uv_cache_size_bytes INTEGER,
             install_status TEXT NOT NULL,
             last_install_at TEXT,
             cpu_limit_millis INTEGER,
@@ -177,14 +178,16 @@ MIGRATIONS: list[tuple[str, str]] = [
         INSERT INTO projects_new (
             project_id, controller_status_token, status, status_reason, root_path, created_by_user_id,
             created_at, updated_at, last_edit_at, last_run_finished_at, idle_shutdown_eligible_at,
-            python_version, bulletjournal_version, custom_requirements_text, lock_sha256, runtime_venv_size_bytes, install_status,
+            python_version, bulletjournal_version, custom_requirements_text, lock_sha256,
+            runtime_venv_size_bytes, runtime_uv_cache_size_bytes, install_status,
             last_install_at, cpu_limit_millis, memory_limit_bytes, gpu_enabled, container_name, container_id,
             container_port, runtime_started_at, runtime_stopped_at, last_graph_edit_at, last_notebook_edit_at
         )
         SELECT
             project_id, controller_status_token, status, status_reason, root_path, created_by_user_id,
             created_at, updated_at, last_edit_at, last_run_finished_at, idle_shutdown_eligible_at,
-            python_version, bulletjournal_version, custom_requirements_text, lock_sha256, NULL, install_status,
+            python_version, bulletjournal_version, custom_requirements_text, lock_sha256,
+            NULL, NULL, install_status,
             last_install_at, cpu_limit_millis, memory_limit_bytes, gpu_enabled, container_name, container_id,
             container_port, runtime_started_at, runtime_stopped_at, last_graph_edit_at, last_notebook_edit_at
         FROM projects;
@@ -205,6 +208,12 @@ MIGRATIONS: list[tuple[str, str]] = [
         "007_project_disk_soft_limit_bytes",
         """
         ALTER TABLE projects ADD COLUMN disk_soft_limit_bytes INTEGER;
+        """,
+    ),
+    (
+        "008_project_runtime_uv_cache_size_bytes",
+        """
+        ALTER TABLE projects ADD COLUMN runtime_uv_cache_size_bytes INTEGER;
         """,
     ),
 ]

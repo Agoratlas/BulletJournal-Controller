@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, status
-from fastapi import Query
+from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import FileResponse
 
 from bulletjournal_controller.api.auth import get_current_user, require_same_origin
@@ -36,7 +35,7 @@ def _project_payload(container, project, metrics: dict[str, object] | None = Non
 def list_projects(request: Request, _user=Depends(get_current_user)):
     container = request.app.state.container
     projects = container.project_service.list_projects()
-    metrics_map = container.metrics_service.project_metrics_map(projects)
+    metrics_map = container.metrics_service.cached_project_metrics_map(projects)
     return [
         _project_payload(container, project, metrics_map.get(project.project_id))
         for project in projects
@@ -89,7 +88,10 @@ def create_project(
 def get_project(project_id: str, request: Request, _user=Depends(get_current_user)):
     container = request.app.state.container
     project = container.project_service.get_project(project_id)
-    payload = _project_payload(container, project)
+    metrics = container.metrics_service.cached_project_metrics_map([project]).get(
+        project.project_id
+    )
+    payload = _project_payload(container, project, metrics)
     payload["recent_jobs"] = [
         job.to_api() for job in container.jobs.list_for_project(project_id)
     ]

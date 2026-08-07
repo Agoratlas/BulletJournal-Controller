@@ -30,7 +30,7 @@ class MetricsService:
         self.runtime_config_service = runtime_config_service
         self.jobs = jobs
         self._project_disk_usage_cache: dict[
-            str, tuple[str, int | None, float, int]
+            str, tuple[str, int | None, int | None, float, int]
         ] = {}
         self._docker_stats_cache: dict[
             tuple[str, ...], tuple[float, dict[str, dict[str, object]]]
@@ -89,22 +89,25 @@ class MetricsService:
     def cached_project_metrics_map(
         self, projects: list[ProjectRecord]
     ) -> dict[str, dict[str, object]]:
-        """Return only values already collected for the UI, without I/O on a scrape."""
-        now = time.monotonic()
+        """Return the latest collected values without blocking on metric collection."""
         metrics: dict[str, dict[str, object]] = {}
         for project in projects:
             project_metrics: dict[str, object] = {}
             cached_disk = self._project_disk_usage_cache.get(project.project_id)
             if cached_disk is not None:
-                _, _, deadline, total = cached_disk
-                if now < deadline:
-                    project_metrics["disk_used_bytes"] = total
+                _, _, _, _, total = cached_disk
+                project_metrics["disk_used_bytes"] = total
             if project.container_name:
-                for deadline, stats in self._docker_stats_cache.values():
+                for _, stats in self._docker_stats_cache.values():
                     runtime = stats.get(project.container_name)
-                    if now < deadline and runtime is not None:
+                    if runtime is not None:
                         project_metrics.update(runtime)
                         break
+                cached_size = self._container_rw_size_cache.get(project.container_name)
+                if cached_size is not None and "disk_used_bytes" in project_metrics:
+                    _, size_rw = cached_size
+                    if size_rw is not None:
+                        project_metrics["disk_used_bytes"] += size_rw
             metrics[project.project_id] = project_metrics
         return metrics
 
@@ -112,22 +115,35 @@ class MetricsService:
         cached = self._project_disk_usage_cache.get(project.project_id)
         now = time.monotonic()
         if cached is not None:
-            cached_root_path, cached_venv_size, deadline, cached_total = cached
+            (
+                cached_root_path,
+                cached_venv_size,
+                cached_uv_cache_size,
+                deadline,
+                cached_total,
+            ) = cached
             if (
                 cached_root_path == project.root_path
                 and cached_venv_size == project.runtime_venv_size_bytes
+                and cached_uv_cache_size == project.runtime_uv_cache_size_bytes
                 and now < deadline
             ):
                 return cached_total
         total = path_size_bytes(
             Path(project.root_path),
-            exclude=(Path(project.root_path) / ".runtime" / "venv",),
-        ) + int(project.runtime_venv_size_bytes or 0)
+            exclude=(
+                Path(project.root_path) / ".runtime" / "venv",
+                Path(project.root_path) / ".runtime" / "uv-cache",
+            ),
+        ) + int(project.runtime_venv_size_bytes or 0) + int(
+            project.runtime_uv_cache_size_bytes or 0
+        )
         for log_path_text in self.jobs.list_log_paths_for_project(project.project_id):
             total += path_size_bytes(Path(log_path_text))
         self._project_disk_usage_cache[project.project_id] = (
             project.root_path,
             project.runtime_venv_size_bytes,
+            project.runtime_uv_cache_size_bytes,
             now + PROJECT_DISK_USAGE_TTL_SECONDS,
             total,
         )

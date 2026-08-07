@@ -228,6 +228,9 @@ class JobService:
                 runtime_venv_size_bytes=self._runtime_venv_size_bytes(
                     project.project_id
                 ),
+                runtime_uv_cache_size_bytes=self._runtime_uv_cache_size_bytes(
+                    project.project_id
+                ),
             )
             project = self.project_service.start_project(project.project_id)
             return {
@@ -253,6 +256,9 @@ class JobService:
                 project.project_id,
                 lock_sha256=lock_sha,
                 runtime_venv_size_bytes=self._runtime_venv_size_bytes(
+                    project.project_id
+                ),
+                runtime_uv_cache_size_bytes=self._runtime_uv_cache_size_bytes(
                     project.project_id
                 ),
             )
@@ -310,6 +316,9 @@ class JobService:
                 project.project_id,
                 lock_sha256=lock_sha,
                 runtime_venv_size_bytes=self._runtime_venv_size_bytes(
+                    project.project_id
+                ),
+                runtime_uv_cache_size_bytes=self._runtime_uv_cache_size_bytes(
                     project.project_id
                 ),
             )
@@ -454,6 +463,7 @@ class JobService:
             project_id,
             lock_sha256=lock_sha,
             runtime_venv_size_bytes=self._runtime_venv_size_bytes(project_id),
+            runtime_uv_cache_size_bytes=self._runtime_uv_cache_size_bytes(project_id),
         )
 
     def _runtime_venv_size_bytes(self, project_id: str) -> int:
@@ -461,6 +471,12 @@ class JobService:
             raise JobExecutionError("Job service is not fully bound.")
         project_paths = self.project_service.project_paths(project_id)
         return path_size_bytes(project_paths.runtime_venv_dir)
+
+    def _runtime_uv_cache_size_bytes(self, project_id: str) -> int:
+        if self.project_service is None:
+            raise JobExecutionError("Job service is not fully bound.")
+        project_paths = self.project_service.project_paths(project_id)
+        return path_size_bytes(project_paths.runtime_uv_cache_dir)
 
     def _apply_project_failure_state(self, job: JobRecord) -> None:
         if job.project_id is None or self.project_service is None:

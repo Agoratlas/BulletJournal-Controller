@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from bulletjournal_controller.api.deps import ServiceContainer
-from bulletjournal_controller.config import ServerConfig
 from bulletjournal_controller.cli.start import build_log_config
+from bulletjournal_controller.config import ServerConfig
 from bulletjournal_controller.storage import init_instance_root
 
 
@@ -48,6 +48,10 @@ def test_service_container_start_backfills_missing_runtime_venv_size(
     ).runtime_venv_dir
     runtime_venv_dir.mkdir(parents=True, exist_ok=True)
     (runtime_venv_dir / "cached.bin").write_bytes(b"x" * 17)
+    runtime_uv_cache_dir = container.project_service.project_paths(
+        project.project_id
+    ).runtime_uv_cache_dir
+    (runtime_uv_cache_dir / "archive.bin").write_bytes(b"x" * 19)
 
     container.runtime_service.reconcile_instance_projects = lambda **_: None
     container.job_service.start = lambda: None
@@ -55,4 +59,6 @@ def test_service_container_start_backfills_missing_runtime_venv_size(
 
     container.start()
 
-    assert container.projects.require(project.project_id).runtime_venv_size_bytes == 17
+    stored_project = container.projects.require(project.project_id)
+    assert stored_project.runtime_venv_size_bytes == 17
+    assert stored_project.runtime_uv_cache_size_bytes == 19

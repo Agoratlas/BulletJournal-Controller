@@ -75,13 +75,13 @@ def test_project_status_is_one_hot_and_deleted_project_series_are_removed() -> N
         projects=[{"project_id": "study-a", "status": "error"}],
     )
     observability.observe_project_request(
-        project_id="study-a", outcome="success", duration=0.1, app_duration=0.05
+        project_id="study-a", status_class="2xx", duration=0.1, app_duration=0.05
     )
     observability.update_resources(system=system, projects=[])
 
     output = observability.render().decode("utf-8")
     assert 'bulletjournal_controller_project_status{project_id="study-a"' not in output
-    assert 'bulletjournal_controller_project_requests_total{outcome="success",project_id="study-a"}' not in output
+    assert 'bulletjournal_controller_requests_per_project_total{project_id="study-a",status_class="2xx"}' not in output
 
 
 def test_project_configured_limits_are_exported_without_runtime_metrics() -> None:
@@ -144,10 +144,14 @@ def test_controller_route_uses_template_or_bounded_fallback() -> None:
 
 def test_proxied_route_metrics_use_route_label() -> None:
     observability = Observability()
-    observability.project_route_requests.labels(
-        route="/api/v1/graph", method="PATCH", status_class="2xx"
+    observability.requests_per_route.labels(
+        route="/api/v1/graph",
+        route_type="project",
+        method="PATCH",
+        status_class="2xx",
     ).inc()
 
     output = observability.render().decode("utf-8")
     assert 'route="/api/v1/graph"' in output
+    assert 'route_type="project"' in output
     assert 'endpoint="/api/v1/graph"' not in output

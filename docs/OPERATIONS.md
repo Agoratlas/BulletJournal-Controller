@@ -72,8 +72,11 @@ not require it. This also applies to `create-user`, `cleanup-instance`,
 `export-project`, `import-project`, and `reconcile`.
 
 Keep `/metrics` on a trusted network even when API-key authentication is
-enabled. The endpoint exports normalized project-route latencies across projects,
-project-level latency aggregates, and controller/project resource gauges. When
-metrics are enabled, the controller refreshes system and project resources in a
-background sampler every 15 seconds, independently of the web UI and scrape
-requests. Serving `/metrics` itself performs no Docker call or filesystem scan.
+enabled. The endpoint exports route metrics through
+`bulletjournal_controller_requests_per_route_*`, with `route_type` set to
+`controller` or `project`, project-level latency aggregates through
+`bulletjournal_controller_requests_per_project_*`, and controller/project
+resource gauges. When metrics are enabled, the controller refreshes system and
+project resources in a background sampler every 15 seconds, independently of
+the web UI and scrape requests. Serving `/metrics` itself performs no Docker
+call or filesystem scan.

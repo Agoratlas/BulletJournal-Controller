@@ -58,8 +58,9 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
         response = await call_next(request)
         route = normalized_controller_route(request.url.path)
         duration = max(0.0, time.perf_counter() - started_at)
-        app.state.container.observability.observe_http_request(
+        app.state.container.observability.observe_route_request(
             route=route,
+            route_type="controller",
             method=method,
             status_code=response.status_code,
             duration=duration,

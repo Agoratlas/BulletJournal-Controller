@@ -207,21 +207,27 @@ class ProxyService:
         if metrics is None:
             return
         duration = max(0.0, time.perf_counter() - started_at)
+        status_class = "5xx" if status_code is None else f"{status_code // 100}xx"
         if not is_long_lived_endpoint(endpoint):
             metrics.observe_project_request(
                 project_id=project_id,
-                outcome=outcome,
+                status_class=status_class,
                 duration=duration,
                 app_duration=app_duration,
             )
         if is_long_lived_endpoint(endpoint):
             return
-        status_class = "error" if status_code is None else f"{status_code // 100}xx"
-        metrics.project_route_requests.labels(
-            route=endpoint, method=method, status_class=status_class
+        metrics.requests_per_route.labels(
+            route=endpoint,
+            route_type="project",
+            method=method,
+            status_class=status_class,
         ).inc()
-        metrics.project_route_duration.labels(
-            route=endpoint, method=method, status_class=status_class
+        metrics.requests_per_route_duration.labels(
+            route=endpoint,
+            route_type="project",
+            method=method,
+            status_class=status_class,
         ).observe(duration)
 
     @staticmethod

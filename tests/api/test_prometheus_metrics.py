@@ -90,7 +90,7 @@ def test_controller_http_metrics_use_route_templates_and_exclude_metrics(
 
     output = container.observability.render().decode("utf-8")
     assert (
-        'bulletjournal_controller_http_requests_total{method="GET",route="/api/v1/system/info",status_class="2xx"} 1.0'
+        'bulletjournal_controller_requests_per_route_total{method="GET",route="/api/v1/system/info",route_type="controller",status_class="2xx"} 1.0'
         in output
     )
     assert 'route="/metrics"' not in output

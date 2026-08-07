@@ -19,56 +19,43 @@ LATENCY_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 
 class Observability:
     def __init__(self) -> None:
         self.registry = CollectorRegistry()
-        self.project_route_requests = Counter(
-            "bulletjournal_controller_endpoint_requests_total",
-            "Proxied project requests by normalized route.",
-            ("route", "method", "status_class"),
+        self.requests_per_route = Counter(
+            "bulletjournal_controller_requests_per_route_total",
+            "Controller and proxied project requests by normalized route.",
+            ("route", "route_type", "method", "status_class"),
             registry=self.registry,
         )
-        self.project_route_duration = Histogram(
-            "bulletjournal_controller_endpoint_request_duration_seconds",
-            "End-to-end proxied project request duration by normalized route.",
-            ("route", "method", "status_class"),
+        self.requests_per_route_duration = Histogram(
+            "bulletjournal_controller_requests_per_route_duration_seconds",
+            "Controller and proxied project request duration by normalized route.",
+            ("route", "route_type", "method", "status_class"),
             buckets=LATENCY_BUCKETS,
             registry=self.registry,
         )
-        self.http_requests = Counter(
-            "bulletjournal_controller_http_requests_total",
-            "Controller HTTP requests by normalized route.",
-            ("route", "method", "status_class"),
-            registry=self.registry,
-        )
-        self.http_request_duration = Histogram(
-            "bulletjournal_controller_http_request_duration_seconds",
-            "Controller HTTP request handling duration by normalized route.",
-            ("route", "method", "status_class"),
-            buckets=LATENCY_BUCKETS,
-            registry=self.registry,
-        )
-        self.project_requests = Counter(
-            "bulletjournal_controller_project_requests_total",
+        self.requests_per_project = Counter(
+            "bulletjournal_controller_requests_per_project_total",
             "Proxied project requests by project.",
-            ("project_id", "outcome"),
+            ("project_id", "status_class"),
             registry=self.registry,
         )
-        self.project_duration = Histogram(
-            "bulletjournal_controller_project_request_duration_seconds",
-            "End-to-end proxied project request duration by project.",
-            ("project_id", "outcome"),
+        self.requests_per_project_full_duration = Histogram(
+            "bulletjournal_controller_requests_per_project_full_duration_seconds",
+            "Full end-to-end proxied request duration by project.",
+            ("project_id", "status_class"),
             buckets=LATENCY_BUCKETS,
             registry=self.registry,
         )
-        self.project_app_duration = Histogram(
-            "bulletjournal_controller_project_app_duration_seconds",
+        self.requests_per_project_app_duration = Histogram(
+            "bulletjournal_controller_requests_per_project_app_duration_seconds",
             "BulletJournal application duration reported through Server-Timing.",
-            ("project_id", "outcome"),
+            ("project_id", "status_class"),
             buckets=LATENCY_BUCKETS,
             registry=self.registry,
         )
-        self.project_proxy_overhead = Histogram(
-            "bulletjournal_controller_project_proxy_overhead_seconds",
-            "Proxy duration excluding the reported BulletJournal application duration.",
-            ("project_id", "outcome"),
+        self.requests_per_project_proxy_duration = Histogram(
+            "bulletjournal_controller_requests_per_project_proxy_duration_seconds",
+            "Full proxied request duration excluding the reported application duration.",
+            ("project_id", "status_class"),
             buckets=LATENCY_BUCKETS,
             registry=self.registry,
         )
@@ -197,33 +184,34 @@ class Observability:
         self,
         *,
         project_id: str,
-        outcome: str,
+        status_class: str,
         duration: float,
         app_duration: float | None,
     ) -> None:
         self._known_project_ids.add(project_id)
-        self._project_outcomes.setdefault(project_id, set()).add(outcome)
-        labels = {"project_id": project_id, "outcome": outcome}
-        self.project_requests.labels(**labels).inc()
-        self.project_duration.labels(**labels).observe(duration)
+        self._project_outcomes.setdefault(project_id, set()).add(status_class)
+        labels = {"project_id": project_id, "status_class": status_class}
+        self.requests_per_project.labels(**labels).inc()
+        self.requests_per_project_full_duration.labels(**labels).observe(duration)
         if app_duration is not None:
-            self.project_app_duration.labels(**labels).observe(app_duration)
-            self.project_proxy_overhead.labels(**labels).observe(
+            self.requests_per_project_app_duration.labels(**labels).observe(app_duration)
+            self.requests_per_project_proxy_duration.labels(**labels).observe(
                 max(0.0, duration - app_duration)
             )
 
-    def observe_http_request(
+    def observe_route_request(
         self,
         *,
         route: str,
+        route_type: str,
         method: str,
         status_code: int,
         duration: float,
     ) -> None:
         status_class = f"{status_code // 100}xx"
-        labels = {"route": route, "method": method}
-        self.http_requests.labels(**labels, status_class=status_class).inc()
-        self.http_request_duration.labels(**labels, status_class=status_class).observe(
+        labels = {"route": route, "route_type": route_type, "method": method}
+        self.requests_per_route.labels(**labels, status_class=status_class).inc()
+        self.requests_per_route_duration.labels(**labels, status_class=status_class).observe(
             duration
         )
 
@@ -236,11 +224,17 @@ class Observability:
         _remove_labels(self.project_disk_soft_limit, project_id)
         for status in self._project_statuses:
             _remove_labels(self.project_status, project_id, status)
-        for outcome in self._project_outcomes.pop(project_id, set()):
-            _remove_labels(self.project_requests, project_id, outcome)
-            _remove_labels(self.project_duration, project_id, outcome)
-            _remove_labels(self.project_app_duration, project_id, outcome)
-            _remove_labels(self.project_proxy_overhead, project_id, outcome)
+        for status_class in self._project_outcomes.pop(project_id, set()):
+            _remove_labels(self.requests_per_project, project_id, status_class)
+            _remove_labels(
+                self.requests_per_project_full_duration, project_id, status_class
+            )
+            _remove_labels(
+                self.requests_per_project_app_duration, project_id, status_class
+            )
+            _remove_labels(
+                self.requests_per_project_proxy_duration, project_id, status_class
+            )
 
 
 def controller_route(scope: dict[str, object]) -> str:

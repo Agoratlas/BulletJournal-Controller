@@ -80,3 +80,53 @@ def test_project_status_is_one_hot_and_deleted_project_series_are_removed() -> N
     output = observability.render().decode("utf-8")
     assert 'bulletjournal_controller_project_status{project_id="study-a"' not in output
     assert 'bulletjournal_controller_project_requests_total{outcome="success",project_id="study-a"}' not in output
+
+
+def test_project_configured_limits_are_exported_without_runtime_metrics() -> None:
+    observability = Observability()
+    observability.update_resources(
+        system={"memory": None, "disk": None},
+        projects=[
+            {
+                "project_id": "stopped-project",
+                "status": "stopped",
+                "cpu_limit_millis": 2500,
+                "memory_limit_bytes": 8 * 1024**3,
+                "disk_soft_limit_bytes": 100 * 1024**3,
+            }
+        ],
+    )
+
+    output = observability.render().decode("utf-8")
+    assert 'bulletjournal_controller_project_cpu_limit_cores{project_id="stopped-project"} 2.5' in output
+    assert (
+        'bulletjournal_controller_project_memory_limit_bytes{project_id="stopped-project"} 8.589934592e+09'
+        in output
+    )
+    assert (
+        'bulletjournal_controller_project_disk_soft_limit_bytes{project_id="stopped-project"} 1.073741824e+11'
+        in output
+    )
+    assert 'bulletjournal_controller_project_cpu_percent{project_id="stopped-project"}' not in output
+    assert 'bulletjournal_controller_project_memory_used_bytes{project_id="stopped-project"}' not in output
+
+
+def test_project_unlimited_configured_limits_are_not_exported() -> None:
+    observability = Observability()
+    observability.update_resources(
+        system={"memory": None, "disk": None},
+        projects=[
+            {
+                "project_id": "unlimited-project",
+                "status": "stopped",
+                "cpu_limit_millis": None,
+                "memory_limit_bytes": None,
+                "disk_soft_limit_bytes": None,
+            }
+        ],
+    )
+
+    output = observability.render().decode("utf-8")
+    assert 'bulletjournal_controller_project_cpu_limit_cores{project_id="unlimited-project"}' not in output
+    assert 'bulletjournal_controller_project_memory_limit_bytes{project_id="unlimited-project"}' not in output
+    assert 'bulletjournal_controller_project_disk_soft_limit_bytes{project_id="unlimited-project"}' not in output

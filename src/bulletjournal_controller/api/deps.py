@@ -181,6 +181,9 @@ class ServiceContainer:
                 {
                     "project_id": project.project_id,
                     "status": project.status,
+                    "cpu_limit_millis": project.cpu_limit_millis,
+                    "memory_limit_bytes": project.memory_limit_bytes,
+                    "disk_soft_limit_bytes": project.disk_soft_limit_bytes,
                     **metrics_map.get(project.project_id, {}),
                 }
                 for project in projects

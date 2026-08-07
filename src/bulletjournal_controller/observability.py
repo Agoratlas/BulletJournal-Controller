@@ -90,6 +90,12 @@ class Observability:
             ("project_id",),
             registry=self.registry,
         )
+        self.project_cpu_limit = Gauge(
+            "bulletjournal_controller_project_cpu_limit_cores",
+            "Configured project CPU limit in cores.",
+            ("project_id",),
+            registry=self.registry,
+        )
         self.project_memory_used = Gauge(
             "bulletjournal_controller_project_memory_used_bytes",
             "Current Docker-reported project memory use.",
@@ -105,6 +111,12 @@ class Observability:
         self.project_disk_used = Gauge(
             "bulletjournal_controller_project_disk_used_bytes",
             "Last cached project disk usage.",
+            ("project_id",),
+            registry=self.registry,
+        )
+        self.project_disk_soft_limit = Gauge(
+            "bulletjournal_controller_project_disk_soft_limit_bytes",
+            "Configured project disk soft limit; this is not a Docker filesystem quota.",
             ("project_id",),
             registry=self.registry,
         )
@@ -136,11 +148,30 @@ class Observability:
             project_id = str(project["project_id"])
             status = str(project["status"])
             current_project_ids.add(project_id)
-            labels = {"project_id": project_id}
-            _set_if_number(self.project_cpu_percent.labels(**labels), project.get("cpu_percent"))
-            _set_if_number(self.project_memory_used.labels(**labels), project.get("memory_used_bytes"))
-            _set_if_number(self.project_memory_limit.labels(**labels), project.get("memory_limit_bytes"))
-            _set_if_number(self.project_disk_used.labels(**labels), project.get("disk_used_bytes"))
+            _set_or_remove(
+                self.project_cpu_percent, project_id, project.get("cpu_percent")
+            )
+            _set_or_remove(
+                self.project_memory_used, project_id, project.get("memory_used_bytes")
+            )
+            _set_or_remove(
+                self.project_disk_used, project_id, project.get("disk_used_bytes")
+            )
+            _set_or_remove(
+                self.project_cpu_limit,
+                project_id,
+                _cores_from_millis(project.get("cpu_limit_millis")),
+            )
+            _set_or_remove(
+                self.project_memory_limit,
+                project_id,
+                project.get("memory_limit_bytes"),
+            )
+            _set_or_remove(
+                self.project_disk_soft_limit,
+                project_id,
+                project.get("disk_soft_limit_bytes"),
+            )
             for candidate_status in self._project_statuses:
                 self.project_status.labels(
                     project_id=project_id, status=candidate_status
@@ -169,17 +200,19 @@ class Observability:
             )
 
     def _remove_project(self, project_id: str) -> None:
-        self.project_cpu_percent.remove(project_id)
-        self.project_memory_used.remove(project_id)
-        self.project_memory_limit.remove(project_id)
-        self.project_disk_used.remove(project_id)
+        _remove_labels(self.project_cpu_percent, project_id)
+        _remove_labels(self.project_cpu_limit, project_id)
+        _remove_labels(self.project_memory_used, project_id)
+        _remove_labels(self.project_memory_limit, project_id)
+        _remove_labels(self.project_disk_used, project_id)
+        _remove_labels(self.project_disk_soft_limit, project_id)
         for status in self._project_statuses:
-            self.project_status.remove(project_id, status)
+            _remove_labels(self.project_status, project_id, status)
         for outcome in self._project_outcomes.pop(project_id, set()):
-            self.project_requests.remove(project_id, outcome)
-            self.project_duration.remove(project_id, outcome)
-            self.project_app_duration.remove(project_id, outcome)
-            self.project_proxy_overhead.remove(project_id, outcome)
+            _remove_labels(self.project_requests, project_id, outcome)
+            _remove_labels(self.project_duration, project_id, outcome)
+            _remove_labels(self.project_app_duration, project_id, outcome)
+            _remove_labels(self.project_proxy_overhead, project_id, outcome)
 
 
 def normalized_project_endpoint(*, method: str, path: str) -> str:
@@ -250,3 +283,23 @@ def is_long_lived_endpoint(endpoint: str) -> bool:
 def _set_if_number(metric, value: object) -> None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         metric.set(value)
+
+
+def _set_or_remove(metric, project_id: str, value: object) -> None:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        metric.labels(project_id=project_id).set(value)
+        return
+    _remove_labels(metric, project_id)
+
+
+def _cores_from_millis(value: object) -> float | None:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value / 1000
+    return None
+
+
+def _remove_labels(metric, *label_values: str) -> None:
+    try:
+        metric.remove(*label_values)
+    except KeyError:
+        pass

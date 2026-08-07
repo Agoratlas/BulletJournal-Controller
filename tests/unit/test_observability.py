@@ -140,3 +140,14 @@ def test_controller_route_uses_template_or_bounded_fallback() -> None:
     assert controller_route({"path": "/unknown"}) == "/unmatched"
     assert normalized_controller_route("/api/v1/system/info") == "/api/v1/system/info"
     assert normalized_controller_route("/api/v1/projects/study-a") == "/api/v1/projects/{project_id}"
+
+
+def test_proxied_route_metrics_use_route_label() -> None:
+    observability = Observability()
+    observability.project_route_requests.labels(
+        route="/api/v1/graph", method="PATCH", status_class="2xx"
+    ).inc()
+
+    output = observability.render().decode("utf-8")
+    assert 'route="/api/v1/graph"' in output
+    assert 'endpoint="/api/v1/graph"' not in output

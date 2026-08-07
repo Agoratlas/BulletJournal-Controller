@@ -19,16 +19,16 @@ LATENCY_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 
 class Observability:
     def __init__(self) -> None:
         self.registry = CollectorRegistry()
-        self.endpoint_requests = Counter(
+        self.project_route_requests = Counter(
             "bulletjournal_controller_endpoint_requests_total",
-            "Proxied project requests by normalized endpoint.",
-            ("endpoint", "method", "status_class"),
+            "Proxied project requests by normalized route.",
+            ("route", "method", "status_class"),
             registry=self.registry,
         )
-        self.endpoint_duration = Histogram(
+        self.project_route_duration = Histogram(
             "bulletjournal_controller_endpoint_request_duration_seconds",
-            "End-to-end proxied project request duration by normalized endpoint.",
-            ("endpoint", "method", "status_class"),
+            "End-to-end proxied project request duration by normalized route.",
+            ("route", "method", "status_class"),
             buckets=LATENCY_BUCKETS,
             registry=self.registry,
         )

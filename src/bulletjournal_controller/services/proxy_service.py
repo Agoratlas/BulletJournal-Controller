@@ -217,11 +217,11 @@ class ProxyService:
         if is_long_lived_endpoint(endpoint):
             return
         status_class = "error" if status_code is None else f"{status_code // 100}xx"
-        metrics.endpoint_requests.labels(
-            endpoint=endpoint, method=method, status_class=status_class
+        metrics.project_route_requests.labels(
+            route=endpoint, method=method, status_class=status_class
         ).inc()
-        metrics.endpoint_duration.labels(
-            endpoint=endpoint, method=method, status_class=status_class
+        metrics.project_route_duration.labels(
+            route=endpoint, method=method, status_class=status_class
         ).observe(duration)
 
     @staticmethod

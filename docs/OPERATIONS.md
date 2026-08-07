@@ -72,7 +72,7 @@ not require it. This also applies to `create-user`, `cleanup-instance`,
 `export-project`, `import-project`, and `reconcile`.
 
 Keep `/metrics` on a trusted network even when API-key authentication is
-enabled. The endpoint exports normalized endpoint latencies across projects,
+enabled. The endpoint exports normalized project-route latencies across projects,
 project-level latency aggregates, and controller/project resource gauges. When
 metrics are enabled, the controller refreshes system and project resources in a
 background sampler every 15 seconds, independently of the web UI and scrape

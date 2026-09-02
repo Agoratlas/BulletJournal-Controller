@@ -38,7 +38,7 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
             app.state.container.stop()
             await app.state.container.aclose()
 
-    app = FastAPI(title="BulletJournal-Controller", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="BulletJournal-Controller", version="1.0.1", lifespan=lifespan)
     app.state.server_config = server_config
     app.state.instance_paths = instance_paths
     app.state.container = ServiceContainer(

@@ -7,7 +7,7 @@ from bulletjournal_controller.storage.instance_fs import (
     require_instance_root,
     require_project_root,
 )
-from bulletjournal_controller.storage.repositories import JobRepository, ProjectRepository, SessionRepository, UserRepository
+from bulletjournal_controller.storage.repositories import JobRepository, ProjectRepository, ProjectRoleGrantRepository, SessionRepository, UserRepository
 from bulletjournal_controller.storage.state_db import StateDB
 
 __all__ = [
@@ -15,6 +15,7 @@ __all__ = [
     'JobRepository',
     'ProjectPaths',
     'ProjectRepository',
+    'ProjectRoleGrantRepository',
     'SessionRepository',
     'StateDB',
     'UserRepository',

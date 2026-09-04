@@ -4,8 +4,10 @@ import asyncio
 import json
 from typing import AsyncIterator
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
+
+from bulletjournal_controller.api.auth import get_current_user
 
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -16,7 +18,7 @@ def _sse_payload(*, event: str, data: dict[str, object]) -> bytes:
 
 
 @router.get("/jobs")
-async def stream_job_events(request: Request):
+async def stream_job_events(request: Request, user=Depends(get_current_user)):
     broker = request.app.state.container.job_event_broker
     subscriber = await broker.subscribe()
 
@@ -33,6 +35,13 @@ async def stream_job_events(request: Request):
                     continue
                 if event is None:
                     break
+                job_id = event.get("job_id")
+                if not isinstance(job_id, str):
+                    continue
+                try:
+                    request.app.state.container.authorization_service.require_job_viewer(user, job_id)
+                except Exception:
+                    continue
                 event_type = str(event.get("type") or "job.updated")
                 payload = event if "type" not in event else {key: value for key, value in event.items() if key != "type"}
                 yield _sse_payload(event=event_type, data=payload)

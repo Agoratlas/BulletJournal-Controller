@@ -17,6 +17,16 @@ def test_job_log_endpoint_returns_full_log_when_full_is_true(
     user = container.auth_service.create_user(
         username="admin", display_name="Admin", password="secret-pass"
     )
+    container.project_service.create_project(
+        project_id="study-a",
+        created_by_user_id=user.user_id,
+        python_version="3.11",
+        custom_requirements_text="bulletjournal-editor==0.3.0\n",
+        cpu_limit_millis=1000,
+        memory_limit_bytes=2048,
+        disk_soft_limit_bytes=None,
+        gpu_enabled=False,
+    )
     created_at = utc_now_iso()
     log_path = container.instance_paths.job_logs_dir / "2026-01-01T00-00-00Z__job-download.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)

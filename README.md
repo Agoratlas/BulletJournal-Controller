@@ -128,6 +128,8 @@ export BULLETJOURNAL_ARCHIVE_ENCRYPTION_KEY="change-this-too"
 bulletjournal-controller create-user ./instance --username admin --display-name Admin
 ```
 
+To create a server administrator, add `--server-admin`. Server administrators bypass project-specific grants; ordinary project access is managed as project-admin or editor roles in the controller UI.
+
 For automation, you can also provide a precomputed Argon2 hash instead of a plaintext password:
 
 ```bash

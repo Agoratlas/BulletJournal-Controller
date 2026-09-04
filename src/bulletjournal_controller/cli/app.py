@@ -50,6 +50,10 @@ def build_parser() -> argparse.ArgumentParser:
     user_parser.add_argument("--password-hash", default=None)
     user_parser.add_argument("--password-hash-stdin", action="store_true")
     user_parser.add_argument("--update", action="store_true")
+    server_admin_group = user_parser.add_mutually_exclusive_group()
+    server_admin_group.add_argument("--server-admin", dest="is_server_admin", action="store_true")
+    server_admin_group.add_argument("--no-server-admin", dest="is_server_admin", action="store_false")
+    user_parser.set_defaults(is_server_admin=None)
 
     build_runtime_parser = subparsers.add_parser(
         "build-runtime",
@@ -111,6 +115,7 @@ def app() -> None:
                     password_hash=args.password_hash,
                     password_hash_stdin=args.password_hash_stdin,
                     update=args.update,
+                    is_server_admin=args.is_server_admin,
                 ),
                 indent=2,
                 sort_keys=True,

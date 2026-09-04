@@ -8,6 +8,7 @@ type SessionUser = {
   username: string
   display_name: string
   is_active: boolean
+  is_server_admin: boolean
 }
 
 type SessionResponse = {
@@ -67,6 +68,34 @@ type Project = {
     disk_used_bytes?: number | null
   }
   recent_jobs?: JobRecord[]
+  effective_role: 'project_admin' | 'editor' | null
+  roles: ProjectRoles
+}
+
+type AssignableUser = {
+  user_id: string
+  username: string
+  display_name: string
+}
+
+type RoleAssignment = {
+  all_users: boolean
+  users: AssignableUser[]
+}
+
+type ProjectRoles = {
+  project_admins: RoleAssignment
+  editors: RoleAssignment
+}
+
+type RoleSelection = {
+  all_users: boolean
+  user_ids: string[]
+}
+
+type ProjectRoleSelections = {
+  project_admins: RoleSelection
+  editors: RoleSelection
 }
 
 type SystemInfo = {
@@ -597,6 +626,15 @@ style.textContent = `
     border: 1px solid rgba(31, 41, 41, 0.14);
     background: rgba(255, 255, 255, 0.98);
     box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
+  }
+  .role-picker-popover {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    max-width: none;
+    margin-top: 12px;
+    max-height: 320px;
+    overflow: auto;
   }
   .action-option {
     width: 100%;
@@ -2594,6 +2632,7 @@ function AppChrome({ children, footerMetrics = null }: { children: React.ReactNo
             <span className="muted">Signed in as</span>
             <strong>{session?.user?.display_name || session?.user?.username || 'Unknown user'}</strong>
             <span className="muted">({session?.user?.username || 'unknown'})</span>
+            {session?.user?.is_server_admin ? <span className="badge neutral">Admin</span> : null}
           </div>
           <button
             className="logout-link"
@@ -2628,6 +2667,7 @@ function DashboardPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
+  const { session } = useAppState()
   const pendingRemovalsRef = useLatestValue(pendingRemovals)
 
   const fetchDashboard = useCallback(async (signal?: AbortSignal) => {
@@ -2787,7 +2827,7 @@ function DashboardPage() {
                 <h2>BulletJournal projects</h2>
                 {activeJobIds.length > 0 ? <span className="muted">Watching {activeJobIds.length} active job{activeJobIds.length === 1 ? '' : 's'}</span> : null}
               </div>
-              <button className="button" type="button" onClick={() => setShowCreateModal(true)}>
+              <button className="button" type="button" onClick={() => setShowCreateModal(true)} disabled={!session?.user}>
                 <PlusIcon width={22} height={22} />
                 <span>New project</span>
               </button>
@@ -2900,6 +2940,7 @@ function CreateProjectModal({
   onClose: () => void
 }) {
   const navigate = useNavigate()
+  const { session } = useAppState()
   const gpuSupported = systemInfo.gpu_supported
   const [form, setForm] = useState({
     project_id: '',
@@ -2912,6 +2953,32 @@ function CreateProjectModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showLimitsForm, setShowLimitsForm] = useState(false)
+  const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([])
+  const [roles, setRoles] = useState<ProjectRoleSelections>({
+    project_admins: { all_users: false, user_ids: session?.user ? [session.user.user_id] : [] },
+    editors: { all_users: true, user_ids: [] },
+  })
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void request<AssignableUser[]>('/api/v1/users/assignable', { signal: controller.signal })
+      .then(setAssignableUsers)
+      .catch((nextError) => {
+        if (!isAbortError(nextError)) {
+          setError(nextError instanceof Error ? nextError.message : 'Failed to load assignable users.')
+        }
+      })
+    return () => controller.abort()
+  }, [session?.user?.user_id])
+
+  function toggleRoleUser(role: keyof ProjectRoleSelections, userId: string) {
+    setRoles((current) => {
+      const user_ids = current[role].user_ids.includes(userId)
+        ? current[role].user_ids.filter((id) => id !== userId)
+        : [...current[role].user_ids, userId]
+      return { ...current, [role]: { ...current[role], user_ids } }
+    })
+  }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -2927,6 +2994,8 @@ function CreateProjectModal({
           memory_limit_bytes: parseMemoryInputToBytes(form.memory_limit_input),
           disk_soft_limit_bytes: parseDiskInputToBytes(form.disk_soft_limit_input),
           gpu_enabled: form.gpu_enabled,
+          project_admins: rolePayload(roles.project_admins),
+          editors: rolePayload(roles.editors),
         }),
       })
       navigate(`/projects/${response.project.project_id}`, {
@@ -3001,6 +3070,7 @@ function CreateProjectModal({
                   </div>
                 ) : null}
               </div>
+              <RolePicker roles={roles} users={assignableUsers} onChange={setRoles} onToggleUser={toggleRoleUser} disabled={submitting} />
             </div>
             {error ? <div className="error-banner">{error}</div> : null}
             <div className="button-row">
@@ -3012,6 +3082,103 @@ function CreateProjectModal({
       </section>
     </div>
   )
+}
+
+function RolePicker({
+  roles,
+  users,
+  onChange,
+  onToggleUser,
+  disabled,
+}: {
+  roles: ProjectRoleSelections
+  users: AssignableUser[]
+  onChange: React.Dispatch<React.SetStateAction<ProjectRoleSelections>>
+  onToggleUser: (role: keyof ProjectRoleSelections, userId: string) => void
+  disabled: boolean
+}) {
+  const [openRole, setOpenRole] = useState<keyof ProjectRoleSelections | null>(null)
+  const roleOptions: Array<{ key: keyof ProjectRoleSelections; label: string }> = [
+    { key: 'project_admins', label: 'Project admins' },
+    { key: 'editors', label: 'Editors' },
+  ]
+
+  return (
+    <div className="field-full layout-grid">
+      <div>
+        <strong>Project access</strong>
+        <p className="section-copy">Choose who can administer or edit this project.</p>
+      </div>
+      {roleOptions.map(({ key, label }) => (
+        <div className="limits-card" key={key}>
+          <div className="panel-head-row">
+            <div><strong>{label}</strong><div className="muted">{roleSelectionSummary(roles[key], users)}</div></div>
+            <button className="button-secondary" type="button" disabled={disabled} onClick={() => setOpenRole((current) => current === key ? null : key)}>Edit</button>
+          </div>
+          {openRole === key ? (
+            <div className="action-popover role-picker-popover">
+              <div className="checkbox-row">
+                <input
+                  id={`${key}-all-users`}
+                  type="checkbox"
+                  checked={roles[key].all_users}
+                  disabled={disabled}
+                  onChange={(event) => onChange((current) => ({ ...current, [key]: { ...current[key], all_users: event.target.checked } }))}
+                />
+                <label htmlFor={`${key}-all-users`}>All users</label>
+              </div>
+              {!roles[key].all_users ? users.map((user) => (
+                <div className="checkbox-row" key={user.user_id}>
+                  <input id={`${key}-${user.user_id}`} type="checkbox" checked={roles[key].user_ids.includes(user.user_id)} disabled={disabled} onChange={() => onToggleUser(key, user.user_id)} />
+                  <label htmlFor={`${key}-${user.user_id}`}>{user.display_name || user.username} <span className="muted">({user.username})</span></label>
+                </div>
+              )) : null}
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function rolePayload(selection: RoleSelection): RoleSelection {
+  return {
+    all_users: selection.all_users,
+    user_ids: selection.all_users ? [] : selection.user_ids,
+  }
+}
+
+function roleSelectionSummary(selection: RoleSelection, users: AssignableUser[]): string {
+  if (selection.all_users) {
+    return 'All users'
+  }
+  const names = selection.user_ids
+    .map((userId) => users.find((user) => user.user_id === userId))
+    .filter((user): user is AssignableUser => Boolean(user))
+    .map((user) => user.username)
+  return names.length > 0 ? names.join(', ') : 'No users selected'
+}
+
+function roleSelectionsFromProjectRoles(roles: ProjectRoles): ProjectRoleSelections {
+  return {
+    project_admins: {
+      all_users: roles.project_admins.all_users,
+      user_ids: roles.project_admins.users.map((user) => user.user_id),
+    },
+    editors: {
+      all_users: roles.editors.all_users,
+      user_ids: roles.editors.users.map((user) => user.user_id),
+    },
+  }
+}
+
+function displayRoleAssignment(assignment: RoleAssignment): string {
+  if (assignment.all_users) {
+    return 'All users'
+  }
+  return assignment.users.length > 0
+    ? assignment.users.map((user) => user.username).join(', ')
+    : 'No users selected'
 }
 
 function ArchiveProjectModal({
@@ -3076,6 +3243,7 @@ function ProjectPage() {
   const { projectId = '' } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
+  const { session } = useAppState()
   const exportMenuRef = useRef<HTMLDivElement | null>(null)
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
@@ -3109,6 +3277,10 @@ function ProjectPage() {
   const [limitsDirty, setLimitsDirty] = useState(false)
   const [environmentActionFeedback, setEnvironmentActionFeedback] = useState<{ tone: 'success', message: string } | null>(null)
   const [limitsActionFeedback, setLimitsActionFeedback] = useState<{ tone: 'success', message: string } | null>(null)
+  const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([])
+  const [rolesForm, setRolesForm] = useState<ProjectRoleSelections | null>(null)
+  const [savingRoles, setSavingRoles] = useState(false)
+  const [editingRoles, setEditingRoles] = useState(false)
   const environmentInputsDirty = !!project && environmentForm.custom_requirements_text !== project.custom_requirements_text
   const projectIdRef = useLatestValue(projectId)
   const environmentInputsDirtyRef = useLatestValue(environmentInputsDirty)
@@ -3123,6 +3295,7 @@ function ProjectPage() {
         return
       }
       setProject(nextProject)
+      setRolesForm((current) => current ?? roleSelectionsFromProjectRoles(nextProject.roles))
       if (!environmentInputsDirtyRef.current && !environmentSyncPendingRef.current) {
         setEnvironmentForm((current) => ({
           custom_requirements_text: nextProject.custom_requirements_text,
@@ -3228,6 +3401,27 @@ function ProjectPage() {
 
   useJobEvents(activeJobIds, handleTrackedJobUpdate)
 
+  useEffect(() => {
+    if (project?.effective_role !== 'project_admin') {
+      return
+    }
+    const controller = new AbortController()
+    void Promise.all([
+      request<AssignableUser[]>('/api/v1/users/assignable', { signal: controller.signal }),
+      request<ProjectRoles>(`/api/v1/projects/${projectId}/roles`, { signal: controller.signal }),
+    ])
+      .then(([users, roles]) => {
+        setAssignableUsers(users)
+        setRolesForm((current) => current ?? roleSelectionsFromProjectRoles(roles))
+      })
+      .catch((nextError) => {
+        if (!isAbortError(nextError)) {
+          setError(nextError instanceof Error ? nextError.message : 'Failed to load assignable users.')
+        }
+      })
+    return () => controller.abort()
+  }, [project?.effective_role, projectId])
+
   async function queueAction(action: 'start' | 'stop') {
     setOptimisticAction({ action })
     try {
@@ -3310,6 +3504,29 @@ function ProjectPage() {
       setError(nextError instanceof Error ? nextError.message : 'Failed to update limits.')
     } finally {
       setSavingLimits(false)
+    }
+  }
+
+  async function onSaveRoles(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!rolesForm) return
+    setSavingRoles(true)
+    setError(null)
+    try {
+      const nextRoles = await request<ProjectRoles>(`/api/v1/projects/${projectId}/roles`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          project_admins: rolePayload(rolesForm.project_admins),
+          editors: rolePayload(rolesForm.editors),
+        }),
+      })
+      setRolesForm(roleSelectionsFromProjectRoles(nextRoles))
+      setProject((current) => current ? { ...current, roles: nextRoles } : current)
+      setEditingRoles(false)
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Failed to update project access.')
+    } finally {
+      setSavingRoles(false)
     }
   }
 
@@ -3447,6 +3664,7 @@ function ProjectPage() {
   }
 
   const displayProject = projectWithOptimisticAction(project, optimisticAction, activeJobIds)
+  const isProjectAdmin = displayProject.effective_role === 'project_admin'
   const actionState = projectActionState(displayProject)
   const environmentActionLabel = environmentInputsDirty ? 'Save and reinstall' : 'Reinstall environment'
   const environmentActionPendingLabel = environmentInputsDirty ? 'Saving and reinstalling...' : 'Queueing reinstall...'
@@ -3552,7 +3770,7 @@ function ProjectPage() {
           </div>
         </section>
 
-        <section className="panel">
+        {isProjectAdmin ? <section className="panel">
           <div className="panel-head">
             <h2>Project environment</h2>
           </div>
@@ -3610,9 +3828,9 @@ function ProjectPage() {
               </div>
             </form>
           </div>
-        </section>
+        </section> : null}
 
-        <section className="panel">
+        {isProjectAdmin ? <section className="panel">
           <div className="panel-head">
             <h2>Container info</h2>
           </div>
@@ -3687,6 +3905,42 @@ function ProjectPage() {
               </form>
             </div>
           </div>
+        </section> : null}
+
+        <section className="panel">
+          <div className="panel-head">
+            <div className="panel-head-row"><h2>Project access</h2>{isProjectAdmin && !editingRoles ? <button className="button-secondary" type="button" onClick={() => {
+              setRolesForm(roleSelectionsFromProjectRoles(displayProject.roles))
+              setEditingRoles(true)
+            }}>Edit</button> : null}</div>
+          </div>
+          <div className="panel-body">
+            {isProjectAdmin && editingRoles && rolesForm ? (
+              <form className="layout-grid" onSubmit={onSaveRoles}>
+                <RolePicker
+                  roles={rolesForm}
+                  users={assignableUsers}
+                  onChange={(updater) => setRolesForm((current) => current ? (typeof updater === 'function' ? updater(current) : updater) : current)}
+                  onToggleUser={(role, userId) => setRolesForm((current) => {
+                    if (!current) return current
+                    const user_ids = current[role].user_ids.includes(userId) ? current[role].user_ids.filter((id) => id !== userId) : [...current[role].user_ids, userId]
+                    return { ...current, [role]: { ...current[role], user_ids } }
+                  })}
+                  disabled={savingRoles}
+                />
+                <div className="button-row"><button className="button-open" type="submit" disabled={savingRoles}>{savingRoles ? 'Saving...' : 'Save access'}</button><button className="button-secondary" type="button" disabled={savingRoles} onClick={() => {
+                  setRolesForm(roleSelectionsFromProjectRoles(displayProject.roles))
+                  setEditingRoles(false)
+                }}>Cancel</button></div>
+              </form>
+            ) : (
+              <div className="summary-grid">
+                <div className="summary-block compact"><h3>Your access</h3><strong>{displayProject.effective_role === 'project_admin' ? 'Project admin' : 'Editor'}</strong></div>
+                <div className="summary-block compact"><h3>Project admins</h3><strong>{displayRoleAssignment(displayProject.roles.project_admins)}</strong></div>
+                <div className="summary-block compact"><h3>Editors</h3><strong>{displayRoleAssignment(displayProject.roles.editors)}</strong></div>
+              </div>
+            )}
+          </div>
         </section>
 
         <section className="panel">
@@ -3739,7 +3993,7 @@ function ProjectPage() {
           </div>
         </section>
 
-        <section className="panel">
+        {isProjectAdmin ? <section className="panel">
           <div className="panel-head">
             <h2>Project actions</h2>
           </div>
@@ -3809,7 +4063,7 @@ function ProjectPage() {
               }} disabled={deleting || archiving}>{deleting ? 'Deleting...' : 'Delete project'}</button>
             </div>
           </div>
-        </section>
+        </section> : null}
       </div>
       {showArchiveModal && pendingRemovalKind ? (
         <ArchiveProjectModal

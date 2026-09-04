@@ -8,7 +8,6 @@ from bulletjournal_controller.api.auth import (
     require_same_origin,
 )
 from bulletjournal_controller.domain.enums import ProjectStatus
-from bulletjournal_controller.domain.errors import AuthenticationError
 
 
 router = APIRouter(tags=["proxy"])
@@ -21,6 +20,7 @@ async def proxy_http_root(
     project_id: str, request: Request, bundle=Depends(get_current_session_bundle)
 ):
     require_same_origin(request)
+    request.app.state.container.authorization_service.require_project_viewer(bundle.user, project_id)
     stopped_redirect = _stopped_project_redirect_response(request, project_id)
     if stopped_redirect is not None:
         return stopped_redirect
@@ -42,6 +42,7 @@ async def proxy_http_root_slash(
     project_id: str, request: Request, bundle=Depends(get_current_session_bundle)
 ):
     require_same_origin(request)
+    request.app.state.container.authorization_service.require_project_viewer(bundle.user, project_id)
     stopped_redirect = _stopped_project_redirect_response(request, project_id)
     if stopped_redirect is not None:
         return stopped_redirect
@@ -58,37 +59,49 @@ async def proxy_http_root_slash(
     "/p/{project_id}/{path:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 )
-async def proxy_http(project_id: str, path: str, request: Request):
+async def proxy_http(project_id: str, path: str, request: Request, bundle=Depends(get_current_session_bundle)):
     require_same_origin(request)
+    request.app.state.container.authorization_service.require_project_viewer(bundle.user, project_id)
     stopped_redirect = _stopped_project_redirect_response(request, project_id)
     if stopped_redirect is not None:
         return stopped_redirect
-    username = _proxy_username(request, path=path)
     return await request.app.state.container.proxy_service.proxy_http(
         project_id=project_id,
         path=path,
         request=request,
-        authenticated_username=username,
+        authenticated_username=bundle.user.username,
     )
 
 
 @router.websocket("/p/{project_id}/{path:path}")
 async def proxy_websocket(websocket: WebSocket, project_id: str, path: str):
-    username = _proxy_username(websocket, path=path)
+    bundle = _websocket_session_bundle(websocket)
+    if bundle is None:
+        await websocket.close(code=4401)
+        return
+    try:
+        websocket.app.state.container.authorization_service.require_project_viewer(bundle.user, project_id)
+    except Exception:
+        await websocket.close(code=4404)
+        return
     await websocket.app.state.container.proxy_service.proxy_websocket(
         project_id=project_id,
         path=path,
         websocket=websocket,
-        authenticated_username=username,
+        authenticated_username=bundle.user.username,
     )
 
 
 @router.websocket("/p/{project_id}")
 async def proxy_websocket_root(websocket: WebSocket, project_id: str):
-    cookie = websocket.cookies.get("bulletjournal_session")
-    bundle = websocket.app.state.container.auth_service.resolve_session(cookie)
+    bundle = _websocket_session_bundle(websocket)
     if bundle is None:
         await websocket.close(code=4401)
+        return
+    try:
+        websocket.app.state.container.authorization_service.require_project_viewer(bundle.user, project_id)
+    except Exception:
+        await websocket.close(code=4404)
         return
     await websocket.app.state.container.proxy_service.proxy_websocket(
         project_id=project_id,
@@ -100,10 +113,14 @@ async def proxy_websocket_root(websocket: WebSocket, project_id: str):
 
 @router.websocket("/p/{project_id}/")
 async def proxy_websocket_root_slash(websocket: WebSocket, project_id: str):
-    cookie = websocket.cookies.get("bulletjournal_session")
-    bundle = websocket.app.state.container.auth_service.resolve_session(cookie)
+    bundle = _websocket_session_bundle(websocket)
     if bundle is None:
         await websocket.close(code=4401)
+        return
+    try:
+        websocket.app.state.container.authorization_service.require_project_viewer(bundle.user, project_id)
+    except Exception:
+        await websocket.close(code=4404)
         return
     await websocket.app.state.container.proxy_service.proxy_websocket(
         project_id=project_id,
@@ -113,19 +130,10 @@ async def proxy_websocket_root_slash(websocket: WebSocket, project_id: str):
     )
 
 
-def _proxy_username(connection: Request | WebSocket, *, path: str) -> str:
-    cookie = connection.cookies.get("bulletjournal_session")
-    bundle = connection.app.state.container.auth_service.resolve_session(cookie)
-    if bundle is not None:
-        return bundle.user.username
-    if _is_public_editor_manifest_path(path):
-        return "editor-session-manifest"
-    raise AuthenticationError("Authentication required.")
-
-
-def _is_public_editor_manifest_path(path: str) -> bool:
-    return path.startswith("api/v1/edit/sessions/") and path.endswith("/manifest.json")
-
+def _websocket_session_bundle(websocket: WebSocket):
+    return websocket.app.state.container.auth_service.resolve_session(
+        websocket.cookies.get("bulletjournal_session")
+    )
 
 def _stopped_project_redirect_response(
     request: Request, project_id: str

@@ -3,6 +3,16 @@ from __future__ import annotations
 from enum import Enum
 
 
+class ProjectRole(str, Enum):
+    PROJECT_ADMIN = "project_admin"
+    EDITOR = "editor"
+
+
+class RoleSubjectKind(str, Enum):
+    USER = "user"
+    ALL_USERS = "all_users"
+
+
 class ProjectStatus(str, Enum):
     CREATING = 'creating'
     INSTALLING = 'installing'

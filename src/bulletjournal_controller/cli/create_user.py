@@ -19,6 +19,7 @@ def create_user(
     password_hash: str | None = None,
     password_hash_stdin: bool = False,
     update: bool = False,
+    is_server_admin: bool | None = None,
 ) -> dict[str, object]:
     provided_secret_sources = sum(
         [password is not None, password_hash is not None, password_hash_stdin]
@@ -51,6 +52,7 @@ def create_user(
                     username=username,
                     display_name=display_name,
                     password_hash=resolved_password_hash,
+                    is_server_admin=is_server_admin,
                 )
             )
         else:
@@ -58,6 +60,7 @@ def create_user(
                 username=username,
                 display_name=display_name,
                 password_hash=resolved_password_hash,
+                is_server_admin=bool(is_server_admin),
             )
             created = True
     else:
@@ -72,6 +75,7 @@ def create_user(
                     username=username,
                     display_name=display_name,
                     password_hash=resolved_password_hash,
+                    is_server_admin=is_server_admin,
                 )
             )
         else:
@@ -79,6 +83,7 @@ def create_user(
                 username=username,
                 display_name=display_name,
                 password=resolved_password,
+                is_server_admin=bool(is_server_admin),
             )
             created = True
     return {
@@ -87,4 +92,5 @@ def create_user(
         "username": user.username,
         "display_name": user.display_name,
         "is_active": user.is_active,
+        "is_server_admin": user.is_server_admin,
     }

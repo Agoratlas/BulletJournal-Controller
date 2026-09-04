@@ -35,6 +35,7 @@ class ProjectService:
         *,
         instance_paths: InstancePaths,
         projects: ProjectRepository,
+        role_grants=None,
         jobs: JobRepository,
         environment_service,
         runtime_service,
@@ -42,6 +43,7 @@ class ProjectService:
     ):
         self.instance_paths = instance_paths
         self.projects = projects
+        self.role_grants = role_grants
         self.jobs = jobs
         self.environment_service = environment_service
         self.runtime_service = runtime_service
@@ -102,7 +104,7 @@ class ProjectService:
             custom_requirements_text=custom_requirements_text,
         )
         now = utc_now_iso()
-        return self.projects.create(
+        project = self.projects.create(
             project_id=resolved_project_id,
             controller_status_token=random_token(),
             status=ProjectStatus.CREATING.value,
@@ -134,6 +136,18 @@ class ProjectService:
             runtime_started_at=None,
             runtime_stopped_at=None,
         )
+        if self.role_grants is not None:
+            self.role_grants.create_for_project(
+                project.project_id,
+                [
+                    {
+                        "subject_kind": "user",
+                        "user_id": created_by_user_id,
+                        "role": "project_admin",
+                    }
+                ],
+            )
+        return project
 
     def project_paths(self, project_id: str) -> ProjectPaths:
         project = self.get_project(project_id)

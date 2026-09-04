@@ -58,17 +58,18 @@ class AuthService:
         self.password_hasher = argon2_module.PasswordHasher()
 
     def create_user(
-        self, *, username: str, display_name: str, password: str
+        self, *, username: str, display_name: str, password: str, is_server_admin: bool = False
     ) -> UserRecord:
         password_hash = self.password_hasher.hash(password)
         return self.create_user_with_password_hash(
             username=username,
             display_name=display_name,
             password_hash=password_hash,
+            is_server_admin=is_server_admin,
         )
 
     def create_user_with_password_hash(
-        self, *, username: str, display_name: str, password_hash: str
+        self, *, username: str, display_name: str, password_hash: str, is_server_admin: bool = False
     ) -> UserRecord:
         normalized_username = self._normalize_username(username)
         normalized_display_name = self._normalize_display_name(display_name)
@@ -82,10 +83,11 @@ class AuthService:
             display_name=normalized_display_name,
             password_hash=normalized_password_hash,
             is_active=True,
+            is_server_admin=is_server_admin,
         )
 
     def create_or_update_user_with_password_hash(
-        self, *, username: str, display_name: str, password_hash: str
+        self, *, username: str, display_name: str, password_hash: str, is_server_admin: bool | None = None
     ) -> tuple[UserRecord, bool]:
         normalized_username = self._normalize_username(username)
         normalized_display_name = self._normalize_display_name(display_name)
@@ -97,6 +99,7 @@ class AuthService:
                     username=normalized_username,
                     display_name=normalized_display_name,
                     password_hash=normalized_password_hash,
+                    is_server_admin=bool(is_server_admin),
                 ),
                 True,
             )
@@ -105,6 +108,7 @@ class AuthService:
             display_name=normalized_display_name,
             password_hash=normalized_password_hash,
             is_active=True,
+            is_server_admin=is_server_admin,
         )
         if existing.password_hash != normalized_password_hash:
             self.sessions.delete_for_user(existing.user_id)

@@ -11,9 +11,22 @@ class UserRecord:
     display_name: str
     password_hash: str
     is_active: bool
+    is_server_admin: bool
     created_at: str
     updated_at: str
     last_login_at: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class ProjectRoleGrantRecord:
+    project_id: str
+    subject_kind: str
+    user_id: str | None
+    role: str
+    created_at: str
+    updated_at: str
+    username: str | None = None
+    display_name: str | None = None
 
 
 @dataclass(slots=True, frozen=True)

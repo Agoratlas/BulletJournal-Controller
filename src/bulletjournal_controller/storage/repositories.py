@@ -8,6 +8,7 @@ from bulletjournal_controller.domain.errors import NotFoundError
 from bulletjournal_controller.domain.models import (
     JobRecord,
     ProjectRecord,
+    ProjectRoleGrantRecord,
     SessionRecord,
     UserRecord,
 )
@@ -47,18 +48,20 @@ class UserRepository(BaseRepository[UserRecord]):
         display_name: str,
         password_hash: str,
         is_active: bool,
+        is_server_admin: bool = False,
     ) -> UserRecord:
         now = utc_now_iso()
         with self.db.transaction() as connection:
             connection.execute(
-                "INSERT INTO users (user_id, username, display_name, password_hash, is_active, created_at, updated_at, last_login_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, NULL)",
+                "INSERT INTO users (user_id, username, display_name, password_hash, is_active, is_server_admin, created_at, updated_at, last_login_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)",
                 (
                     user_id,
                     username,
                     display_name,
                     password_hash,
                     int(is_active),
+                    int(is_server_admin),
                     now,
                     now,
                 ),
@@ -83,18 +86,38 @@ class UserRepository(BaseRepository[UserRecord]):
         return self._row_to_model(row)
 
     def update(
-        self, user_id: str, *, display_name: str, password_hash: str, is_active: bool
+        self,
+        user_id: str,
+        *,
+        display_name: str,
+        password_hash: str,
+        is_active: bool,
+        is_server_admin: bool | None = None,
     ) -> UserRecord:
         now = utc_now_iso()
         with self.db.transaction() as connection:
-            connection.execute(
-                "UPDATE users SET display_name = ?, password_hash = ?, is_active = ?, updated_at = ? WHERE user_id = ?",
-                (display_name, password_hash, int(is_active), now, user_id),
-            )
+            if is_server_admin is None:
+                connection.execute(
+                    "UPDATE users SET display_name = ?, password_hash = ?, is_active = ?, updated_at = ? WHERE user_id = ?",
+                    (display_name, password_hash, int(is_active), now, user_id),
+                )
+            else:
+                connection.execute(
+                    "UPDATE users SET display_name = ?, password_hash = ?, is_active = ?, is_server_admin = ?, updated_at = ? WHERE user_id = ?",
+                    (display_name, password_hash, int(is_active), int(is_server_admin), now, user_id),
+                )
             row = connection.execute(
                 "SELECT * FROM users WHERE user_id = ?", (user_id,)
             ).fetchone()
         return self._row_to_model(row)  # type: ignore[return-value]
+
+    def list_active_assignable(self) -> list[UserRecord]:
+        with self.db.read() as connection:
+            rows = connection.execute(
+                "SELECT * FROM users WHERE is_active = 1 AND user_id != ? ORDER BY username",
+                ("user-system",),
+            ).fetchall()
+        return [self._row_to_model(row) for row in rows if row is not None]  # type: ignore[list-item]
 
     def touch_last_login(self, user_id: str) -> None:
         now = utc_now_iso()
@@ -251,6 +274,50 @@ class ProjectRepository(BaseRepository[ProjectRecord]):
         if isinstance(value, bool):
             return int(value)
         return value
+
+
+class ProjectRoleGrantRepository(BaseRepository[ProjectRoleGrantRecord]):
+    def __init__(self, db: StateDB):
+        super().__init__(db, ProjectRoleGrantRecord)
+
+    def list_for_project(self, project_id: str) -> list[ProjectRoleGrantRecord]:
+        with self.db.read() as connection:
+            rows = connection.execute(
+                "SELECT g.*, u.username, u.display_name FROM project_role_grants g "
+                "LEFT JOIN users u ON u.user_id = g.user_id "
+                "WHERE g.project_id = ? ORDER BY g.role, g.subject_kind, u.username",
+                (project_id,),
+            ).fetchall()
+        return [self._row_to_model(row) for row in rows if row is not None]  # type: ignore[list-item]
+
+    def list_project_ids_visible_to(self, user_id: str) -> list[str]:
+        with self.db.read() as connection:
+            rows = connection.execute(
+                "SELECT DISTINCT project_id FROM project_role_grants "
+                "WHERE (subject_kind = 'user' AND user_id = ?) OR subject_kind = 'all_users' "
+                "ORDER BY project_id",
+                (user_id,),
+            ).fetchall()
+        return [str(row[0]) for row in rows]
+
+    def replace_for_project(self, project_id: str, grants: list[dict[str, str | None]]) -> None:
+        now = utc_now_iso()
+        with self.db.transaction() as connection:
+            connection.execute("DELETE FROM project_role_grants WHERE project_id = ?", (project_id,))
+            connection.executemany(
+                "INSERT INTO project_role_grants (project_id, subject_kind, user_id, role, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [(project_id, grant["subject_kind"], grant["user_id"], grant["role"], now, now) for grant in grants],
+            )
+
+    def create_for_project(self, project_id: str, grants: list[dict[str, str | None]]) -> None:
+        now = utc_now_iso()
+        with self.db.transaction() as connection:
+            connection.executemany(
+                "INSERT INTO project_role_grants (project_id, subject_kind, user_id, role, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [(project_id, grant["subject_kind"], grant["user_id"], grant["role"], now, now) for grant in grants],
+            )
 
 
 class JobRepository(BaseRepository[JobRecord]):

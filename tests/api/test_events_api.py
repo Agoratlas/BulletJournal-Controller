@@ -20,8 +20,32 @@ def _auth_client(app):
 def test_job_events_stream_emits_job_updates(instance_root, server_config) -> None:
     app = create_app(instance_root=instance_root, server_config=server_config)
     container: ServiceContainer = app.state.container
-    container.auth_service.create_user(
+    user = container.auth_service.create_user(
         username="admin", display_name="Admin", password="secret-pass"
+    )
+    project = container.project_service.create_project(
+        project_id="study-a",
+        created_by_user_id=user.user_id,
+        python_version="3.11",
+        custom_requirements_text="bulletjournal-editor==0.3.0\n",
+        cpu_limit_millis=1000,
+        memory_limit_bytes=2048,
+        disk_soft_limit_bytes=None,
+        gpu_enabled=False,
+    )
+    container.jobs.create(
+        job_id="job-1",
+        project_id=project.project_id,
+        job_type="start_project",
+        status="running",
+        requested_by_user_id=user.user_id,
+        payload_json="{}",
+        result_json=None,
+        log_path=str(container.instance_paths.job_logs_dir / "job-1.log"),
+        created_at="2026-01-01T00:00:00Z",
+        started_at=None,
+        finished_at=None,
+        error_message=None,
     )
 
     class StubBroker:

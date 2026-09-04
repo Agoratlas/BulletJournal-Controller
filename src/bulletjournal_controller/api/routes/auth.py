@@ -26,6 +26,7 @@ def login(payload: LoginRequest, request: Request, response: Response):
             username=bundle.user.username,
             display_name=bundle.user.display_name,
             is_active=bundle.user.is_active,
+            is_server_admin=bundle.user.is_server_admin,
         ),
     )
 
@@ -46,5 +47,6 @@ def current_session(bundle=Depends(get_current_session_bundle)):
             username=bundle.user.username,
             display_name=bundle.user.display_name,
             is_active=bundle.user.is_active,
+            is_server_admin=bundle.user.is_server_admin,
         ),
     )

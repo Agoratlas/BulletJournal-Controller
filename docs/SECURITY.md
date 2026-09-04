@@ -11,6 +11,15 @@
 
 - mutating requests validate `Origin` or `Referer` against `BULLETJOURNAL_PUBLIC_ORIGIN` when configured
 
+## Project Authorization
+
+- project admins administer project controller settings and project access
+- editors can use the BulletJournal editor, inspect project data and jobs, and start or stop their projects
+- `All users` role grants apply to future authenticated users without expanding into per-user rows
+- server admins bypass project grants; this status is returned only to the account itself and is not disclosed in project role summaries
+- callers without a role receive a concealed `404` for project, job, and proxied editor resources
+- Prometheus access remains controlled by its metrics mode/API key and exports metrics for every project
+
 ## Secret Handling
 
 - secrets are environment-only

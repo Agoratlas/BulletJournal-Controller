@@ -216,4 +216,31 @@ MIGRATIONS: list[tuple[str, str]] = [
         ALTER TABLE projects ADD COLUMN runtime_uv_cache_size_bytes INTEGER;
         """,
     ),
+    (
+        "009_project_rbac",
+        """
+        ALTER TABLE users ADD COLUMN is_server_admin INTEGER NOT NULL DEFAULT 0;
+
+        CREATE TABLE project_role_grants (
+            project_id TEXT NOT NULL,
+            subject_kind TEXT NOT NULL CHECK (subject_kind IN ('user', 'all_users')),
+            user_id TEXT,
+            role TEXT NOT NULL CHECK (role IN ('project_admin', 'editor')),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (project_id, subject_kind, user_id, role),
+            FOREIGN KEY(project_id) REFERENCES projects(project_id) ON DELETE CASCADE,
+            FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+            CHECK (
+                (subject_kind = 'user' AND user_id IS NOT NULL) OR
+                (subject_kind = 'all_users' AND user_id IS NULL)
+            )
+        );
+        CREATE INDEX idx_project_role_grants_project_id
+            ON project_role_grants(project_id);
+        CREATE INDEX idx_project_role_grants_user_id
+            ON project_role_grants(user_id);
+
+        """,
+    ),
 ]

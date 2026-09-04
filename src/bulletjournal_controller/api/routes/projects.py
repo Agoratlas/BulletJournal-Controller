@@ -8,6 +8,7 @@ from bulletjournal_controller.api.schemas import (
     CreateProjectRequest,
     CreateProjectResponse,
     LimitsRequest,
+    ProjectRolesRequest,
     ProjectJobResponse,
     ReinstallEnvironmentRequest,
     UpdateEnvironmentRequest,
@@ -20,7 +21,7 @@ from bulletjournal_controller.services.export_service import ExportService
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-def _project_payload(container, project, metrics: dict[str, object] | None = None):
+def _project_payload(container, project, user, metrics: dict[str, object] | None = None):
     payload = project.to_api()
     payload["metrics"] = (
         metrics
@@ -28,16 +29,18 @@ def _project_payload(container, project, metrics: dict[str, object] | None = Non
         else container.metrics_service.project_metrics(project)
     )
     payload["has_active_job"] = container.jobs.has_active_mutation(project.project_id)
+    payload["roles"] = container.authorization_service.role_summary(project.project_id)
+    payload["effective_role"] = container.authorization_service.effective_role(user, project.project_id)
     return payload
 
 
 @router.get("")
 def list_projects(request: Request, _user=Depends(get_current_user)):
     container = request.app.state.container
-    projects = container.project_service.list_projects()
+    projects = container.authorization_service.list_visible_projects(_user)
     metrics_map = container.metrics_service.cached_project_metrics_map(projects)
     return [
-        _project_payload(container, project, metrics_map.get(project.project_id))
+        _project_payload(container, project, _user, metrics_map.get(project.project_id))
         for project in projects
     ]
 
@@ -52,6 +55,20 @@ def create_project(
     payload: CreateProjectRequest, request: Request, user=Depends(get_current_user)
 ):
     container = request.app.state.container
+    grants = container.authorization_service.normalize_role_payload(
+        {
+            "project_admins": (
+                payload.project_admins.model_dump()
+                if payload.project_admins is not None
+                else {"all_users": False, "user_ids": [user.user_id]}
+            ),
+            "editors": (
+                payload.editors.model_dump()
+                if payload.editors is not None
+                else {"all_users": True, "user_ids": []}
+            ),
+        }
+    )
     python_version = (
         payload.python_version or container.instance_config.default_python_version
     )
@@ -65,6 +82,7 @@ def create_project(
         disk_soft_limit_bytes=payload.disk_soft_limit_bytes,
         gpu_enabled=payload.gpu_enabled,
     )
+    container.role_grants.replace_for_project(project.project_id, grants)
     job = container.job_service.queue_job(
         job_type="create_project",
         requested_by_user_id=user.user_id,
@@ -87,11 +105,11 @@ def create_project(
 @router.get("/{project_id}")
 def get_project(project_id: str, request: Request, _user=Depends(get_current_user)):
     container = request.app.state.container
-    project = container.project_service.get_project(project_id)
+    project = container.authorization_service.require_project_viewer(_user, project_id)
     metrics = container.metrics_service.cached_project_metrics_map([project]).get(
         project.project_id
     )
-    payload = _project_payload(container, project, metrics)
+    payload = _project_payload(container, project, _user, metrics)
     payload["recent_jobs"] = [
         job.to_api() for job in container.jobs.list_for_project(project_id)
     ]
@@ -103,7 +121,7 @@ def download_project_lockfile(
     project_id: str, request: Request, _user=Depends(get_current_user)
 ):
     container = request.app.state.container
-    project = container.project_service.get_project(project_id)
+    project = container.authorization_service.require_project_viewer(_user, project_id)
     lockfile_path = container.instance_paths.project_paths(project.project_id).uv_lock_path
     if not lockfile_path.is_file():
         raise NotFoundError(f"Lockfile not found for project {project.project_id}.")
@@ -122,7 +140,7 @@ def download_project_export(
     _user=Depends(get_current_user),
 ):
     container = request.app.state.container
-    project = container.project_service.get_project(project_id)
+    project = container.authorization_service.require_project_admin(_user, project_id)
     export_mode = ExportService.parse_export_mode(mode)
     archive_path = (
         container.instance_paths.exports_dir
@@ -151,6 +169,7 @@ def update_project(
     _user=Depends(get_current_user),
 ):
     container = request.app.state.container
+    container.authorization_service.require_project_admin(_user, project_id)
     project = container.project_service.update_limits(
         project_id=project_id,
         cpu_limit_millis=payload.cpu_limit_millis,
@@ -158,7 +177,7 @@ def update_project(
         disk_soft_limit_bytes=payload.disk_soft_limit_bytes,
         gpu_enabled=payload.gpu_enabled,
     )
-    return _project_payload(container, project)
+    return _project_payload(container, project, _user)
 
 
 @router.delete(
@@ -167,6 +186,7 @@ def update_project(
     dependencies=[Depends(require_same_origin)],
 )
 def delete_project(project_id: str, request: Request, user=Depends(get_current_user)):
+    request.app.state.container.authorization_service.require_project_admin(user, project_id)
     job = request.app.state.container.job_service.queue_job(
         job_type="delete_project",
         requested_by_user_id=user.user_id,
@@ -182,6 +202,7 @@ def delete_project(project_id: str, request: Request, user=Depends(get_current_u
     dependencies=[Depends(require_same_origin)],
 )
 def archive_project(project_id: str, request: Request, user=Depends(get_current_user)):
+    request.app.state.container.authorization_service.require_project_admin(user, project_id)
     job = request.app.state.container.job_service.queue_job(
         job_type="archive_project",
         requested_by_user_id=user.user_id,
@@ -197,7 +218,7 @@ def archive_project(project_id: str, request: Request, user=Depends(get_current_
     dependencies=[Depends(require_same_origin)],
 )
 def start_project(project_id: str, request: Request, user=Depends(get_current_user)):
-    current = request.app.state.container.project_service.get_project(project_id)
+    current = request.app.state.container.authorization_service.require_project_viewer(user, project_id)
     if current.status == "running":
         return {"job": None, "project": current.to_api(), "already_running": True}
     job = request.app.state.container.job_service.queue_job(
@@ -215,7 +236,7 @@ def start_project(project_id: str, request: Request, user=Depends(get_current_us
     dependencies=[Depends(require_same_origin)],
 )
 def stop_project(project_id: str, request: Request, user=Depends(get_current_user)):
-    current = request.app.state.container.project_service.get_project(project_id)
+    current = request.app.state.container.authorization_service.require_project_viewer(user, project_id)
     if current.status == "stopped":
         return {"job": None, "project": current.to_api(), "already_stopped": True}
     job = request.app.state.container.job_service.queue_job(
@@ -238,6 +259,7 @@ def reinstall_environment(
     request: Request,
     user=Depends(get_current_user),
 ):
+    request.app.state.container.authorization_service.require_project_admin(user, project_id)
     job = request.app.state.container.job_service.queue_job(
         job_type="reinstall_environment",
         requested_by_user_id=user.user_id,
@@ -258,6 +280,7 @@ def update_environment(
     request: Request,
     user=Depends(get_current_user),
 ):
+    request.app.state.container.authorization_service.require_project_admin(user, project_id)
     job = request.app.state.container.job_service.queue_job(
         job_type="update_environment",
         requested_by_user_id=user.user_id,
@@ -275,6 +298,7 @@ def update_limits(
     _user=Depends(get_current_user),
 ):
     container = request.app.state.container
+    container.authorization_service.require_project_admin(_user, project_id)
     project = container.project_service.update_limits(
         project_id=project_id,
         cpu_limit_millis=payload.cpu_limit_millis,
@@ -282,4 +306,23 @@ def update_limits(
         disk_soft_limit_bytes=payload.disk_soft_limit_bytes,
         gpu_enabled=payload.gpu_enabled,
     )
-    return _project_payload(container, project)
+    return _project_payload(container, project, _user)
+
+
+@router.get("/{project_id}/roles")
+def get_project_roles(project_id: str, request: Request, user=Depends(get_current_user)):
+    container = request.app.state.container
+    container.authorization_service.require_project_viewer(user, project_id)
+    return container.authorization_service.role_summary(project_id)
+
+
+@router.put("/{project_id}/roles", dependencies=[Depends(require_same_origin)])
+def replace_project_roles(
+    project_id: str,
+    payload: ProjectRolesRequest,
+    request: Request,
+    user=Depends(get_current_user),
+):
+    container = request.app.state.container
+    container.authorization_service.replace_project_roles(user, project_id, payload.model_dump())
+    return container.authorization_service.role_summary(project_id)

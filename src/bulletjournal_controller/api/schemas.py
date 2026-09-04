@@ -17,6 +17,13 @@ class UserResponse(StrictModel):
     username: str
     display_name: str
     is_active: bool
+    is_server_admin: bool
+
+
+class AssignableUserResponse(StrictModel):
+    user_id: str
+    username: str
+    display_name: str
 
 
 class SessionResponse(StrictModel):
@@ -31,11 +38,23 @@ class LimitsRequest(StrictModel):
     gpu_enabled: bool = False
 
 
+class RoleSubjectRequest(StrictModel):
+    all_users: bool = False
+    user_ids: list[str] = Field(default_factory=list)
+
+
 class CreateProjectRequest(LimitsRequest):
     project_id: str
     python_version: str | None = None
     bulletjournal_version: str | None = None
     custom_requirements_text: str = ""
+    project_admins: RoleSubjectRequest | None = None
+    editors: RoleSubjectRequest | None = None
+
+
+class ProjectRolesRequest(StrictModel):
+    project_admins: RoleSubjectRequest
+    editors: RoleSubjectRequest
 
 
 class UpdateProjectRequest(LimitsRequest):

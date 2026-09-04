@@ -45,6 +45,9 @@ def build_log_config(log_path: Path) -> dict[str, object]:
     _append_handler(loggers.setdefault("uvicorn", {}), "controller_file_default")
     _append_handler(loggers.setdefault("uvicorn.error", {}), "controller_file_default")
     _append_handler(loggers.setdefault("uvicorn.access", {}), "controller_file_access")
+    access_logger = loggers.setdefault("bulletjournal_controller.access", {"handlers": [], "level": "INFO"})
+    _append_handler(access_logger, "controller_file_default")
+    access_logger["propagate"] = False
     root = log_config.setdefault("root", {"handlers": [], "level": "INFO"})
     _append_handler(root, "controller_file_default")
     return log_config

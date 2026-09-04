@@ -29,6 +29,9 @@ def require_same_origin(request: Request) -> None:
 
 
 def get_current_session_bundle(request: Request):
+    cached = getattr(request.state, 'session_bundle', None)
+    if cached is not None:
+        return cached
     container = get_container(request)
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
     bundle = container.auth_service.resolve_session(cookie)

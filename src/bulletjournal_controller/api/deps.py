@@ -8,6 +8,7 @@ from bulletjournal_controller.observability import Observability
 from bulletjournal_controller.runtime.docker_adapter import DockerAdapter
 from bulletjournal_controller.runtime.installer import InstallerRunner
 from bulletjournal_controller.services.auth_service import AuthService
+from bulletjournal_controller.services.authorization_service import AuthorizationService
 from bulletjournal_controller.services.environment_service import EnvironmentService
 from bulletjournal_controller.services.export_service import ExportService
 from bulletjournal_controller.services.job_events import JobEventBroker
@@ -24,6 +25,7 @@ from bulletjournal_controller.storage import (
     InstancePaths,
     JobRepository,
     ProjectRepository,
+    ProjectRoleGrantRepository,
     SessionRepository,
     StateDB,
     UserRepository,
@@ -56,6 +58,7 @@ class ServiceContainer:
         self.users = UserRepository(self.state_db)
         self.sessions = SessionRepository(self.state_db)
         self.projects = ProjectRepository(self.state_db)
+        self.role_grants = ProjectRoleGrantRepository(self.state_db)
         self.jobs = JobRepository(self.state_db)
         self._ensure_system_user()
 
@@ -69,6 +72,12 @@ class ServiceContainer:
 
         self.auth_service = AuthService(
             users=self.users, sessions=self.sessions, server_config=server_config
+        )
+        self.authorization_service = AuthorizationService(
+            users=self.users,
+            projects=self.projects,
+            jobs=self.jobs,
+            role_grants=self.role_grants,
         )
         self.environment_service = EnvironmentService(
             instance_config=self.instance_config,
@@ -84,6 +93,7 @@ class ServiceContainer:
         self.project_service = ProjectService(
             instance_paths=instance_paths,
             projects=self.projects,
+            role_grants=self.role_grants,
             jobs=self.jobs,
             environment_service=self.environment_service,
             runtime_service=self.runtime_service,

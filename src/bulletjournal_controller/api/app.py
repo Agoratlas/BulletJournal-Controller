@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import logging
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -19,7 +20,7 @@ from bulletjournal_controller.api.auth import get_current_user
 from bulletjournal_controller.api.deps import ServiceContainer
 from bulletjournal_controller.api.errors import install_error_handlers
 from bulletjournal_controller.api.proxy import router as proxy_router
-from bulletjournal_controller.api.routes import auth, events, jobs, projects, system
+from bulletjournal_controller.api.routes import auth, events, jobs, projects, system, users
 from bulletjournal_controller.config import ServerConfig, bundled_web_root
 from bulletjournal_controller.observability import normalized_controller_route
 from bulletjournal_controller.services import SESSION_COOKIE_NAME
@@ -51,8 +52,12 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
 
     @app.middleware("http")
     async def observe_controller_http(request: Request, call_next):
+        bundle = _session_bundle_from_request(request)
+        request.state.session_bundle = bundle
         if request.url.path == "/metrics" or request.url.path.startswith("/p/"):
-            return await call_next(request)
+            response = await call_next(request)
+            _log_authenticated_request(request, response.status_code, bundle)
+            return response
         method = request.method
         started_at = time.perf_counter()
         response = await call_next(request)
@@ -65,6 +70,7 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
             status_code=response.status_code,
             duration=duration,
         )
+        _log_authenticated_request(request, response.status_code, bundle)
         return response
 
     @app.get("/metrics", include_in_schema=False)
@@ -78,6 +84,7 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
 
     api_prefix = "/api/v1"
     app.include_router(auth.router, prefix=api_prefix)
+    app.include_router(users.router, prefix=api_prefix)
     app.include_router(
         system.router, prefix=api_prefix, dependencies=[Depends(get_current_user)]
     )
@@ -140,8 +147,23 @@ def _serve_spa(web_root: Path, *, route: str | None = None):
 
 
 def _session_bundle_from_request(request: Request):
+    cached = getattr(request.state, "session_bundle", None)
+    if cached is not None:
+        return cached
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
     return request.app.state.container.auth_service.resolve_session(cookie)
+
+
+def _log_authenticated_request(request: Request, status_code: int, bundle) -> None:
+    if bundle is None:
+        return
+    logging.getLogger("bulletjournal_controller.access").info(
+        "username=%s method=%s path=%s status=%s",
+        bundle.user.username,
+        request.method,
+        normalized_controller_route(request.url.path),
+        status_code,
+    )
 
 
 def _require_metrics_access(request: Request) -> None:

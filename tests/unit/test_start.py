@@ -21,6 +21,15 @@ def test_build_log_config_writes_to_controller_log_file(tmp_path: Path) -> None:
     assert "controller_file_access" in config["loggers"]["uvicorn.access"]["handlers"]
 
 
+def test_authenticated_request_logger_uses_default_formatter(tmp_path: Path) -> None:
+    config = build_log_config(tmp_path / "controller.log")
+
+    logger = config["loggers"]["bulletjournal_controller.access"]
+
+    assert "controller_file_default" in logger["handlers"]
+    assert logger["propagate"] is False
+
+
 def test_service_container_start_backfills_missing_runtime_venv_size(
     tmp_path: Path,
 ) -> None:

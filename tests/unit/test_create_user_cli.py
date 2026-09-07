@@ -6,6 +6,7 @@ from importlib import import_module
 
 import pytest
 
+from bulletjournal_controller.cli.app import build_parser
 from bulletjournal_controller.cli.create_user import create_user
 from bulletjournal_controller.domain.errors import ValidationError
 
@@ -93,3 +94,13 @@ def test_create_user_update_reuses_existing_user(instance_root) -> None:
     assert payload["user_id"] == initial["user_id"]
     assert payload["display_name"] == "Administrator"
     assert payload["created"] is False
+
+
+def test_cli_parser_accepts_delete_user() -> None:
+    args = build_parser().parse_args(
+        ["delete-user", "./instance", "--username", "admin"]
+    )
+
+    assert args.command == "delete-user"
+    assert args.instance_root == "./instance"
+    assert args.username == "admin"

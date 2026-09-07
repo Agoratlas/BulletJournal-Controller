@@ -3,9 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 
+from bulletjournal_controller.cli.build_runtime import build_runtime
 from bulletjournal_controller.cli.cleanup_instance import cleanup_instance
 from bulletjournal_controller.cli.create_user import create_user
-from bulletjournal_controller.cli.build_runtime import build_runtime
+from bulletjournal_controller.cli.delete_user import delete_user
 from bulletjournal_controller.cli.dev import dev_server
 from bulletjournal_controller.cli.doctor import doctor
 from bulletjournal_controller.cli.export_project import export_project
@@ -54,6 +55,12 @@ def build_parser() -> argparse.ArgumentParser:
     server_admin_group.add_argument("--server-admin", dest="is_server_admin", action="store_true")
     server_admin_group.add_argument("--no-server-admin", dest="is_server_admin", action="store_false")
     user_parser.set_defaults(is_server_admin=None)
+
+    delete_user_parser = subparsers.add_parser(
+        "delete-user", help="Delete an authenticated controller user"
+    )
+    delete_user_parser.add_argument("instance_root")
+    delete_user_parser.add_argument("--username", required=True)
 
     build_runtime_parser = subparsers.add_parser(
         "build-runtime",
@@ -117,6 +124,15 @@ def app() -> None:
                     update=args.update,
                     is_server_admin=args.is_server_admin,
                 ),
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+    if args.command == "delete-user":
+        print(
+            json.dumps(
+                delete_user(args.instance_root, username=args.username),
                 indent=2,
                 sort_keys=True,
             )

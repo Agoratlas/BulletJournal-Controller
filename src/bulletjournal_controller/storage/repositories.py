@@ -4,7 +4,7 @@ import sqlite3
 from typing import Any, Generic, TypeVar
 
 from bulletjournal_controller.domain.enums import JobStatus
-from bulletjournal_controller.domain.errors import NotFoundError
+from bulletjournal_controller.domain.errors import ConflictError, NotFoundError
 from bulletjournal_controller.domain.models import (
     JobRecord,
     ProjectRecord,
@@ -14,7 +14,6 @@ from bulletjournal_controller.domain.models import (
 )
 from bulletjournal_controller.storage.state_db import StateDB
 from bulletjournal_controller.utils import utc_now_iso
-
 
 T = TypeVar("T")
 
@@ -126,6 +125,80 @@ class UserRepository(BaseRepository[UserRecord]):
                 "UPDATE users SET last_login_at = ?, updated_at = ? WHERE user_id = ?",
                 (now, now, user_id),
             )
+
+    def delete(self, user_id: str, *, replacement_user_id: str) -> None:
+        with self.db.transaction() as connection:
+            user = connection.execute(
+                "SELECT user_id, is_active, is_server_admin FROM users WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+            if user is None:
+                raise NotFoundError(f"User {user_id} was not found.")
+
+            active_users = {
+                str(row["user_id"])
+                for row in connection.execute(
+                    "SELECT user_id FROM users WHERE is_active = 1"
+                )
+            }
+            other_server_admin_exists = any(
+                row["user_id"] != user_id
+                for row in connection.execute(
+                    "SELECT user_id FROM users WHERE is_active = 1 AND is_server_admin = 1"
+                )
+            )
+            blocked_project_ids: list[str] = []
+
+            for project in connection.execute(
+                "SELECT project_id, created_by_user_id FROM projects ORDER BY project_id"
+            ):
+                project_id = str(project["project_id"])
+                grants = connection.execute(
+                    "SELECT subject_kind, user_id FROM project_role_grants "
+                    "WHERE project_id = ? AND role = 'project_admin'",
+                    (project_id,),
+                ).fetchall()
+                if grants:
+                    user_is_admin = bool(user["is_server_admin"]) or any(
+                        grant["subject_kind"] == "all_users" or grant["user_id"] == user_id
+                        for grant in grants
+                    )
+                    other_admin_exists = other_server_admin_exists or any(
+                        (
+                            grant["subject_kind"] == "all_users"
+                            and bool(active_users - {user_id})
+                        )
+                        or (
+                            grant["subject_kind"] == "user"
+                            and grant["user_id"] != user_id
+                            and grant["user_id"] in active_users
+                        )
+                        for grant in grants
+                    )
+                else:
+                    user_is_admin = bool(user["is_server_admin"]) or (
+                        project["created_by_user_id"] == user_id
+                    )
+                    other_admin_exists = other_server_admin_exists
+
+                if user_is_admin and not other_admin_exists:
+                    blocked_project_ids.append(project_id)
+
+            if blocked_project_ids:
+                raise ConflictError(
+                    "Cannot delete user because they are the sole admin of project(s): "
+                    f"{', '.join(blocked_project_ids)}."
+                )
+
+            connection.execute(
+                "UPDATE projects SET created_by_user_id = ? WHERE created_by_user_id = ?",
+                (replacement_user_id, user_id),
+            )
+            connection.execute(
+                "UPDATE jobs SET requested_by_user_id = ? WHERE requested_by_user_id = ?",
+                (replacement_user_id, user_id),
+            )
+            connection.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
 
 
 class SessionRepository(BaseRepository[SessionRecord]):

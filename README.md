@@ -142,6 +142,14 @@ Or read the hash from standard input and update an existing user in place during
 printf '%s' '$argon2id$...' | bulletjournal-controller create-user ./instance --username admin --display-name Admin --password-hash-stdin --update
 ```
 
+Delete a user by username:
+
+```bash
+bulletjournal-controller delete-user ./instance --username admin
+```
+
+Deletion is refused when the user is the sole effective administrator of a project. Existing projects and jobs created by a deleted user retain their history under the built-in system user.
+
 6. Build the local runtime image:
 
 ```bash

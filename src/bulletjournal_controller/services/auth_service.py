@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
 from datetime import timedelta
 from importlib import import_module
-import sqlite3
 
 from bulletjournal_controller.config import (
     DEFAULT_SESSION_LIFETIME_SECONDS,
@@ -12,6 +12,7 @@ from bulletjournal_controller.config import (
 from bulletjournal_controller.domain.errors import (
     AuthenticationError,
     ConflictError,
+    NotFoundError,
     ValidationError,
 )
 from bulletjournal_controller.domain.models import SessionRecord, UserRecord
@@ -27,7 +28,6 @@ from bulletjournal_controller.utils import (
     utc_now,
     utc_now_iso,
 )
-
 
 SESSION_COOKIE_NAME = "bulletjournal_session"
 SESSION_TOUCH_INTERVAL_SECONDS = 10
@@ -113,6 +113,16 @@ class AuthService:
         if existing.password_hash != normalized_password_hash:
             self.sessions.delete_for_user(existing.user_id)
         return updated, False
+
+    def delete_user(self, *, username: str, replacement_user_id: str) -> UserRecord:
+        normalized_username = self._normalize_username(username)
+        user = self.users.get_by_username(normalized_username)
+        if user is None:
+            raise NotFoundError(f"User {normalized_username} was not found.")
+        if user.user_id == replacement_user_id:
+            raise ValidationError("The system user cannot be deleted.")
+        self.users.delete(user.user_id, replacement_user_id=replacement_user_id)
+        return user
 
     def verify_password(self, password_hash: str, password: str) -> bool:
         try:

@@ -61,6 +61,21 @@ def test_install_command_supports_upgrading_all_packages_during_lock() -> None:
     assert "uv lock --project /project --upgrade" in joined
 
 
+def test_install_command_uses_nvidia_runtime_when_gpu_enabled() -> None:
+    runner = InstallerRunner(DockerAdapter())
+    command = runner.build_install_command(
+        image="bulletjournal-runtime:local",
+        project_root=Path("/srv/project"),
+        network_mode="bridge",
+        gpu_enabled=True,
+    )
+
+    assert "--runtime nvidia" in " ".join(command)
+    assert "NVIDIA_VISIBLE_DEVICES=all" in command
+    assert "NVIDIA_DRIVER_CAPABILITIES=compute,utility" in command
+    assert "--gpus" not in command
+
+
 def test_project_init_command_invokes_bulletjournal_init_without_environment() -> None:
     runner = InstallerRunner(DockerAdapter())
     command = runner.build_project_init_command(

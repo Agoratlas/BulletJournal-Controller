@@ -104,7 +104,14 @@ class DockerAdapter:
                 f"BULLETJOURNAL_CONTROLLER_TOKEN={controller_token}",
             ] + options
         if gpu_enabled:
-            options = ["--gpus", "all"] + options
+            options = [
+                "--runtime",
+                "nvidia",
+                "--env",
+                "NVIDIA_VISIBLE_DEVICES=all",
+                "--env",
+                "NVIDIA_DRIVER_CAPABILITIES=compute,utility",
+            ] + options
         for mount_path, target, read_only in additional_mounts or []:
             mount_spec = f"type=bind,src={mount_path},dst={target}"
             if read_only:

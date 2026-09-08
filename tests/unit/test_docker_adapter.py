@@ -122,3 +122,27 @@ def test_docker_run_command_omits_limit_flags_when_unset() -> None:
     joined = " ".join(command)
     assert " --cpus " not in f" {joined} "
     assert " --memory " not in f" {joined} "
+
+
+def test_docker_run_command_uses_nvidia_runtime_when_gpu_enabled() -> None:
+    adapter = DockerAdapter()
+    command = adapter.build_run_command(
+        image="runtime:latest",
+        container_name="bulletjournal-study-a",
+        instance_id="main",
+        project_id="study-a",
+        project_root=Path("/srv/projects/study-a"),
+        host_port=49152,
+        base_path="/p/study-a",
+        controller_token=None,
+        cpu_limit_millis=None,
+        memory_limit_bytes=None,
+        disk_soft_limit_bytes=None,
+        gpu_enabled=True,
+        network_mode="bridge",
+    )
+
+    assert "--runtime nvidia" in " ".join(command)
+    assert "NVIDIA_VISIBLE_DEVICES=all" in command
+    assert "NVIDIA_DRIVER_CAPABILITIES=compute,utility" in command
+    assert "--gpus" not in command

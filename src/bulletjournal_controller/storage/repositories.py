@@ -9,6 +9,7 @@ from bulletjournal_controller.domain.models import (
     JobRecord,
     ProjectRecord,
     ProjectRoleGrantRecord,
+    OAuthAccessTokenRecord,
     SessionRecord,
     UserRecord,
 )
@@ -103,7 +104,14 @@ class UserRepository(BaseRepository[UserRecord]):
             else:
                 connection.execute(
                     "UPDATE users SET display_name = ?, password_hash = ?, is_active = ?, is_server_admin = ?, updated_at = ? WHERE user_id = ?",
-                    (display_name, password_hash, int(is_active), int(is_server_admin), now, user_id),
+                    (
+                        display_name,
+                        password_hash,
+                        int(is_active),
+                        int(is_server_admin),
+                        now,
+                        user_id,
+                    ),
                 )
             row = connection.execute(
                 "SELECT * FROM users WHERE user_id = ?", (user_id,)
@@ -160,7 +168,8 @@ class UserRepository(BaseRepository[UserRecord]):
                 ).fetchall()
                 if grants:
                     user_is_admin = bool(user["is_server_admin"]) or any(
-                        grant["subject_kind"] == "all_users" or grant["user_id"] == user_id
+                        grant["subject_kind"] == "all_users"
+                        or grant["user_id"] == user_id
                         for grant in grants
                     )
                     other_admin_exists = other_server_admin_exists or any(
@@ -274,6 +283,157 @@ class SessionRepository(BaseRepository[SessionRecord]):
             connection.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
 
 
+class OAuthRepository(BaseRepository[OAuthAccessTokenRecord]):
+    def __init__(self, db: StateDB):
+        super().__init__(db, OAuthAccessTokenRecord)
+
+    def create_client(
+        self,
+        *,
+        client_id: str,
+        client_secret_hash: str | None,
+        redirect_uris_json: str,
+        client_name: str,
+    ) -> None:
+        with self.db.transaction() as connection:
+            connection.execute(
+                "INSERT INTO oauth_clients (client_id, client_secret_hash, redirect_uris_json, client_name, created_at, revoked_at) VALUES (?, ?, ?, ?, ?, NULL)",
+                (
+                    client_id,
+                    client_secret_hash,
+                    redirect_uris_json,
+                    client_name,
+                    utc_now_iso(),
+                ),
+            )
+
+    def get_client(self, client_id: str):
+        with self.db.read() as connection:
+            return connection.execute(
+                "SELECT * FROM oauth_clients WHERE client_id = ? AND revoked_at IS NULL",
+                (client_id,),
+            ).fetchone()
+
+    def create_code(self, **data: str) -> None:
+        with self.db.transaction() as connection:
+            connection.execute(
+                "INSERT INTO oauth_authorization_codes (code_hash, user_id, client_id, project_id, resource, redirect_uri, scopes, code_challenge, expires_at, consumed_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
+                (
+                    data["code_hash"],
+                    data["user_id"],
+                    data["client_id"],
+                    data["project_id"],
+                    data["resource"],
+                    data["redirect_uri"],
+                    data["scopes"],
+                    data["code_challenge"],
+                    data["expires_at"],
+                    utc_now_iso(),
+                ),
+            )
+
+    def consume_code(self, code_hash: str):
+        with self.db.transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM oauth_authorization_codes WHERE code_hash = ? AND consumed_at IS NULL",
+                (code_hash,),
+            ).fetchone()
+            if row is not None:
+                connection.execute(
+                    "UPDATE oauth_authorization_codes SET consumed_at = ? WHERE code_hash = ?",
+                    (utc_now_iso(), code_hash),
+                )
+        return row
+
+    def create_access_token(self, **data: str) -> OAuthAccessTokenRecord:
+        with self.db.transaction() as connection:
+            connection.execute(
+                "INSERT INTO oauth_access_tokens (token_id, token_hash, user_id, client_id, project_id, resource, scopes, issued_at, expires_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+                tuple(
+                    data[key]
+                    for key in (
+                        "token_id",
+                        "token_hash",
+                        "user_id",
+                        "client_id",
+                        "project_id",
+                        "resource",
+                        "scopes",
+                        "issued_at",
+                        "expires_at",
+                    )
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM oauth_access_tokens WHERE token_id = ?",
+                (data["token_id"],),
+            ).fetchone()
+        return self._row_to_model(row)  # type: ignore[return-value]
+
+    def get_access_token(self, token_hash: str) -> OAuthAccessTokenRecord | None:
+        with self.db.read() as connection:
+            row = connection.execute(
+                "SELECT * FROM oauth_access_tokens WHERE token_hash = ?", (token_hash,)
+            ).fetchone()
+        return self._row_to_model(row)
+
+    def revoke_access_token(self, token_hash: str) -> None:
+        with self.db.transaction() as connection:
+            connection.execute(
+                "UPDATE oauth_access_tokens SET revoked_at = ? WHERE token_hash = ?",
+                (utc_now_iso(), token_hash),
+            )
+
+    def create_refresh_token(self, **data: str) -> None:
+        with self.db.transaction() as connection:
+            connection.execute(
+                "INSERT INTO oauth_refresh_tokens (token_id, token_hash, family_id, user_id, client_id, project_id, resource, scopes, issued_at, expires_at, replaced_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)",
+                tuple(
+                    data[key]
+                    for key in (
+                        "token_id",
+                        "token_hash",
+                        "family_id",
+                        "user_id",
+                        "client_id",
+                        "project_id",
+                        "resource",
+                        "scopes",
+                        "issued_at",
+                        "expires_at",
+                    )
+                ),
+            )
+
+    def consume_refresh_token(self, token_hash: str):
+        with self.db.transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM oauth_refresh_tokens WHERE token_hash = ?", (token_hash,)
+            ).fetchone()
+            if (
+                row is not None
+                and row["replaced_at"] is None
+                and row["revoked_at"] is None
+            ):
+                connection.execute(
+                    "UPDATE oauth_refresh_tokens SET replaced_at = ? WHERE token_hash = ?",
+                    (utc_now_iso(), token_hash),
+                )
+            elif row is not None:
+                connection.execute(
+                    "UPDATE oauth_refresh_tokens SET revoked_at = ? WHERE family_id = ?",
+                    (utc_now_iso(), row["family_id"]),
+                )
+        return row
+
+    def revoke_refresh_token(self, token_hash: str) -> None:
+        with self.db.transaction() as connection:
+            connection.execute(
+                "UPDATE oauth_refresh_tokens SET revoked_at = ? WHERE token_hash = ?",
+                (utc_now_iso(), token_hash),
+            )
+
+
 class ProjectRepository(BaseRepository[ProjectRecord]):
     def __init__(self, db: StateDB):
         super().__init__(db, ProjectRecord)
@@ -373,23 +533,49 @@ class ProjectRoleGrantRepository(BaseRepository[ProjectRoleGrantRecord]):
             ).fetchall()
         return [str(row[0]) for row in rows]
 
-    def replace_for_project(self, project_id: str, grants: list[dict[str, str | None]]) -> None:
+    def replace_for_project(
+        self, project_id: str, grants: list[dict[str, str | None]]
+    ) -> None:
         now = utc_now_iso()
         with self.db.transaction() as connection:
-            connection.execute("DELETE FROM project_role_grants WHERE project_id = ?", (project_id,))
+            connection.execute(
+                "DELETE FROM project_role_grants WHERE project_id = ?", (project_id,)
+            )
             connection.executemany(
                 "INSERT INTO project_role_grants (project_id, subject_kind, user_id, role, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                [(project_id, grant["subject_kind"], grant["user_id"], grant["role"], now, now) for grant in grants],
+                [
+                    (
+                        project_id,
+                        grant["subject_kind"],
+                        grant["user_id"],
+                        grant["role"],
+                        now,
+                        now,
+                    )
+                    for grant in grants
+                ],
             )
 
-    def create_for_project(self, project_id: str, grants: list[dict[str, str | None]]) -> None:
+    def create_for_project(
+        self, project_id: str, grants: list[dict[str, str | None]]
+    ) -> None:
         now = utc_now_iso()
         with self.db.transaction() as connection:
             connection.executemany(
                 "INSERT INTO project_role_grants (project_id, subject_kind, user_id, role, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                [(project_id, grant["subject_kind"], grant["user_id"], grant["role"], now, now) for grant in grants],
+                [
+                    (
+                        project_id,
+                        grant["subject_kind"],
+                        grant["user_id"],
+                        grant["role"],
+                        now,
+                        now,
+                    )
+                    for grant in grants
+                ],
             )
 
 

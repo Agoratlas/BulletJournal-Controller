@@ -43,6 +43,20 @@ class SessionRecord:
 
 
 @dataclass(slots=True, frozen=True)
+class OAuthAccessTokenRecord:
+    token_id: str
+    token_hash: str
+    user_id: str
+    client_id: str
+    project_id: str
+    resource: str
+    scopes: str
+    issued_at: str
+    expires_at: str
+    revoked_at: str | None
+
+
+@dataclass(slots=True, frozen=True)
 class ProjectRecord:
     project_id: str
     controller_status_token: str

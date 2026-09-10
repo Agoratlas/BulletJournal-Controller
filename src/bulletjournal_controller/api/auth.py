@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from fastapi import Depends, Request, Response
+from urllib.parse import urlsplit
 
-from bulletjournal_controller.domain.errors import AuthenticationError, AuthorizationError
+from bulletjournal_controller.domain.errors import (
+    AuthenticationError,
+    AuthorizationError,
+)
 from bulletjournal_controller.services import SESSION_COOKIE_NAME
 
 
-SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS'}
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
 def get_container(request: Request):
@@ -19,24 +23,32 @@ def require_same_origin(request: Request) -> None:
     public_origin = request.app.state.server_config.public_origin
     if not public_origin:
         return
-    origin = request.headers.get('origin')
-    referer = request.headers.get('referer')
-    if origin and origin.startswith(public_origin):
+    origin = request.headers.get("origin")
+    referer = request.headers.get("referer")
+    expected = urlsplit(public_origin)
+    if origin and _same_origin(origin, expected):
         return
-    if referer and referer.startswith(public_origin):
+    if referer and _same_origin(referer, expected):
         return
-    raise AuthorizationError('Mutating requests must come from the configured public origin.')
+    raise AuthorizationError(
+        "Mutating requests must come from the configured public origin."
+    )
+
+
+def _same_origin(value: str, expected) -> bool:
+    parsed = urlsplit(value)
+    return parsed.scheme == expected.scheme and parsed.netloc == expected.netloc
 
 
 def get_current_session_bundle(request: Request):
-    cached = getattr(request.state, 'session_bundle', None)
+    cached = getattr(request.state, "session_bundle", None)
     if cached is not None:
         return cached
     container = get_container(request)
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
     bundle = container.auth_service.resolve_session(cookie)
     if bundle is None:
-        raise AuthenticationError('Authentication required.')
+        raise AuthenticationError("Authentication required.")
     return bundle
 
 
@@ -49,12 +61,14 @@ def set_session_cookie(response: Response, *, bundle, request: Request) -> None:
         key=SESSION_COOKIE_NAME,
         value=bundle.cookie_value,
         httponly=True,
-        samesite='lax',
+        samesite="lax",
         secure=bool(request.app.state.server_config.cookie_secure),
         max_age=7 * 24 * 60 * 60,
-        path='/',
+        path="/",
     )
 
 
 def clear_session_cookie(response: Response) -> None:
-    response.delete_cookie(key=SESSION_COOKIE_NAME, path='/', httponly=True, samesite='lax')
+    response.delete_cookie(
+        key=SESSION_COOKIE_NAME, path="/", httponly=True, samesite="lax"
+    )

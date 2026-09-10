@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from bulletjournal_controller.api.auth import get_current_user, require_same_origin
 from bulletjournal_controller.api.schemas import (
@@ -21,7 +21,9 @@ from bulletjournal_controller.services.export_service import ExportService
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-def _project_payload(container, project, user, metrics: dict[str, object] | None = None):
+def _project_payload(
+    container, project, user, metrics: dict[str, object] | None = None
+):
     payload = project.to_api()
     payload["metrics"] = (
         metrics
@@ -30,7 +32,9 @@ def _project_payload(container, project, user, metrics: dict[str, object] | None
     )
     payload["has_active_job"] = container.jobs.has_active_mutation(project.project_id)
     payload["roles"] = container.authorization_service.role_summary(project.project_id)
-    payload["effective_role"] = container.authorization_service.effective_role(user, project.project_id)
+    payload["effective_role"] = container.authorization_service.effective_role(
+        user, project.project_id
+    )
     return payload
 
 
@@ -122,7 +126,9 @@ def download_project_lockfile(
 ):
     container = request.app.state.container
     project = container.authorization_service.require_project_viewer(_user, project_id)
-    lockfile_path = container.instance_paths.project_paths(project.project_id).uv_lock_path
+    lockfile_path = container.instance_paths.project_paths(
+        project.project_id
+    ).uv_lock_path
     if not lockfile_path.is_file():
         raise NotFoundError(f"Lockfile not found for project {project.project_id}.")
     return FileResponse(
@@ -161,6 +167,25 @@ def download_project_export(
     )
 
 
+@router.get("/{project_id}/mcp-config/opencode")
+def download_opencode_mcp_config(
+    project_id: str, request: Request, _user=Depends(get_current_user)
+):
+    container = request.app.state.container
+    project = container.authorization_service.require_project_viewer(_user, project_id)
+    archive, filename = container.mcp_config_service.opencode_archive(
+        project.project_id
+    )
+    return Response(
+        content=archive,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "private, no-store",
+        },
+    )
+
+
 @router.patch("/{project_id}", dependencies=[Depends(require_same_origin)])
 def update_project(
     project_id: str,
@@ -186,7 +211,9 @@ def update_project(
     dependencies=[Depends(require_same_origin)],
 )
 def delete_project(project_id: str, request: Request, user=Depends(get_current_user)):
-    request.app.state.container.authorization_service.require_project_admin(user, project_id)
+    request.app.state.container.authorization_service.require_project_admin(
+        user, project_id
+    )
     job = request.app.state.container.job_service.queue_job(
         job_type="delete_project",
         requested_by_user_id=user.user_id,
@@ -202,7 +229,9 @@ def delete_project(project_id: str, request: Request, user=Depends(get_current_u
     dependencies=[Depends(require_same_origin)],
 )
 def archive_project(project_id: str, request: Request, user=Depends(get_current_user)):
-    request.app.state.container.authorization_service.require_project_admin(user, project_id)
+    request.app.state.container.authorization_service.require_project_admin(
+        user, project_id
+    )
     job = request.app.state.container.job_service.queue_job(
         job_type="archive_project",
         requested_by_user_id=user.user_id,
@@ -218,7 +247,9 @@ def archive_project(project_id: str, request: Request, user=Depends(get_current_
     dependencies=[Depends(require_same_origin)],
 )
 def start_project(project_id: str, request: Request, user=Depends(get_current_user)):
-    current = request.app.state.container.authorization_service.require_project_viewer(user, project_id)
+    current = request.app.state.container.authorization_service.require_project_viewer(
+        user, project_id
+    )
     if current.status == "running":
         return {"job": None, "project": current.to_api(), "already_running": True}
     job = request.app.state.container.job_service.queue_job(
@@ -236,7 +267,9 @@ def start_project(project_id: str, request: Request, user=Depends(get_current_us
     dependencies=[Depends(require_same_origin)],
 )
 def stop_project(project_id: str, request: Request, user=Depends(get_current_user)):
-    current = request.app.state.container.authorization_service.require_project_viewer(user, project_id)
+    current = request.app.state.container.authorization_service.require_project_viewer(
+        user, project_id
+    )
     if current.status == "stopped":
         return {"job": None, "project": current.to_api(), "already_stopped": True}
     job = request.app.state.container.job_service.queue_job(
@@ -259,7 +292,9 @@ def reinstall_environment(
     request: Request,
     user=Depends(get_current_user),
 ):
-    request.app.state.container.authorization_service.require_project_admin(user, project_id)
+    request.app.state.container.authorization_service.require_project_admin(
+        user, project_id
+    )
     job = request.app.state.container.job_service.queue_job(
         job_type="reinstall_environment",
         requested_by_user_id=user.user_id,
@@ -280,7 +315,9 @@ def update_environment(
     request: Request,
     user=Depends(get_current_user),
 ):
-    request.app.state.container.authorization_service.require_project_admin(user, project_id)
+    request.app.state.container.authorization_service.require_project_admin(
+        user, project_id
+    )
     job = request.app.state.container.job_service.queue_job(
         job_type="update_environment",
         requested_by_user_id=user.user_id,
@@ -310,7 +347,9 @@ def update_limits(
 
 
 @router.get("/{project_id}/roles")
-def get_project_roles(project_id: str, request: Request, user=Depends(get_current_user)):
+def get_project_roles(
+    project_id: str, request: Request, user=Depends(get_current_user)
+):
     container = request.app.state.container
     container.authorization_service.require_project_viewer(user, project_id)
     return container.authorization_service.role_summary(project_id)
@@ -324,5 +363,7 @@ def replace_project_roles(
     user=Depends(get_current_user),
 ):
     container = request.app.state.container
-    container.authorization_service.replace_project_roles(user, project_id, payload.model_dump())
+    container.authorization_service.replace_project_roles(
+        user, project_id, payload.model_dump()
+    )
     return container.authorization_service.role_summary(project_id)

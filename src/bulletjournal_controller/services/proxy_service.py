@@ -174,6 +174,91 @@ class ProxyService:
             media_type=response.headers.get("content-type"),
         )
 
+    async def proxy_mcp(self, *, project_id: str, request: Request, username: str):
+        import httpx
+        from fastapi.responses import JSONResponse, StreamingResponse
+
+        try:
+            project = self.require_running_project(project_id)
+        except RuntimeOperationError:
+            return JSONResponse(
+                {
+                    "code": "project_not_running",
+                    "message": "Project runtime is unavailable.",
+                    "retryable": True,
+                },
+                status_code=503,
+            )
+        body = await request.body()
+        if len(body) > 1_048_576:
+            return JSONResponse(
+                {
+                    "code": "payload_too_large",
+                    "message": "MCP request body exceeds 1 MiB.",
+                },
+                status_code=413,
+            )
+        client = self._http_client
+        if client is None:
+            client = httpx.AsyncClient(timeout=None, follow_redirects=False)
+            self._http_client = client
+        target = f"http://127.0.0.1:{project.container_port}{request.url.path}"
+        if request.url.query:
+            target += f"?{request.url.query}"
+        private_headers = {
+            "authorization",
+            "x-bulletjournal-authenticated-user",
+            "x-bulletjournal-controller-token",
+            "x-bulletjournal-controller-assertion",
+        }
+        headers = {
+            key: value
+            for key, value in request.headers.items()
+            if key.lower()
+            not in HOP_BY_HOP_HEADERS | private_headers | {"content-length", "host"}
+        }
+        headers["X-BulletJournal-Controller-Token"] = project.controller_status_token
+        headers["X-BulletJournal-Controller-Assertion"] = f"user:{username}"
+        try:
+            response = await client.send(
+                client.build_request(
+                    request.method, target, content=body, headers=headers
+                ),
+                stream=True,
+            )
+        except httpx.HTTPError:
+            return JSONResponse(
+                {
+                    "code": "internal_error",
+                    "message": "MCP upstream connection failed.",
+                    "retryable": True,
+                },
+                status_code=502,
+            )
+
+        async def stream():
+            try:
+                async for chunk in response.aiter_raw():
+                    yield chunk
+            finally:
+                await response.aclose()
+
+        response_headers = {
+            key: value
+            for key, value in response.headers.multi_items()
+            if key.lower() not in HOP_BY_HOP_HEADERS | {"content-length"}
+        }
+        if response.headers.get("content-type", "").startswith("text/event-stream"):
+            response_headers.update(
+                {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+            )
+        return StreamingResponse(
+            stream(),
+            status_code=response.status_code,
+            headers=response_headers,
+            media_type=response.headers.get("content-type"),
+        )
+
     def _observe_proxy_failure(
         self,
         project_id: str,

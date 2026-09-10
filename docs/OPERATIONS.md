@@ -80,3 +80,18 @@ resource gauges. When metrics are enabled, the controller refreshes system and
 project resources in a background sampler every 15 seconds, independently of
 the web UI and scrape requests. Serving `/metrics` itself performs no Docker
 call or filesystem scan.
+# MCP Setup
+
+Set `BULLETJOURNAL_PUBLIC_ORIGIN` to the canonical HTTPS Controller origin before
+using OAuth or generating an OpenCode MCP setup archive. Instance initialization
+seeds `<instance-root>/config/AGENTS.md` only when it is absent. Operators may
+edit this file, but it is included in every authorized project setup download;
+never put tokens, cookies, API keys, or other secrets in it.
+
+Project viewers can download the OpenCode archive from the MCP setup menu. Extract
+it into its own directory, add that directory through OpenCode's Add Project flow,
+and complete OAuth when OpenCode first connects. Only OpenCode setup is shipped.
+
+Managed MCP projects require `BULLETJOURNAL_ENABLE_MCP=true` in the instance
+runtime `.env`. It is seeded for new instances; after changing it, restart each
+affected project so its container receives the updated environment.

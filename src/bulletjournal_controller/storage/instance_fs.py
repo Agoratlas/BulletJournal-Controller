@@ -114,6 +114,10 @@ class InstancePaths:
         return self.config_dir / "instance.json"
 
     @property
+    def agents_instructions_path(self) -> Path:
+        return self.config_dir / "AGENTS.md"
+
+    @property
     def metadata_dir(self) -> Path:
         return self.root / "metadata"
 
@@ -295,6 +299,9 @@ def delete_project_root(paths: InstancePaths, project_id: str) -> None:
 
 
 def _seed_local_config(paths: InstancePaths, config: InstanceConfig) -> None:
+    _seed_optional_readme(
+        bundled_defaults_root() / "AGENTS.md", paths.agents_instructions_path
+    )
     defaults_runtime_root = bundled_defaults_root() / "runtime"
     if config.default_dependencies_file:
         source = Path(config.default_dependencies_file)

@@ -20,7 +20,15 @@ from bulletjournal_controller.api.auth import get_current_user
 from bulletjournal_controller.api.deps import ServiceContainer
 from bulletjournal_controller.api.errors import install_error_handlers
 from bulletjournal_controller.api.proxy import router as proxy_router
-from bulletjournal_controller.api.routes import auth, events, jobs, projects, system, users
+from bulletjournal_controller.api.routes import (
+    auth,
+    events,
+    jobs,
+    oauth,
+    projects,
+    system,
+    users,
+)
 from bulletjournal_controller.config import ServerConfig, bundled_web_root
 from bulletjournal_controller.observability import normalized_controller_route
 from bulletjournal_controller.services import SESSION_COOKIE_NAME
@@ -39,7 +47,7 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
             app.state.container.stop()
             await app.state.container.aclose()
 
-    app = FastAPI(title="BulletJournal-Controller", version="1.0.1", lifespan=lifespan)
+    app = FastAPI(title="BulletJournal-Controller", version="1.0.2", lifespan=lifespan)
     app.state.server_config = server_config
     app.state.instance_paths = instance_paths
     app.state.container = ServiceContainer(
@@ -88,6 +96,7 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
     app.include_router(
         system.router, prefix=api_prefix, dependencies=[Depends(get_current_user)]
     )
+    app.include_router(oauth.router)
     app.include_router(projects.router, prefix=api_prefix)
     app.include_router(
         jobs.router, prefix=api_prefix, dependencies=[Depends(get_current_user)]

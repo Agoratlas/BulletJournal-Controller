@@ -303,6 +303,10 @@ style.textContent = `
     padding: 0;
     border-radius: 999px;
   }
+  .mcp-action svg {
+    width: 21px;
+    height: 21px;
+  }
   .button-back {
     min-width: 42px;
     padding: 0;
@@ -1633,6 +1637,16 @@ function DownloadIcon(props: SVGProps<SVGSVGElement>) {
       <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
       <path d="M4 20h16" />
     </IconBase>
+  )
+}
+
+function McpIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 180 180" fill="none" aria-hidden="true" {...props}>
+      <path d="M18 84.8528 85.8822 16.9706c9.3726-9.37262 24.5688-9.37262 33.9418 0 9.372 9.3725 9.372 24.5685 0 33.9411L68.5581 102.177" stroke="currentColor" strokeWidth="12" strokeLinecap="round" />
+      <path d="m69.2652 101.47 50.5578-50.558c9.373-9.3726 24.569-9.3726 33.942 0l.353.3535c9.373 9.3726 9.373 24.5686 0 33.9411L92.7248 146.6c-3.1242 3.124-3.1242 8.189 0 11.313l12.6062 12.607" stroke="currentColor" strokeWidth="12" strokeLinecap="round" />
+      <path d="M102.853 33.9411 52.6482 84.1457c-9.3726 9.3726-9.3726 24.5683 0 33.9413 9.3726 9.372 24.5685 9.372 33.9411 0l50.2047-50.2048" stroke="currentColor" strokeWidth="12" strokeLinecap="round" />
+    </svg>
   )
 }
 
@@ -3270,6 +3284,7 @@ function ProjectPage() {
   const [pendingRemovalKind, setPendingRemovalKind] = useState<ProjectRemovalKind | null>(null)
   const [showArchiveModal, setShowArchiveModal] = useState(false)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const [downloadingMcpConfig, setDownloadingMcpConfig] = useState(false)
   const [downloadingExportMode, setDownloadingExportMode] = useState<'code_only' | 'code_and_data' | 'full' | null>(null)
   const [downloadingJobIds, setDownloadingJobIds] = useState<string[]>([])
   const [showAllJobs, setShowAllJobs] = useState(false)
@@ -3647,6 +3662,30 @@ function ProjectPage() {
     }
   }
 
+  async function downloadOpenCodeMcpConfig() {
+    setError(null)
+    setDownloadingMcpConfig(true)
+    try {
+      const response = await fetch(`/api/v1/projects/${projectId}/mcp-config/opencode`, { credentials: 'include' })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null)
+        throw new Error(payload?.detail || 'Failed to download MCP configuration.')
+      }
+      const objectUrl = window.URL.createObjectURL(await response.blob())
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = responseDownloadFilename(response) || `${projectId}.zip`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(objectUrl)
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Failed to download MCP configuration.')
+    } finally {
+      setDownloadingMcpConfig(false)
+    }
+  }
+
   if (loading) {
     return (
       <AppChrome>
@@ -3738,6 +3777,16 @@ function ProjectPage() {
                   {actionState.action === 'stop' || actionState.label === 'Stopping...' ? <StopIcon width={18} height={18} /> : null}
                 </>
               ) : actionState.label}
+            </button>
+            <button
+              className="button-secondary icon-action mcp-action"
+              type="button"
+              aria-label={downloadingMcpConfig ? 'Downloading OpenCode MCP configuration' : 'Download OpenCode MCP configuration'}
+              title={downloadingMcpConfig ? 'Downloading OpenCode MCP configuration' : 'Download OpenCode MCP configuration'}
+              disabled={downloadingMcpConfig}
+              onClick={() => void downloadOpenCodeMcpConfig()}
+            >
+              <McpIcon width={20} height={20} />
             </button>
           </div>
           <div className="metrics-row">

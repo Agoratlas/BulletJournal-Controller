@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from urllib.parse import urlsplit
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -83,6 +84,34 @@ def normalize_base_path(value: str | None) -> str:
     return "/" + stripped.strip("/")
 
 
+def canonical_public_origin(value: str | None, *, allow_http: bool = False) -> str:
+    """Return the configured external origin without accepting request headers."""
+    if not value:
+        raise ConfigurationError(
+            "BULLETJOURNAL_PUBLIC_ORIGIN is required for OAuth and MCP setup."
+        )
+    parsed = urlsplit(value.strip())
+    if (
+        parsed.scheme not in ({"https", "http"} if allow_http else {"https"})
+        or not parsed.netloc
+    ):
+        scheme = "HTTPS" if not allow_http else "HTTP or HTTPS"
+        raise ConfigurationError(
+            f"BULLETJOURNAL_PUBLIC_ORIGIN must be a valid {scheme} origin."
+        )
+    if (
+        parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        raise ConfigurationError(
+            "BULLETJOURNAL_PUBLIC_ORIGIN must contain only scheme and host."
+        )
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
 def default_instance_config() -> InstanceConfig:
     defaults_root = bundled_defaults_root()
     runtime_defaults_root = defaults_root / "runtime"
@@ -161,13 +190,20 @@ def validate_instance_config(config: InstanceConfig) -> None:
         raise ConfigurationError("docker_runtime_image must not be empty.")
     if not config.default_python_version:
         raise ConfigurationError("default_python_version must not be empty.")
-    if config.prometheus_metrics_mode not in {"off", "unauthenticated", "authenticated"}:
+    if config.prometheus_metrics_mode not in {
+        "off",
+        "unauthenticated",
+        "authenticated",
+    }:
         raise ConfigurationError(
             "prometheus_metrics_mode must be `off`, `unauthenticated`, or `authenticated`."
         )
     if config.default_cpu_limit_cpus is not None and config.default_cpu_limit_cpus <= 0:
         raise ConfigurationError("default_cpu_limit_cpus must be positive.")
-    if config.default_memory_limit_gb is not None and config.default_memory_limit_gb <= 0:
+    if (
+        config.default_memory_limit_gb is not None
+        and config.default_memory_limit_gb <= 0
+    ):
         raise ConfigurationError("default_memory_limit_gb must be positive.")
     if (
         config.default_disk_soft_limit_gb is not None

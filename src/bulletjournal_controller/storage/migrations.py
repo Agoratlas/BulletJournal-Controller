@@ -243,4 +243,71 @@ MIGRATIONS: list[tuple[str, str]] = [
 
         """,
     ),
+    (
+        "010_oauth_mcp",
+        """
+        CREATE TABLE oauth_clients (
+            client_id TEXT PRIMARY KEY,
+            client_secret_hash TEXT,
+            redirect_uris_json TEXT NOT NULL,
+            client_name TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            revoked_at TEXT
+        );
+        CREATE TABLE oauth_grants (
+            user_id TEXT NOT NULL,
+            client_id TEXT NOT NULL,
+            project_id TEXT NOT NULL,
+            resource TEXT NOT NULL,
+            scopes TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, client_id, project_id, resource),
+            FOREIGN KEY(user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+            FOREIGN KEY(client_id) REFERENCES oauth_clients(client_id) ON DELETE CASCADE,
+            FOREIGN KEY(project_id) REFERENCES projects(project_id) ON DELETE CASCADE
+        );
+        CREATE TABLE oauth_authorization_codes (
+            code_hash TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            client_id TEXT NOT NULL,
+            project_id TEXT NOT NULL,
+            resource TEXT NOT NULL,
+            redirect_uri TEXT NOT NULL,
+            scopes TEXT NOT NULL,
+            code_challenge TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            consumed_at TEXT,
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE oauth_access_tokens (
+            token_id TEXT PRIMARY KEY,
+            token_hash TEXT NOT NULL UNIQUE,
+            user_id TEXT NOT NULL,
+            client_id TEXT NOT NULL,
+            project_id TEXT NOT NULL,
+            resource TEXT NOT NULL,
+            scopes TEXT NOT NULL,
+            issued_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            revoked_at TEXT
+        );
+        CREATE TABLE oauth_refresh_tokens (
+            token_id TEXT PRIMARY KEY,
+            token_hash TEXT NOT NULL UNIQUE,
+            family_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            client_id TEXT NOT NULL,
+            project_id TEXT NOT NULL,
+            resource TEXT NOT NULL,
+            scopes TEXT NOT NULL,
+            issued_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            replaced_at TEXT,
+            revoked_at TEXT
+        );
+        CREATE INDEX idx_oauth_access_tokens_hash ON oauth_access_tokens(token_hash);
+        CREATE INDEX idx_oauth_refresh_tokens_hash ON oauth_refresh_tokens(token_hash);
+        """,
+    ),
 ]

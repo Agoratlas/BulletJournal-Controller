@@ -14,6 +14,8 @@ from bulletjournal_controller.services.export_service import ExportService
 from bulletjournal_controller.services.job_events import JobEventBroker
 from bulletjournal_controller.services.job_service import JobService
 from bulletjournal_controller.services.metrics_service import MetricsService
+from bulletjournal_controller.services.mcp_config_service import McpConfigService
+from bulletjournal_controller.services.oauth_service import OAuthService
 from bulletjournal_controller.services.project_service import ProjectService
 from bulletjournal_controller.services.proxy_service import ProxyService
 from bulletjournal_controller.services.reconcile_service import ReconcileService
@@ -26,6 +28,7 @@ from bulletjournal_controller.storage import (
     JobRepository,
     ProjectRepository,
     ProjectRoleGrantRepository,
+    OAuthRepository,
     SessionRepository,
     StateDB,
     UserRepository,
@@ -59,6 +62,7 @@ class ServiceContainer:
         self.sessions = SessionRepository(self.state_db)
         self.projects = ProjectRepository(self.state_db)
         self.role_grants = ProjectRoleGrantRepository(self.state_db)
+        self.oauth = OAuthRepository(self.state_db)
         self.jobs = JobRepository(self.state_db)
         self._ensure_system_user()
 
@@ -78,6 +82,17 @@ class ServiceContainer:
             projects=self.projects,
             jobs=self.jobs,
             role_grants=self.role_grants,
+        )
+        self.oauth_service = OAuthService(
+            oauth=self.oauth,
+            users=self.users,
+            authorization_service=self.authorization_service,
+            server_config=server_config,
+        )
+        self.mcp_config_service = McpConfigService(
+            instance_paths=instance_paths,
+            instance_config=self.instance_config,
+            server_config=server_config,
         )
         self.environment_service = EnvironmentService(
             instance_config=self.instance_config,
@@ -223,9 +238,7 @@ class ServiceContainer:
                 self.refresh_prometheus_resources()
             except Exception:
                 pass
-            self._prometheus_resource_stop_event.wait(
-                RESOURCE_REFRESH_SECONDS
-            )
+            self._prometheus_resource_stop_event.wait(RESOURCE_REFRESH_SECONDS)
 
     def _ensure_system_user(self) -> None:
         if self.users.get(SYSTEM_USER_ID) is not None:

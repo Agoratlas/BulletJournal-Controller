@@ -1,4 +1,5 @@
 __all__ = [
+    'SESSION_COOKIE_NAME',
     'AuthService',
     'EnvironmentService',
     'ExportService',
@@ -10,14 +11,13 @@ __all__ = [
     'RuntimeConfigService',
     'RuntimeInfo',
     'RuntimeService',
-    'SESSION_COOKIE_NAME',
     'SessionBundle',
 ]
 
 
 def __getattr__(name: str):
     if name in {'AuthService', 'SESSION_COOKIE_NAME', 'SessionBundle'}:
-        from bulletjournal_controller.services.auth_service import AuthService, SESSION_COOKIE_NAME, SessionBundle
+        from bulletjournal_controller.services.auth_service import SESSION_COOKIE_NAME, AuthService, SessionBundle
 
         mapping = {
             'AuthService': AuthService,

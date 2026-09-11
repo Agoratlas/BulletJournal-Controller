@@ -9,9 +9,9 @@ class DockerAdapter:
         self.docker_host = docker_host
 
     def docker_base_command(self) -> list[str]:
-        command = ["docker"]
+        command = ['docker']
         if self.docker_host:
-            command.extend(["-H", self.docker_host])
+            command.extend(['-H', self.docker_host])
         return command
 
     def build_image_command(
@@ -23,17 +23,11 @@ class DockerAdapter:
         user_uid: int | None = None,
         user_gid: int | None = None,
     ) -> list[str]:
-        command = self.docker_base_command() + [
-            "build",
-            "--tag",
-            image_name,
-            "--file",
-            str(dockerfile_path),
-        ]
+        command = [*self.docker_base_command(), 'build', '--tag', image_name, '--file', str(dockerfile_path)]
         if user_uid is not None:
-            command.extend(["--build-arg", f"BULLETJOURNAL_UID={user_uid}"])
+            command.extend(['--build-arg', f'BULLETJOURNAL_UID={user_uid}'])
         if user_gid is not None:
-            command.extend(["--build-arg", f"BULLETJOURNAL_GID={user_gid}"])
+            command.extend(['--build-arg', f'BULLETJOURNAL_GID={user_gid}'])
         command.append(str(context_path))
         return command
 
@@ -60,112 +54,98 @@ class DockerAdapter:
     ) -> list[str]:
         server_bootstrap = self._build_server_bootstrap(base_path=base_path)
         options = [
-            "--detach",
-            "--name",
+            '--detach',
+            '--name',
             container_name,
-            "--label",
-            f"bulletjournal.project_id={project_id}",
-            "--label",
-            f"bulletjournal.instance_id={instance_id}",
-            "--label",
-            "bulletjournal.managed_by=bulletjournal-controller",
-            "--publish",
-            f"127.0.0.1:{host_port}:8765",
-            "--mount",
-            f"type=bind,src={project_root},dst=/project",
-            "--workdir",
-            "/project",
-            "--network",
+            '--label',
+            f'bulletjournal.project_id={project_id}',
+            '--label',
+            f'bulletjournal.instance_id={instance_id}',
+            '--label',
+            'bulletjournal.managed_by=bulletjournal-controller',
+            '--publish',
+            f'127.0.0.1:{host_port}:8765',
+            '--mount',
+            f'type=bind,src={project_root},dst=/project',
+            '--workdir',
+            '/project',
+            '--network',
             network_mode,
             image,
-            "/project/.runtime/venv/bin/python",
-            "-X",
-            "faulthandler",
-            "-u",
-            "-c",
+            '/project/.runtime/venv/bin/python',
+            '-X',
+            'faulthandler',
+            '-u',
+            '-c',
             server_bootstrap,
         ]
         if cpu_limit_millis is not None:
-            options = ["--cpus", str(cpu_limit_millis / 1000.0)] + options
+            options = ['--cpus', str(cpu_limit_millis / 1000.0), *options]
         if memory_limit_bytes is not None:
-            options = ["--memory", str(memory_limit_bytes)] + options
+            options = ['--memory', str(memory_limit_bytes), *options]
         if env_file is not None:
-            options = ["--env-file", str(env_file)] + options
+            options = ['--env-file', str(env_file), *options]
         if user_uid is not None and user_gid is not None:
-            options = [
-                "--user",
-                f"{user_uid}:{user_gid}",
-                "--env",
-                "HOME=/home/bulletjournal",
-            ] + options
+            options = ['--user', f'{user_uid}:{user_gid}', '--env', 'HOME=/home/bulletjournal', *options]
         if controller_token:
-            options = [
-                "--env",
-                f"BULLETJOURNAL_CONTROLLER_TOKEN={controller_token}",
-            ] + options
+            options = ['--env', f'BULLETJOURNAL_CONTROLLER_TOKEN={controller_token}', *options]
         if gpu_enabled:
             options = [
-                "--runtime",
-                "nvidia",
-                "--env",
-                "NVIDIA_VISIBLE_DEVICES=all",
-                "--env",
-                "NVIDIA_DRIVER_CAPABILITIES=compute,utility",
-            ] + options
+                '--runtime',
+                'nvidia',
+                '--env',
+                'NVIDIA_VISIBLE_DEVICES=all',
+                '--env',
+                'NVIDIA_DRIVER_CAPABILITIES=compute,utility',
+                *options,
+            ]
         for mount_path, target, read_only in additional_mounts or []:
-            mount_spec = f"type=bind,src={mount_path},dst={target}"
+            mount_spec = f'type=bind,src={mount_path},dst={target}'
             if read_only:
-                mount_spec += ",readonly"
-            options = ["--mount", mount_spec] + options
-        return self.docker_base_command() + ["run"] + options
+                mount_spec += ',readonly'
+            options = ['--mount', mount_spec, *options]
+        return [*self.docker_base_command(), 'run', *options]
 
     @staticmethod
     def _build_server_bootstrap(*, base_path: str) -> str:
         server_command = (
-            "from bulletjournal.cli.start import start_server; "
+            'from bulletjournal.cli.start import start_server; '
             f'start_server("/project", host="0.0.0.0", port=8765, base_path={base_path!r})'
         )
         return (
-            "import datetime,pathlib,subprocess,sys; "
-            "from collections import deque; "
+            'import datetime,pathlib,subprocess,sys; '
+            'from collections import deque; '
             "log_path=pathlib.Path('/project/.runtime/logs/server.log'); "
-            "log_path.parent.mkdir(parents=True, exist_ok=True); "
+            'log_path.parent.mkdir(parents=True, exist_ok=True); '
             "log=log_path.open('a', encoding='utf-8', buffering=1); "
             "log.write(f'\\n=== bulletjournal-editor server start {datetime.datetime.utcnow().isoformat()}Z ===\\n'); "
-            f"proc=subprocess.Popen(['/project/.runtime/venv/bin/python','-X','faulthandler','-u','-c',{server_command!r}], "
-            "stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1); "
-            "stream=proc.stdout; "
-            "assert stream is not None; "
-            "deque(((sys.stdout.write(line), sys.stdout.flush(), log.write(line), log.flush()) "
+            f"proc=subprocess.Popen(['/project/.runtime/venv/bin/python','-X','faulthandler','-u','-c',{server_command!r}], "  # noqa: E501
+            'stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1); '
+            'stream=proc.stdout; '
+            'assert stream is not None; '
+            'deque(((sys.stdout.write(line), sys.stdout.flush(), log.write(line), log.flush()) '
             "for line in iter(stream.readline, '')), maxlen=0); "
-            "stream.close(); "
-            "returncode=proc.wait(); "
-            "log.write(f'=== bulletjournal-editor server exit {datetime.datetime.utcnow().isoformat()}Z code={returncode} ===\\n'); "
-            "log.flush(); log.close(); "
-            "sys.exit(returncode if returncode >= 0 else 128 - returncode)"
+            'stream.close(); '
+            'returncode=proc.wait(); '
+            "log.write(f'=== bulletjournal-editor server exit {datetime.datetime.utcnow().isoformat()}Z code={returncode} ===\\n'); "  # noqa: E501
+            'log.flush(); log.close(); '
+            'sys.exit(returncode if returncode >= 0 else 128 - returncode)'
         )
 
     def build_stop_command(self, container_name: str) -> list[str]:
-        return self.docker_base_command() + ["stop", container_name]
+        return [*self.docker_base_command(), 'stop', container_name]
 
     def build_remove_command(self, container_name: str) -> list[str]:
-        return self.docker_base_command() + ["rm", "-f", container_name]
+        return [*self.docker_base_command(), 'rm', '-f', container_name]
 
     def build_inspect_command(self, container_name: str) -> list[str]:
-        return self.docker_base_command() + ["inspect", container_name]
+        return [*self.docker_base_command(), 'inspect', container_name]
 
     def build_logs_command(self, container_name: str) -> list[str]:
-        return self.docker_base_command() + ["logs", container_name]
+        return [*self.docker_base_command(), 'logs', container_name]
 
     def build_list_by_label_command(self, *, label: str) -> list[str]:
-        return self.docker_base_command() + [
-            "ps",
-            "-a",
-            "--filter",
-            f"label={label}",
-            "--format",
-            "{{.Names}}",
-        ]
+        return [*self.docker_base_command(), 'ps', '-a', '--filter', f'label={label}', '--format', '{{.Names}}']
 
     def build_update_command(
         self,
@@ -176,18 +156,18 @@ class DockerAdapter:
         disk_soft_limit_bytes: int | None,
     ) -> list[str]:
         _ = disk_soft_limit_bytes
-        options = ["update"]
+        options = ['update']
         if cpu_limit_millis is not None:
-            options.extend(["--cpus", str(cpu_limit_millis / 1000.0)])
+            options.extend(['--cpus', str(cpu_limit_millis / 1000.0)])
         if memory_limit_bytes is not None:
-            options.extend(["--memory", str(memory_limit_bytes)])
+            options.extend(['--memory', str(memory_limit_bytes)])
         options.append(container_name)
         return self.docker_base_command() + options
 
     def run(
         self, command: list[str], *, timeout: int = 120, capture_output: bool = True
     ) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
+        return subprocess.run(  # noqa: S603 - Command arguments are assembled by validated controller services.
             command,
             capture_output=capture_output,
             text=True,

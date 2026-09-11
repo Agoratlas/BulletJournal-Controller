@@ -11,7 +11,7 @@ def delete_user(instance_root: str, *, username: str) -> dict[str, object]:
     instance_paths = require_instance_root(Path(instance_root))
     container = ServiceContainer(
         instance_paths=instance_paths,
-        server_config=ServerConfig(session_secret="cli-session-secret", cookie_secure=False),
+        server_config=ServerConfig(session_secret='cli-session-secret', cookie_secure=False),  # noqa: S106 - Offline command never serves sessions.
         ensure_runtime_image=False,
         validate_server_config=False,
     )
@@ -19,4 +19,4 @@ def delete_user(instance_root: str, *, username: str) -> dict[str, object]:
         username=username,
         replacement_user_id=SYSTEM_USER_ID,
     )
-    return {"deleted": True, "user_id": user.user_id, "username": user.username}
+    return {'deleted': True, 'user_id': user.user_id, 'username': user.username}

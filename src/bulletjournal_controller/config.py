@@ -2,29 +2,27 @@ from __future__ import annotations
 
 import json
 import os
-from urllib.parse import urlsplit
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from bulletjournal_controller.domain.errors import ConfigurationError
 from bulletjournal_controller.utils import env_bool
 
-DEFAULT_HOST = "127.0.0.1"
+DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = 8780
 INSTANCE_SCHEMA_VERSION = 2
 EXPORT_MANIFEST_VERSION = 1
 DEFAULT_IDLE_TIMEOUT_SECONDS = 86400
 DEFAULT_SESSION_LIFETIME_SECONDS = 7 * 24 * 60 * 60
-WEB_DIST_DIRNAME = "_web"
-DEFAULTS_DIRNAME = "defaults"
+WEB_DIST_DIRNAME = '_web'
+DEFAULTS_DIRNAME = 'defaults'
 JOB_POLL_INTERVAL_SECONDS = 0.2
 RECONCILE_INTERVAL_SECONDS = 300
 DEFAULT_RUNTIME_INTERNAL_PORT = 8765
 DB_TIMEOUT_SECONDS = 30.0
-MANAGED_RUNTIME_PACKAGE_NAME = "bulletjournal-editor"
-MANAGED_RUNTIME_PACKAGE_ALIASES = frozenset(
-    {MANAGED_RUNTIME_PACKAGE_NAME, "bulletjournal"}
-)
+MANAGED_RUNTIME_PACKAGE_NAME = 'bulletjournal-editor'
+MANAGED_RUNTIME_PACKAGE_ALIASES = frozenset({MANAGED_RUNTIME_PACKAGE_NAME, 'bulletjournal'})
 
 
 @dataclass(slots=True, frozen=True)
@@ -44,7 +42,7 @@ class InstanceConfig:
     default_dependencies_file: str | None = None
     runtime_dockerfile: str | None = None
     runtime_build_context: str | None = None
-    prometheus_metrics_mode: str = "off"
+    prometheus_metrics_mode: str = 'off'
 
 
 @dataclass(slots=True, frozen=True)
@@ -52,13 +50,13 @@ class ServerConfig:
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
     public_origin: str | None = None
-    log_level: str = "info"
+    log_level: str = 'info'
     docker_host: str | None = None
     archive_dir: str | None = None
     archive_encryption_key: str | None = None
     enable_gpu: bool = False
     cookie_secure: bool = False
-    session_secret: str = ""
+    session_secret: str = ''
     dev_frontend_url: str | None = None
     prometheus_api_key: str | None = None
 
@@ -77,98 +75,71 @@ def bundled_defaults_root() -> Path:
 
 def normalize_base_path(value: str | None) -> str:
     if value is None:
-        return ""
+        return ''
     stripped = value.strip()
-    if not stripped or stripped == "/":
-        return ""
-    return "/" + stripped.strip("/")
+    if not stripped or stripped == '/':
+        return ''
+    return '/' + stripped.strip('/')
 
 
 def canonical_public_origin(value: str | None, *, allow_http: bool = False) -> str:
     """Return the configured external origin without accepting request headers."""
     if not value:
-        raise ConfigurationError(
-            "BULLETJOURNAL_PUBLIC_ORIGIN is required for OAuth and MCP setup."
-        )
+        raise ConfigurationError('BULLETJOURNAL_PUBLIC_ORIGIN is required for OAuth and MCP setup.')
     parsed = urlsplit(value.strip())
-    if (
-        parsed.scheme not in ({"https", "http"} if allow_http else {"https"})
-        or not parsed.netloc
-    ):
-        scheme = "HTTPS" if not allow_http else "HTTP or HTTPS"
-        raise ConfigurationError(
-            f"BULLETJOURNAL_PUBLIC_ORIGIN must be a valid {scheme} origin."
-        )
-    if (
-        parsed.path not in {"", "/"}
-        or parsed.query
-        or parsed.fragment
-        or parsed.username
-        or parsed.password
-    ):
-        raise ConfigurationError(
-            "BULLETJOURNAL_PUBLIC_ORIGIN must contain only scheme and host."
-        )
-    return f"{parsed.scheme}://{parsed.netloc}"
+    if parsed.scheme not in ({'https', 'http'} if allow_http else {'https'}) or not parsed.netloc:
+        scheme = 'HTTPS' if not allow_http else 'HTTP or HTTPS'
+        raise ConfigurationError(f'BULLETJOURNAL_PUBLIC_ORIGIN must be a valid {scheme} origin.')
+    if parsed.path not in {'', '/'} or parsed.query or parsed.fragment or parsed.username or parsed.password:
+        raise ConfigurationError('BULLETJOURNAL_PUBLIC_ORIGIN must contain only scheme and host.')
+    return f'{parsed.scheme}://{parsed.netloc}'
 
 
 def default_instance_config() -> InstanceConfig:
     defaults_root = bundled_defaults_root()
-    runtime_defaults_root = defaults_root / "runtime"
+    runtime_defaults_root = defaults_root / 'runtime'
     return InstanceConfig(
         schema_version=INSTANCE_SCHEMA_VERSION,
-        instance_id="main",
-        title="BulletJournal Controller",
-        project_root_dir="projects",
-        exports_dir="exports",
+        instance_id='main',
+        title='BulletJournal Controller',
+        project_root_dir='projects',
+        exports_dir='exports',
         idle_timeout_seconds=DEFAULT_IDLE_TIMEOUT_SECONDS,
-        docker_runtime_image="bulletjournal-runtime:local",
-        docker_network_mode="bridge",
-        default_python_version="3.11",
+        docker_runtime_image='bulletjournal-runtime:local',
+        docker_network_mode='bridge',
+        default_python_version='3.11',
         default_cpu_limit_cpus=None,
         default_memory_limit_gb=None,
         default_disk_soft_limit_gb=None,
-        default_dependencies_file=str(
-            runtime_defaults_root / "default-dependencies.txt"
-        ),
-        runtime_dockerfile=str(runtime_defaults_root / "Dockerfile"),
+        default_dependencies_file=str(runtime_defaults_root / 'default-dependencies.txt'),
+        runtime_dockerfile=str(runtime_defaults_root / 'Dockerfile'),
         runtime_build_context=str(runtime_defaults_root),
-        prometheus_metrics_mode="off",
+        prometheus_metrics_mode='off',
     )
 
 
 def instance_config_from_dict(data: dict[str, object]) -> InstanceConfig:
     try:
         config = InstanceConfig(
-            schema_version=_required_int(data, "schema_version"),
-            instance_id=_required_str(data, "instance_id"),
-            title=_required_str(data, "title"),
-            project_root_dir=_required_str(data, "project_root_dir"),
-            exports_dir=_required_str(data, "exports_dir"),
-            idle_timeout_seconds=_required_int(data, "idle_timeout_seconds"),
-            docker_runtime_image=_required_str(data, "docker_runtime_image"),
-            docker_network_mode=_required_str(data, "docker_network_mode"),
-            default_python_version=_required_str(data, "default_python_version"),
-            default_cpu_limit_cpus=_optional_positive_float(
-                data.get("default_cpu_limit_cpus")
-            ),
-            default_memory_limit_gb=_optional_positive_float(
-                data.get("default_memory_limit_gb")
-            ),
-            default_disk_soft_limit_gb=_optional_positive_float(
-                data.get("default_disk_soft_limit_gb")
-            ),
-            default_dependencies_file=_optional_str(
-                data.get("default_dependencies_file")
-            ),
-            runtime_dockerfile=_optional_str(data.get("runtime_dockerfile")),
-            runtime_build_context=_optional_str(data.get("runtime_build_context")),
-            prometheus_metrics_mode=_metrics_mode(data.get("prometheus_metrics_mode")),
+            schema_version=_required_int(data, 'schema_version'),
+            instance_id=_required_str(data, 'instance_id'),
+            title=_required_str(data, 'title'),
+            project_root_dir=_required_str(data, 'project_root_dir'),
+            exports_dir=_required_str(data, 'exports_dir'),
+            idle_timeout_seconds=_required_int(data, 'idle_timeout_seconds'),
+            docker_runtime_image=_required_str(data, 'docker_runtime_image'),
+            docker_network_mode=_required_str(data, 'docker_network_mode'),
+            default_python_version=_required_str(data, 'default_python_version'),
+            default_cpu_limit_cpus=_optional_positive_float(data.get('default_cpu_limit_cpus')),
+            default_memory_limit_gb=_optional_positive_float(data.get('default_memory_limit_gb')),
+            default_disk_soft_limit_gb=_optional_positive_float(data.get('default_disk_soft_limit_gb')),
+            default_dependencies_file=_optional_str(data.get('default_dependencies_file')),
+            runtime_dockerfile=_optional_str(data.get('runtime_dockerfile')),
+            runtime_build_context=_optional_str(data.get('runtime_build_context')),
+            prometheus_metrics_mode=_metrics_mode(data.get('prometheus_metrics_mode')),
         )
     except KeyError as exc:
-        raise ConfigurationError(
-            f"Missing required instance configuration field: {exc.args[0]}"
-        ) from exc
+        raise ConfigurationError(f'Missing required instance configuration field: {exc.args[0]}') from exc
     validate_instance_config(config)
     return config
 
@@ -176,101 +147,85 @@ def instance_config_from_dict(data: dict[str, object]) -> InstanceConfig:
 def validate_instance_config(config: InstanceConfig) -> None:
     if config.schema_version != INSTANCE_SCHEMA_VERSION:
         raise ConfigurationError(
-            f"Unsupported instance schema version {config.schema_version}; expected {INSTANCE_SCHEMA_VERSION}.",
+            f'Unsupported instance schema version {config.schema_version}; expected {INSTANCE_SCHEMA_VERSION}.',
         )
     if not config.instance_id:
-        raise ConfigurationError("instance_id must not be empty.")
+        raise ConfigurationError('instance_id must not be empty.')
     if not config.project_root_dir:
-        raise ConfigurationError("project_root_dir must not be empty.")
+        raise ConfigurationError('project_root_dir must not be empty.')
     if not config.exports_dir:
-        raise ConfigurationError("exports_dir must not be empty.")
+        raise ConfigurationError('exports_dir must not be empty.')
     if config.idle_timeout_seconds <= 0:
-        raise ConfigurationError("idle_timeout_seconds must be positive.")
+        raise ConfigurationError('idle_timeout_seconds must be positive.')
     if not config.docker_runtime_image:
-        raise ConfigurationError("docker_runtime_image must not be empty.")
+        raise ConfigurationError('docker_runtime_image must not be empty.')
     if not config.default_python_version:
-        raise ConfigurationError("default_python_version must not be empty.")
+        raise ConfigurationError('default_python_version must not be empty.')
     if config.prometheus_metrics_mode not in {
-        "off",
-        "unauthenticated",
-        "authenticated",
+        'off',
+        'unauthenticated',
+        'authenticated',
     }:
-        raise ConfigurationError(
-            "prometheus_metrics_mode must be `off`, `unauthenticated`, or `authenticated`."
-        )
+        raise ConfigurationError('prometheus_metrics_mode must be `off`, `unauthenticated`, or `authenticated`.')
     if config.default_cpu_limit_cpus is not None and config.default_cpu_limit_cpus <= 0:
-        raise ConfigurationError("default_cpu_limit_cpus must be positive.")
-    if (
-        config.default_memory_limit_gb is not None
-        and config.default_memory_limit_gb <= 0
-    ):
-        raise ConfigurationError("default_memory_limit_gb must be positive.")
-    if (
-        config.default_disk_soft_limit_gb is not None
-        and config.default_disk_soft_limit_gb <= 0
-    ):
-        raise ConfigurationError("default_disk_soft_limit_gb must be positive.")
+        raise ConfigurationError('default_cpu_limit_cpus must be positive.')
+    if config.default_memory_limit_gb is not None and config.default_memory_limit_gb <= 0:
+        raise ConfigurationError('default_memory_limit_gb must be positive.')
+    if config.default_disk_soft_limit_gb is not None and config.default_disk_soft_limit_gb <= 0:
+        raise ConfigurationError('default_disk_soft_limit_gb must be positive.')
 
 
 def load_instance_config(path: Path) -> InstanceConfig:
     if not path.is_file():
-        raise ConfigurationError(f"Instance configuration file not found: {path}")
-    data = json.loads(path.read_text(encoding="utf-8"))
+        raise ConfigurationError(f'Instance configuration file not found: {path}')
+    data = json.loads(path.read_text(encoding='utf-8'))
     if not isinstance(data, dict):
-        raise ConfigurationError("Instance configuration must be a JSON object.")
+        raise ConfigurationError('Instance configuration must be a JSON object.')
     return instance_config_from_dict(data)
 
 
 def instance_config_json(config: InstanceConfig) -> str:
     data = {
-        "schema_version": config.schema_version,
-        "instance_id": config.instance_id,
-        "title": config.title,
-        "project_root_dir": config.project_root_dir,
-        "exports_dir": config.exports_dir,
-        "idle_timeout_seconds": config.idle_timeout_seconds,
-        "docker_runtime_image": config.docker_runtime_image,
-        "docker_network_mode": config.docker_network_mode,
-        "default_python_version": config.default_python_version,
-        "default_cpu_limit_cpus": config.default_cpu_limit_cpus,
-        "default_memory_limit_gb": config.default_memory_limit_gb,
-        "default_disk_soft_limit_gb": config.default_disk_soft_limit_gb,
-        "default_dependencies_file": config.default_dependencies_file,
-        "runtime_dockerfile": config.runtime_dockerfile,
-        "runtime_build_context": config.runtime_build_context,
-        "prometheus_metrics_mode": config.prometheus_metrics_mode,
+        'schema_version': config.schema_version,
+        'instance_id': config.instance_id,
+        'title': config.title,
+        'project_root_dir': config.project_root_dir,
+        'exports_dir': config.exports_dir,
+        'idle_timeout_seconds': config.idle_timeout_seconds,
+        'docker_runtime_image': config.docker_runtime_image,
+        'docker_network_mode': config.docker_network_mode,
+        'default_python_version': config.default_python_version,
+        'default_cpu_limit_cpus': config.default_cpu_limit_cpus,
+        'default_memory_limit_gb': config.default_memory_limit_gb,
+        'default_disk_soft_limit_gb': config.default_disk_soft_limit_gb,
+        'default_dependencies_file': config.default_dependencies_file,
+        'runtime_dockerfile': config.runtime_dockerfile,
+        'runtime_build_context': config.runtime_build_context,
+        'prometheus_metrics_mode': config.prometheus_metrics_mode,
     }
-    return json.dumps(data, indent=2, sort_keys=False) + "\n"
+    return json.dumps(data, indent=2, sort_keys=False) + '\n'
 
 
 def load_server_config_from_env() -> ServerConfig:
-    session_secret = (os.environ.get("BULLETJOURNAL_SESSION_SECRET") or "").strip()
+    session_secret = (os.environ.get('BULLETJOURNAL_SESSION_SECRET') or '').strip()
     if not session_secret:
-        raise ConfigurationError("BULLETJOURNAL_SESSION_SECRET is required.")
-    cookie_secure = env_bool("BULLETJOURNAL_COOKIE_SECURE")
+        raise ConfigurationError('BULLETJOURNAL_SESSION_SECRET is required.')
+    cookie_secure = env_bool('BULLETJOURNAL_COOKIE_SECURE')
     if cookie_secure is None:
-        raise ConfigurationError("BULLETJOURNAL_COOKIE_SECURE is required.")
+        raise ConfigurationError('BULLETJOURNAL_COOKIE_SECURE is required.')
     return ServerConfig(
-        host=(os.environ.get("BULLETJOURNAL_HOST") or DEFAULT_HOST).strip()
-        or DEFAULT_HOST,
-        port=int((os.environ.get("BULLETJOURNAL_PORT") or str(DEFAULT_PORT)).strip()),
-        public_origin=_optional_str(os.environ.get("BULLETJOURNAL_PUBLIC_ORIGIN")),
-        log_level=(os.environ.get("BULLETJOURNAL_LOG_LEVEL") or "info").strip()
-        or "info",
-        docker_host=_optional_str(os.environ.get("BULLETJOURNAL_DOCKER_HOST")),
-        archive_dir=_optional_str(os.environ.get("BULLETJOURNAL_ARCHIVE_DIR")),
-        archive_encryption_key=_optional_str(
-            os.environ.get("BULLETJOURNAL_ARCHIVE_ENCRYPTION_KEY")
-        ),
-        enable_gpu=bool(env_bool("BULLETJOURNAL_ENABLE_GPU", default=False)),
+        host=(os.environ.get('BULLETJOURNAL_HOST') or DEFAULT_HOST).strip() or DEFAULT_HOST,
+        port=int((os.environ.get('BULLETJOURNAL_PORT') or str(DEFAULT_PORT)).strip()),
+        public_origin=_optional_str(os.environ.get('BULLETJOURNAL_PUBLIC_ORIGIN')),
+        log_level=(os.environ.get('BULLETJOURNAL_LOG_LEVEL') or 'info').strip() or 'info',
+        docker_host=_optional_str(os.environ.get('BULLETJOURNAL_DOCKER_HOST')),
+        archive_dir=_optional_str(os.environ.get('BULLETJOURNAL_ARCHIVE_DIR')),
+        archive_encryption_key=_optional_str(os.environ.get('BULLETJOURNAL_ARCHIVE_ENCRYPTION_KEY')),
+        enable_gpu=bool(env_bool('BULLETJOURNAL_ENABLE_GPU', default=False)),
         cookie_secure=bool(cookie_secure),
         session_secret=session_secret,
-        dev_frontend_url=_optional_str(
-            os.environ.get("BULLETJOURNAL_DEV_FRONTEND_URL")
-        ),
-        prometheus_api_key=_optional_str(
-            os.environ.get("BULLETJOURNAL_PROMETHEUS_API_KEY")
-        ),
+        dev_frontend_url=_optional_str(os.environ.get('BULLETJOURNAL_DEV_FRONTEND_URL')),
+        prometheus_api_key=_optional_str(os.environ.get('BULLETJOURNAL_PROMETHEUS_API_KEY')),
     )
 
 
@@ -285,35 +240,35 @@ def _required_str(data: dict[str, object], key: str) -> str:
     value = data[key]
     text = str(value).strip()
     if not text:
-        raise ConfigurationError(f"{key} must not be empty.")
+        raise ConfigurationError(f'{key} must not be empty.')
     return text
 
 
 def _required_int(data: dict[str, object], key: str) -> int:
     value = data[key]
     if isinstance(value, bool):
-        raise ConfigurationError(f"{key} must be an integer.")
+        raise ConfigurationError(f'{key} must be an integer.')
     try:
         return int(str(value))
     except (TypeError, ValueError) as exc:
-        raise ConfigurationError(f"{key} must be an integer.") from exc
+        raise ConfigurationError(f'{key} must be an integer.') from exc
 
 
 def _optional_positive_float(value: object) -> float | None:
     if value is None:
         return None
     if isinstance(value, bool):
-        raise ConfigurationError("Expected a positive number.")
+        raise ConfigurationError('Expected a positive number.')
     try:
         parsed = float(str(value).strip())
     except (TypeError, ValueError) as exc:
-        raise ConfigurationError("Expected a positive number.") from exc
+        raise ConfigurationError('Expected a positive number.') from exc
     if parsed <= 0:
-        raise ConfigurationError("Expected a positive number.")
+        raise ConfigurationError('Expected a positive number.')
     return parsed
 
 
 def _metrics_mode(value: object) -> str:
     if value is None:
-        return "off"
-    return str(value).strip().lower() or "off"
+        return 'off'
+    return str(value).strip().lower() or 'off'

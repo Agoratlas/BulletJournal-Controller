@@ -43,9 +43,7 @@ def test_serves_bundled_favicon(instance_root, server_config) -> None:
         assert '<svg' in response.text
 
 
-def test_system_info_includes_default_project_limit_prefills(
-    instance_root, server_config
-) -> None:
+def test_system_info_includes_default_project_limit_prefills(instance_root, server_config) -> None:
     instance_json = instance_root / 'config' / 'instance.json'
     payload = json.loads(instance_json.read_text(encoding='utf-8'))
     assert payload['schema_version'] == 2

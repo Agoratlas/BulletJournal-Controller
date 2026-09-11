@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode, urlsplit, urlunsplit
@@ -19,16 +20,16 @@ if TYPE_CHECKING:
 
 
 HOP_BY_HOP_HEADERS = {
-    "connection",
-    "keep-alive",
-    "proxy-authenticate",
-    "proxy-authorization",
-    "te",
-    "trailer",
-    "transfer-encoding",
-    "upgrade",
+    'connection',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authorization',
+    'te',
+    'trailer',
+    'transfer-encoding',
+    'upgrade',
 }
-EDITOR_SESSION_PATH_FRAGMENT = "/api/v1/edit/sessions/"
+EDITOR_SESSION_PATH_FRAGMENT = '/api/v1/edit/sessions/'
 RUNNING_PROJECT_CHECK_TTL_SECONDS = 1.0
 
 
@@ -42,17 +43,13 @@ class ProxyService:
 
     def require_running_project(self, project_id: str):
         project = self.project_service.get_project(project_id)
-        container_name = getattr(project, "container_name", None)
-        runtime_service = getattr(self.project_service, "runtime_service", None)
-        if (
-            project.status == ProjectStatus.RUNNING.value
-            and container_name
-            and runtime_service is not None
-        ):
+        container_name = getattr(project, 'container_name', None)
+        runtime_service = getattr(self.project_service, 'runtime_service', None)
+        if project.status == ProjectStatus.RUNNING.value and container_name and runtime_service is not None:
             if self._should_refresh_running_project(project_id, container_name):
                 if runtime_service.inspect_container(container_name) is None:
                     self._running_project_check_deadlines.pop(project_id, None)
-                    capture = getattr(runtime_service, "write_crash_diagnostics", None)
+                    capture = getattr(runtime_service, 'write_crash_diagnostics', None)
                     if capture is not None:
                         capture(project=project, container_name=container_name)
                     self.project_service.mark_runtime_crashed(project_id)
@@ -64,16 +61,11 @@ class ProxyService:
                     )
         else:
             self._running_project_check_deadlines.pop(project_id, None)
-        if (
-            project.status != ProjectStatus.RUNNING.value
-            or project.container_port is None
-        ):
-            raise RuntimeOperationError("Project runtime is unavailable.")
+        if project.status != ProjectStatus.RUNNING.value or project.container_port is None:
+            raise RuntimeOperationError('Project runtime is unavailable.')
         return project
 
-    def _should_refresh_running_project(
-        self, project_id: str, container_name: str
-    ) -> bool:
+    def _should_refresh_running_project(self, project_id: str, container_name: str) -> bool:
         cached = self._running_project_check_deadlines.get(project_id)
         if cached is None:
             return True
@@ -96,25 +88,21 @@ class ProxyService:
 
         _ = path
         started_at = time.perf_counter()
-        endpoint = normalized_project_endpoint(
-            method=request.method, path=target_path_override or request.url.path
-        )
+        endpoint = normalized_project_endpoint(method=request.method, path=target_path_override or request.url.path)
         try:
             project = self.require_running_project(project_id)
         except RuntimeOperationError:
-            self._observe_proxy_failure(
-                project_id, endpoint, request.method, started_at, "runtime_unavailable"
-            )
+            self._observe_proxy_failure(project_id, endpoint, request.method, started_at, 'runtime_unavailable')
             raise
         query = urlencode(list(request.query_params.multi_items()))
         target_path = target_path_override or request.url.path
-        target = f"http://127.0.0.1:{project.container_port}{target_path}"
+        target = f'http://127.0.0.1:{project.container_port}{target_path}'
         if query:
-            target = f"{target}?{query}"
+            target = f'{target}?{query}'
         body = await request.body()
         client = self._http_client
         if client is None:
-            client = httpx.AsyncClient(timeout=None, follow_redirects=False)
+            client = httpx.AsyncClient(timeout=httpx.Timeout(5.0, read=None), follow_redirects=False)
             self._http_client = client
         upstream = client.build_request(
             request.method,
@@ -131,14 +119,10 @@ class ProxyService:
         try:
             response = await client.send(upstream, stream=True)
         except httpx.HTTPError as exc:
-            self._observe_proxy_failure(
-                project_id, endpoint, request.method, started_at, "upstream_error"
-            )
-            return Response(
-                status_code=502, content=f"Upstream proxy request failed: {exc}"
-            )
+            self._observe_proxy_failure(project_id, endpoint, request.method, started_at, 'upstream_error')
+            return Response(status_code=502, content=f'Upstream proxy request failed: {exc}')
 
-        app_duration = server_timing_app_seconds(response.headers.get("server-timing"))
+        app_duration = server_timing_app_seconds(response.headers.get('server-timing'))
         outcome = self._outcome_for_status(response.status_code)
 
         async def body_iterator():
@@ -147,7 +131,7 @@ class ProxyService:
                 async for chunk in response.aiter_bytes():
                     yield chunk
             except httpx.HTTPError:
-                stream_outcome = "upstream_error"
+                stream_outcome = 'upstream_error'
             finally:
                 await response.aclose()
                 self._observe_proxy_completion(
@@ -164,14 +148,14 @@ class ProxyService:
             response.headers,
             project_id=project_id,
             upstream_port=project.container_port,
-            request_host=request.headers.get("host", ""),
+            request_host=request.headers.get('host', ''),
             request_scheme=request.url.scheme,
         )
         return StreamingResponse(
             body_iterator(),
             status_code=response.status_code,
             headers=response_headers,
-            media_type=response.headers.get("content-type"),
+            media_type=response.headers.get('content-type'),
         )
 
     async def proxy_mcp(self, *, project_id: str, request: Request, username: str):
@@ -183,9 +167,9 @@ class ProxyService:
         except RuntimeOperationError:
             return JSONResponse(
                 {
-                    "code": "project_not_running",
-                    "message": "Project runtime is unavailable.",
-                    "retryable": True,
+                    'code': 'project_not_running',
+                    'message': 'Project runtime is unavailable.',
+                    'retryable': True,
                 },
                 status_code=503,
             )
@@ -193,45 +177,42 @@ class ProxyService:
         if len(body) > 1_048_576:
             return JSONResponse(
                 {
-                    "code": "payload_too_large",
-                    "message": "MCP request body exceeds 1 MiB.",
+                    'code': 'payload_too_large',
+                    'message': 'MCP request body exceeds 1 MiB.',
                 },
                 status_code=413,
             )
         client = self._http_client
         if client is None:
-            client = httpx.AsyncClient(timeout=None, follow_redirects=False)
+            client = httpx.AsyncClient(timeout=httpx.Timeout(5.0, read=None), follow_redirects=False)
             self._http_client = client
-        target = f"http://127.0.0.1:{project.container_port}{request.url.path}"
+        target = f'http://127.0.0.1:{project.container_port}{request.url.path}'
         if request.url.query:
-            target += f"?{request.url.query}"
+            target += f'?{request.url.query}'
         private_headers = {
-            "authorization",
-            "x-bulletjournal-authenticated-user",
-            "x-bulletjournal-controller-token",
-            "x-bulletjournal-controller-assertion",
+            'authorization',
+            'x-bulletjournal-authenticated-user',
+            'x-bulletjournal-controller-token',
+            'x-bulletjournal-controller-assertion',
         }
         headers = {
             key: value
             for key, value in request.headers.items()
-            if key.lower()
-            not in HOP_BY_HOP_HEADERS | private_headers | {"content-length", "host"}
+            if key.lower() not in HOP_BY_HOP_HEADERS | private_headers | {'content-length', 'host'}
         }
-        headers["X-BulletJournal-Controller-Token"] = project.controller_status_token
-        headers["X-BulletJournal-Controller-Assertion"] = f"user:{username}"
+        headers['X-BulletJournal-Controller-Token'] = project.controller_status_token
+        headers['X-BulletJournal-Controller-Assertion'] = f'user:{username}'
         try:
             response = await client.send(
-                client.build_request(
-                    request.method, target, content=body, headers=headers
-                ),
+                client.build_request(request.method, target, content=body, headers=headers),
                 stream=True,
             )
         except httpx.HTTPError:
             return JSONResponse(
                 {
-                    "code": "internal_error",
-                    "message": "MCP upstream connection failed.",
-                    "retryable": True,
+                    'code': 'internal_error',
+                    'message': 'MCP upstream connection failed.',
+                    'retryable': True,
                 },
                 status_code=502,
             )
@@ -246,17 +227,15 @@ class ProxyService:
         response_headers = {
             key: value
             for key, value in response.headers.multi_items()
-            if key.lower() not in HOP_BY_HOP_HEADERS | {"content-length"}
+            if key.lower() not in HOP_BY_HOP_HEADERS | {'content-length'}
         }
-        if response.headers.get("content-type", "").startswith("text/event-stream"):
-            response_headers.update(
-                {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
-            )
+        if response.headers.get('content-type', '').startswith('text/event-stream'):
+            response_headers.update({'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
         return StreamingResponse(
             stream(),
             status_code=response.status_code,
             headers=response_headers,
-            media_type=response.headers.get("content-type"),
+            media_type=response.headers.get('content-type'),
         )
 
     def _observe_proxy_failure(
@@ -292,7 +271,7 @@ class ProxyService:
         if metrics is None:
             return
         duration = max(0.0, time.perf_counter() - started_at)
-        status_class = "5xx" if status_code is None else f"{status_code // 100}xx"
+        status_class = '5xx' if status_code is None else f'{status_code // 100}xx'
         if not is_long_lived_endpoint(endpoint):
             metrics.observe_project_request(
                 project_id=project_id,
@@ -304,13 +283,13 @@ class ProxyService:
             return
         metrics.requests_per_route.labels(
             route=endpoint,
-            route_type="project",
+            route_type='project',
             method=method,
             status_class=status_class,
         ).inc()
         metrics.requests_per_route_duration.labels(
             route=endpoint,
-            route_type="project",
+            route_type='project',
             method=method,
             status_class=status_class,
         ).observe(duration)
@@ -318,10 +297,10 @@ class ProxyService:
     @staticmethod
     def _outcome_for_status(status_code: int) -> str:
         if status_code < 400:
-            return "success"
+            return 'success'
         if status_code < 500:
-            return "client_error"
-        return "server_error"
+            return 'client_error'
+        return 'server_error'
 
     async def aclose(self) -> None:
         client = self._http_client
@@ -344,12 +323,10 @@ class ProxyService:
         project = self.require_running_project(project_id)
         query = urlencode(list(websocket.query_params.multi_items()))
         target_path = websocket.url.path
-        target = f"ws://127.0.0.1:{project.container_port}{target_path}"
+        target = f'ws://127.0.0.1:{project.container_port}{target_path}'
         if query:
-            target = f"{target}?{query}"
-        requested_subprotocols = [
-            item for item in websocket.scope.get("subprotocols", []) if item
-        ]
+            target = f'{target}?{query}'
+        requested_subprotocols = [item for item in websocket.scope.get('subprotocols', []) if item]
         async with ws_connect(
             target,
             additional_headers=list(
@@ -374,19 +351,19 @@ class ProxyService:
         request: Request,
         project_id: str,
         username: str,
-        target_path: str = "",
+        target_path: str = '',
     ) -> dict[str, str]:
         forwarded = {
             key: value
             for key, value in headers.items()
-            if key.lower() not in HOP_BY_HOP_HEADERS and key.lower() != "content-length"
+            if key.lower() not in HOP_BY_HOP_HEADERS and key.lower() != 'content-length'
         }
-        forwarded["host"] = request.headers.get("host", "")
-        forwarded["X-Forwarded-Host"] = request.headers.get("host", "")
-        forwarded["X-Forwarded-Proto"] = request.url.scheme
-        forwarded["X-BulletJournal-Authenticated-User"] = username
+        forwarded['host'] = request.headers.get('host', '')
+        forwarded['X-Forwarded-Host'] = request.headers.get('host', '')
+        forwarded['X-Forwarded-Proto'] = request.url.scheme
+        forwarded['X-BulletJournal-Authenticated-User'] = username
         if EDITOR_SESSION_PATH_FRAGMENT in target_path:
-            forwarded.pop("origin", None)
+            forwarded.pop('origin', None)
         return forwarded
 
     def _websocket_headers(
@@ -401,16 +378,15 @@ class ProxyService:
         forwarded = {
             key: value
             for key, value in websocket.headers.items()
-            if key.lower() not in HOP_BY_HOP_HEADERS
-            and not key.lower().startswith("sec-websocket-")
+            if key.lower() not in HOP_BY_HOP_HEADERS and not key.lower().startswith('sec-websocket-')
         }
-        forwarded["host"] = websocket.headers.get("host", "")
-        forwarded["X-Forwarded-Host"] = websocket.headers.get("host", "")
-        forwarded["X-Forwarded-Proto"] = websocket.url.scheme
-        forwarded["X-BulletJournal-Authenticated-User"] = username
+        forwarded['host'] = websocket.headers.get('host', '')
+        forwarded['X-Forwarded-Host'] = websocket.headers.get('host', '')
+        forwarded['X-Forwarded-Proto'] = websocket.url.scheme
+        forwarded['X-BulletJournal-Authenticated-User'] = username
         if EDITOR_SESSION_PATH_FRAGMENT in target_path:
-            forwarded.pop("origin", None)
-            forwarded["host"] = f"127.0.0.1:{upstream_port}"
+            forwarded.pop('origin', None)
+            forwarded['host'] = f'127.0.0.1:{upstream_port}'
         return forwarded
 
     def _response_headers(
@@ -425,9 +401,9 @@ class ProxyService:
         resolved = {
             key: value
             for key, value in headers.items()
-            if key.lower() not in HOP_BY_HOP_HEADERS and key.lower() != "content-length"
+            if key.lower() not in HOP_BY_HOP_HEADERS and key.lower() != 'content-length'
         }
-        for key in ("location", "Location"):
+        for key in ('location', 'Location'):
             value = resolved.get(key)
             if value:
                 resolved[key] = self._rewrite_location(
@@ -448,16 +424,16 @@ class ProxyService:
         request_host: str,
         request_scheme: str,
     ) -> str:
-        prefix = f"/p/{project_id}"
-        if location.startswith(("http://127.0.0.1:", "http://localhost:")):
+        prefix = f'/p/{project_id}'
+        if location.startswith(('http://127.0.0.1:', 'http://localhost:')):
             parsed = urlsplit(location)
             if parsed.port == upstream_port and parsed.path:
                 path = (
                     parsed.path
                     if parsed.path.startswith(prefix)
-                    else f"{prefix}{parsed.path if parsed.path.startswith('/') else '/' + parsed.path}"
+                    else f'{prefix}{parsed.path if parsed.path.startswith("/") else "/" + parsed.path}'
                 )
-                return urlunsplit(("", "", path, parsed.query, parsed.fragment))
+                return urlunsplit(('', '', path, parsed.query, parsed.fragment))
         if request_host:
             parsed = urlsplit(location)
             if (
@@ -466,10 +442,10 @@ class ProxyService:
                 and parsed.path
                 and not parsed.path.startswith(prefix)
             ):
-                path = f"{prefix}{parsed.path if parsed.path.startswith('/') else '/' + parsed.path}"
-                return urlunsplit(("", "", path, parsed.query, parsed.fragment))
-        if location.startswith("/") and not location.startswith(prefix):
-            return f"{prefix}{location}"
+                path = f'{prefix}{parsed.path if parsed.path.startswith("/") else "/" + parsed.path}'
+                return urlunsplit(('', '', path, parsed.query, parsed.fragment))
+        if location.startswith('/') and not location.startswith(prefix):
+            return f'{prefix}{location}'
         return location
 
     async def _bridge_websocket(self, websocket: WebSocket, upstream: Any) -> None:
@@ -480,19 +456,17 @@ class ProxyService:
             try:
                 while True:
                     message = await websocket.receive()
-                    if message["type"] == "websocket.disconnect":
+                    if message['type'] == 'websocket.disconnect':
                         break
-                    if message.get("text") is not None:
-                        await upstream.send(message["text"])
-                    elif message.get("bytes") is not None:
-                        await upstream.send(message["bytes"])
+                    if message.get('text') is not None:
+                        await upstream.send(message['text'])
+                    elif message.get('bytes') is not None:
+                        await upstream.send(message['bytes'])
             except WebSocketDisconnect:
                 pass
             finally:
-                try:
+                with contextlib.suppress(ConnectionClosed):
                     await upstream.close()
-                except ConnectionClosed:
-                    pass
 
         async def upstream_to_client() -> None:
             try:
@@ -509,17 +483,13 @@ class ProxyService:
 
         client_task = asyncio.create_task(client_to_upstream())
         upstream_task = asyncio.create_task(upstream_to_client())
-        done, pending = await asyncio.wait(
-            {client_task, upstream_task}, return_when=asyncio.FIRST_COMPLETED
-        )
+        done, pending = await asyncio.wait({client_task, upstream_task}, return_when=asyncio.FIRST_COMPLETED)
         for task in pending:
             task.cancel()
         for task in done:
             await task
 
-    async def _safe_close_websocket(
-        self, websocket: WebSocket, code: int = 1000
-    ) -> None:
+    async def _safe_close_websocket(self, websocket: WebSocket, code: int = 1000) -> None:
         from starlette.websockets import WebSocketState
 
         if websocket.client_state is WebSocketState.DISCONNECTED:

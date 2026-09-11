@@ -13,6 +13,10 @@ def dev_server(instance_root: str) -> None:
     try:
         server_config = load_server_config_from_env()
     except Exception:
-        server_config = ServerConfig(session_secret='dev-secret', cookie_secure=False, dev_frontend_url=os.environ.get('BULLETJOURNAL_DEV_FRONTEND_URL'))
+        server_config = ServerConfig(
+            session_secret='dev-secret',  # noqa: S106 - Local development fallback only.
+            cookie_secure=False,
+            dev_frontend_url=os.environ.get('BULLETJOURNAL_DEV_FRONTEND_URL'),
+        )
     app = create_app(instance_root=Path(instance_root), server_config=server_config)
     uvicorn.run(app, host=server_config.host, port=server_config.port, log_level='debug')

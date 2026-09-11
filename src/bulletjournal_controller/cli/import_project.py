@@ -15,13 +15,11 @@ def import_project(
     include_install: bool = False,
 ) -> dict[str, object]:
     if project_id_override is not None:
-        raise ValueError(
-            "Project id override is not supported by the installed BulletJournal import implementation."
-        )
+        raise ValueError('Project id override is not supported by the installed BulletJournal import implementation.')
     instance_paths = require_instance_root(Path(instance_root))
     container = ServiceContainer(
         instance_paths=instance_paths,
-        server_config=ServerConfig(session_secret='cli-session-secret', cookie_secure=False),
+        server_config=ServerConfig(session_secret='cli-session-secret', cookie_secure=False),  # noqa: S106 - Offline command never serves sessions.
         ensure_runtime_image=False,
         validate_server_config=False,
     )

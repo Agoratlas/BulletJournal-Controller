@@ -23,50 +23,46 @@ class InstallerRunner:
         user_uid: int | None = None,
         user_gid: int | None = None,
     ) -> list[str]:
-        lock_command = "uv lock --project /project"
+        lock_command = 'uv lock --project /project'
         if upgrade_all:
-            lock_command += " --upgrade"
+            lock_command += ' --upgrade'
         options = [
-            "--rm",
-            "--network",
+            '--rm',
+            '--network',
             network_mode,
-            "--mount",
-            f"type=bind,src={project_root},dst=/project",
-            "--workdir",
-            "/project",
-            "--env",
-            "UV_PROJECT_ENVIRONMENT=/project/.runtime/venv",
-            "--env",
-            "UV_CACHE_DIR=/project/.runtime/uv-cache",
+            '--mount',
+            f'type=bind,src={project_root},dst=/project',
+            '--workdir',
+            '/project',
+            '--env',
+            'UV_PROJECT_ENVIRONMENT=/project/.runtime/venv',
+            '--env',
+            'UV_CACHE_DIR=/project/.runtime/uv-cache',
             image,
-            "sh",
-            "-lc",
-            f"{lock_command} && uv sync --project /project --locked --no-install-project",
+            'sh',
+            '-lc',
+            f'{lock_command} && uv sync --project /project --locked --no-install-project',
         ]
         if env_file is not None:
-            options = ["--env-file", str(env_file)] + options
+            options = ['--env-file', str(env_file), *options]
         if user_uid is not None and user_gid is not None:
-            options = [
-                "--user",
-                f"{user_uid}:{user_gid}",
-                "--env",
-                "HOME=/home/bulletjournal",
-            ] + options
+            options = ['--user', f'{user_uid}:{user_gid}', '--env', 'HOME=/home/bulletjournal', *options]
         if gpu_enabled:
             options = [
-                "--runtime",
-                "nvidia",
-                "--env",
-                "NVIDIA_VISIBLE_DEVICES=all",
-                "--env",
-                "NVIDIA_DRIVER_CAPABILITIES=compute,utility",
-            ] + options
+                '--runtime',
+                'nvidia',
+                '--env',
+                'NVIDIA_VISIBLE_DEVICES=all',
+                '--env',
+                'NVIDIA_DRIVER_CAPABILITIES=compute,utility',
+                *options,
+            ]
         for mount_path, target, read_only in additional_mounts or []:
-            mount_spec = f"type=bind,src={mount_path},dst={target}"
+            mount_spec = f'type=bind,src={mount_path},dst={target}'
             if read_only:
-                mount_spec += ",readonly"
-            options = ["--mount", mount_spec] + options
-        return self.adapter.docker_base_command() + ["run"] + options
+                mount_spec += ',readonly'
+            options = ['--mount', mount_spec, *options]
+        return [*self.adapter.docker_base_command(), 'run', *options]
 
     def build_mark_stale_command(
         self,
@@ -81,37 +77,32 @@ class InstallerRunner:
         user_gid: int | None = None,
     ) -> list[str]:
         options = [
-            "--rm",
-            "--network",
+            '--rm',
+            '--network',
             network_mode,
-            "--mount",
-            f"type=bind,src={project_root},dst=/project",
-            "--workdir",
-            "/project",
-            "--env",
-            "UV_CACHE_DIR=/project/.runtime/uv-cache",
+            '--mount',
+            f'type=bind,src={project_root},dst=/project',
+            '--workdir',
+            '/project',
+            '--env',
+            'UV_CACHE_DIR=/project/.runtime/uv-cache',
             image,
-            "/project/.runtime/venv/bin/bulletjournal",
-            "mark-environment-changed",
-            "/project",
-            "--reason",
+            '/project/.runtime/venv/bin/bulletjournal',
+            'mark-environment-changed',
+            '/project',
+            '--reason',
             reason,
         ]
         if env_file is not None:
-            options = ["--env-file", str(env_file)] + options
+            options = ['--env-file', str(env_file), *options]
         if user_uid is not None and user_gid is not None:
-            options = [
-                "--user",
-                f"{user_uid}:{user_gid}",
-                "--env",
-                "HOME=/home/bulletjournal",
-            ] + options
+            options = ['--user', f'{user_uid}:{user_gid}', '--env', 'HOME=/home/bulletjournal', *options]
         for mount_path, target, read_only in additional_mounts or []:
-            mount_spec = f"type=bind,src={mount_path},dst={target}"
+            mount_spec = f'type=bind,src={mount_path},dst={target}'
             if read_only:
-                mount_spec += ",readonly"
-            options = ["--mount", mount_spec] + options
-        return self.adapter.docker_base_command() + ["run"] + options
+                mount_spec += ',readonly'
+            options = ['--mount', mount_spec, *options]
+        return [*self.adapter.docker_base_command(), 'run', *options]
 
     def build_validate_environment_command(
         self,
@@ -125,34 +116,29 @@ class InstallerRunner:
         user_gid: int | None = None,
     ) -> list[str]:
         options = [
-            "--rm",
-            "--network",
+            '--rm',
+            '--network',
             network_mode,
-            "--mount",
-            f"type=bind,src={project_root},dst=/project",
-            "--workdir",
-            "/project",
-            "--env",
-            "UV_CACHE_DIR=/project/.runtime/uv-cache",
+            '--mount',
+            f'type=bind,src={project_root},dst=/project',
+            '--workdir',
+            '/project',
+            '--env',
+            'UV_CACHE_DIR=/project/.runtime/uv-cache',
             image,
-            "/project/.runtime/venv/bin/bulletjournal",
-            "--help",
+            '/project/.runtime/venv/bin/bulletjournal',
+            '--help',
         ]
         if env_file is not None:
-            options = ["--env-file", str(env_file)] + options
+            options = ['--env-file', str(env_file), *options]
         if user_uid is not None and user_gid is not None:
-            options = [
-                "--user",
-                f"{user_uid}:{user_gid}",
-                "--env",
-                "HOME=/home/bulletjournal",
-            ] + options
+            options = ['--user', f'{user_uid}:{user_gid}', '--env', 'HOME=/home/bulletjournal', *options]
         for mount_path, target, read_only in additional_mounts or []:
-            mount_spec = f"type=bind,src={mount_path},dst={target}"
+            mount_spec = f'type=bind,src={mount_path},dst={target}'
             if read_only:
-                mount_spec += ",readonly"
-            options = ["--mount", mount_spec] + options
-        return self.adapter.docker_base_command() + ["run"] + options
+                mount_spec += ',readonly'
+            options = ['--mount', mount_spec, *options]
+        return [*self.adapter.docker_base_command(), 'run', *options]
 
     def build_project_init_command(
         self,
@@ -167,48 +153,41 @@ class InstallerRunner:
         user_gid: int | None = None,
     ) -> list[str]:
         options = [
-            "--rm",
-            "--network",
+            '--rm',
+            '--network',
             network_mode,
-            "--mount",
-            f"type=bind,src={project_root},dst=/project",
-            "--workdir",
-            "/project",
-            "--env",
-            "UV_PROJECT_ENVIRONMENT=/project/.runtime/venv",
-            "--env",
-            "UV_CACHE_DIR=/project/.runtime/uv-cache",
+            '--mount',
+            f'type=bind,src={project_root},dst=/project',
+            '--workdir',
+            '/project',
+            '--env',
+            'UV_PROJECT_ENVIRONMENT=/project/.runtime/venv',
+            '--env',
+            'UV_CACHE_DIR=/project/.runtime/uv-cache',
             image,
-            "uv",
-            "run",
-            "--project",
-            "/project",
-            "bulletjournal",
-            "init",
-            "/project",
-            "--project-id",
+            'uv',
+            'run',
+            '--project',
+            '/project',
+            'bulletjournal',
+            'init',
+            '/project',
+            '--project-id',
             project_id,
-            "--skip-environment",
+            '--skip-environment',
         ]
         if env_file is not None:
-            options = ["--env-file", str(env_file)] + options
+            options = ['--env-file', str(env_file), *options]
         if user_uid is not None and user_gid is not None:
-            options = [
-                "--user",
-                f"{user_uid}:{user_gid}",
-                "--env",
-                "HOME=/home/bulletjournal",
-            ] + options
+            options = ['--user', f'{user_uid}:{user_gid}', '--env', 'HOME=/home/bulletjournal', *options]
         for mount_path, target, read_only in additional_mounts or []:
-            mount_spec = f"type=bind,src={mount_path},dst={target}"
+            mount_spec = f'type=bind,src={mount_path},dst={target}'
             if read_only:
-                mount_spec += ",readonly"
-            options = ["--mount", mount_spec] + options
-        return self.adapter.docker_base_command() + ["run"] + options
+                mount_spec += ',readonly'
+            options = ['--mount', mount_spec, *options]
+        return [*self.adapter.docker_base_command(), 'run', *options]
 
-    def run(
-        self, command: list[str], *, timeout: int = 1800
-    ) -> subprocess.CompletedProcess[str]:
+    def run(self, command: list[str], *, timeout: int = 1800) -> subprocess.CompletedProcess[str]:
         return self.adapter.run(command, timeout=timeout)
 
     def build_image(

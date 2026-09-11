@@ -12,7 +12,7 @@ from bulletjournal_controller.storage import (
 
 
 def test_init_instance_root_creates_required_layout(tmp_path: Path) -> None:
-    root = tmp_path / "instance"
+    root = tmp_path / 'instance'
     paths = init_instance_root(root)
     assert paths.instance_json_path.is_file()
     assert paths.state_db_path.is_file()
@@ -23,18 +23,16 @@ def test_init_instance_root_creates_required_layout(tmp_path: Path) -> None:
     assert paths.local_runtime_env_file_path.is_file()
     assert paths.local_runtime_json_path.is_file()
     assert paths.local_ssh_readme_path.is_file()
-    assert paths.local_config_dir == root / "config" / "runtime"
+    assert paths.local_config_dir == root / 'config' / 'runtime'
 
 
 def test_init_instance_root_points_instance_config_to_local_runtime_assets(
     tmp_path: Path,
 ) -> None:
-    root = tmp_path / "instance"
+    root = tmp_path / 'instance'
     paths = init_instance_root(root)
     config = load_instance_config(paths.instance_json_path)
-    assert config.default_dependencies_file == str(
-        paths.local_default_dependencies_path
-    )
+    assert config.default_dependencies_file == str(paths.local_default_dependencies_path)
     assert config.runtime_dockerfile == str(paths.local_runtime_dockerfile_path)
     assert config.runtime_build_context == str(paths.local_config_dir)
 
@@ -42,47 +40,43 @@ def test_init_instance_root_points_instance_config_to_local_runtime_assets(
 def test_init_instance_root_scaffolds_runtime_json_with_ssh_mount_enabled(
     tmp_path: Path,
 ) -> None:
-    paths = init_instance_root(tmp_path / "instance")
-    runtime_config = json.loads(
-        paths.local_runtime_json_path.read_text(encoding="utf-8")
-    )
-    assert runtime_config["env_file"] == ".env"
-    assert runtime_config["ssh_dir"] == "ssh"
-    assert runtime_config["additional_mounts"] == []
+    paths = init_instance_root(tmp_path / 'instance')
+    runtime_config = json.loads(paths.local_runtime_json_path.read_text(encoding='utf-8'))
+    assert runtime_config['env_file'] == '.env'
+    assert runtime_config['ssh_dir'] == 'ssh'
+    assert runtime_config['additional_mounts'] == []
 
 
 def test_init_instance_root_scaffolds_runtime_readmes(tmp_path: Path) -> None:
-    paths = init_instance_root(tmp_path / "instance")
-    ssh_readme = paths.local_ssh_readme_path.read_text(encoding="utf-8")
-    assert "/home/bulletjournal/.ssh" in ssh_readme
-    assert "deploy" in ssh_readme.lower()
+    paths = init_instance_root(tmp_path / 'instance')
+    ssh_readme = paths.local_ssh_readme_path.read_text(encoding='utf-8')
+    assert '/home/bulletjournal/.ssh' in ssh_readme
+    assert 'deploy' in ssh_readme.lower()
 
 
 def test_init_instance_root_scaffolds_runtime_dockerfile_with_non_unique_ids(
     tmp_path: Path,
 ) -> None:
-    paths = init_instance_root(tmp_path / "instance")
-    dockerfile = paths.local_runtime_dockerfile_path.read_text(encoding="utf-8")
-    assert (
-        'groupadd --non-unique --gid "${BULLETJOURNAL_GID}" bulletjournal' in dockerfile
-    )
-    assert "useradd" in dockerfile
-    assert "--non-unique" in dockerfile
+    paths = init_instance_root(tmp_path / 'instance')
+    dockerfile = paths.local_runtime_dockerfile_path.read_text(encoding='utf-8')
+    assert 'groupadd --non-unique --gid "${BULLETJOURNAL_GID}" bulletjournal' in dockerfile
+    assert 'useradd' in dockerfile
+    assert '--non-unique' in dockerfile
     assert '--uid "${BULLETJOURNAL_UID}"' in dockerfile
 
 
 def test_bundled_defaults_runtime_layout_mirrors_instance_runtime_layout() -> None:
-    runtime_defaults_root = bundled_defaults_root() / "runtime"
-    assert (runtime_defaults_root / ".env").is_file()
-    assert (runtime_defaults_root / "runtime.json").is_file()
-    assert (runtime_defaults_root / "default-dependencies.txt").is_file()
-    assert (runtime_defaults_root / "ssh" / "README.md").is_file()
-    assert (runtime_defaults_root / "Dockerfile").is_file()
+    runtime_defaults_root = bundled_defaults_root() / 'runtime'
+    assert (runtime_defaults_root / '.env').is_file()
+    assert (runtime_defaults_root / 'runtime.json').is_file()
+    assert (runtime_defaults_root / 'default-dependencies.txt').is_file()
+    assert (runtime_defaults_root / 'ssh' / 'README.md').is_file()
+    assert (runtime_defaults_root / 'Dockerfile').is_file()
 
 
 def test_create_project_root_creates_required_directories(tmp_path: Path) -> None:
-    instance_paths = init_instance_root(tmp_path / "instance")
-    project_paths = create_project_root(instance_paths, "study-a")
+    instance_paths = init_instance_root(tmp_path / 'instance')
+    project_paths = create_project_root(instance_paths, 'study-a')
     assert project_paths.graph_dir.is_dir()
     assert project_paths.dashboards_dir.is_dir()
     assert project_paths.metadata_dir.is_dir()
@@ -93,6 +87,6 @@ def test_create_project_root_creates_required_directories(tmp_path: Path) -> Non
 
 
 def test_require_instance_root_validates_existing_layout(tmp_path: Path) -> None:
-    root = tmp_path / "instance"
+    root = tmp_path / 'instance'
     init_instance_root(root)
     assert require_instance_root(root).root == root.resolve()

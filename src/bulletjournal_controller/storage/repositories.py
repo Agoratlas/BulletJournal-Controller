@@ -7,16 +7,16 @@ from bulletjournal_controller.domain.enums import JobStatus
 from bulletjournal_controller.domain.errors import ConflictError, NotFoundError
 from bulletjournal_controller.domain.models import (
     JobRecord,
+    OAuthAccessTokenRecord,
     ProjectRecord,
     ProjectRoleGrantRecord,
-    OAuthAccessTokenRecord,
     SessionRecord,
     UserRecord,
 )
 from bulletjournal_controller.storage.state_db import StateDB
 from bulletjournal_controller.utils import utc_now_iso
 
-T = TypeVar("T")
+T = TypeVar('T')
 
 
 class BaseRepository(Generic[T]):
@@ -29,9 +29,9 @@ class BaseRepository(Generic[T]):
             return None
         data = dict(row)
         for key, value in list(data.items()):
-            if isinstance(value, int) and key.startswith("is_"):
+            if isinstance(value, int) and key.startswith('is_'):
                 data[key] = bool(value)
-            if key == "gpu_enabled":
+            if key == 'gpu_enabled':
                 data[key] = bool(value)
         return self.model_type(**data)
 
@@ -53,8 +53,10 @@ class UserRepository(BaseRepository[UserRecord]):
         now = utc_now_iso()
         with self.db.transaction() as connection:
             connection.execute(
-                "INSERT INTO users (user_id, username, display_name, password_hash, is_active, is_server_admin, created_at, updated_at, last_login_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+                'INSERT INTO users '
+                '(user_id, username, display_name, password_hash, is_active, is_server_admin, '
+                'created_at, updated_at, last_login_at) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)',
                 (
                     user_id,
                     username,
@@ -66,23 +68,17 @@ class UserRepository(BaseRepository[UserRecord]):
                     now,
                 ),
             )
-            row = connection.execute(
-                "SELECT * FROM users WHERE user_id = ?", (user_id,)
-            ).fetchone()
+            row = connection.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
         return self._row_to_model(row)  # type: ignore[return-value]
 
     def get_by_username(self, username: str) -> UserRecord | None:
         with self.db.read() as connection:
-            row = connection.execute(
-                "SELECT * FROM users WHERE username = ?", (username,)
-            ).fetchone()
+            row = connection.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
         return self._row_to_model(row)
 
     def get(self, user_id: str) -> UserRecord | None:
         with self.db.read() as connection:
-            row = connection.execute(
-                "SELECT * FROM users WHERE user_id = ?", (user_id,)
-            ).fetchone()
+            row = connection.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
         return self._row_to_model(row)
 
     def update(
@@ -98,12 +94,14 @@ class UserRepository(BaseRepository[UserRecord]):
         with self.db.transaction() as connection:
             if is_server_admin is None:
                 connection.execute(
-                    "UPDATE users SET display_name = ?, password_hash = ?, is_active = ?, updated_at = ? WHERE user_id = ?",
+                    'UPDATE users SET display_name = ?, password_hash = ?, is_active = ?, '
+                    'updated_at = ? WHERE user_id = ?',
                     (display_name, password_hash, int(is_active), now, user_id),
                 )
             else:
                 connection.execute(
-                    "UPDATE users SET display_name = ?, password_hash = ?, is_active = ?, is_server_admin = ?, updated_at = ? WHERE user_id = ?",
+                    'UPDATE users SET display_name = ?, password_hash = ?, is_active = ?, '
+                    'is_server_admin = ?, updated_at = ? WHERE user_id = ?',
                     (
                         display_name,
                         password_hash,
@@ -113,16 +111,14 @@ class UserRepository(BaseRepository[UserRecord]):
                         user_id,
                     ),
                 )
-            row = connection.execute(
-                "SELECT * FROM users WHERE user_id = ?", (user_id,)
-            ).fetchone()
+            row = connection.execute('SELECT * FROM users WHERE user_id = ?', (user_id,)).fetchone()
         return self._row_to_model(row)  # type: ignore[return-value]
 
     def list_active_assignable(self) -> list[UserRecord]:
         with self.db.read() as connection:
             rows = connection.execute(
-                "SELECT * FROM users WHERE is_active = 1 AND user_id != ? ORDER BY username",
-                ("user-system",),
+                'SELECT * FROM users WHERE is_active = 1 AND user_id != ? ORDER BY username',
+                ('user-system',),
             ).fetchall()
         return [self._row_to_model(row) for row in rows if row is not None]  # type: ignore[list-item]
 
@@ -130,64 +126,52 @@ class UserRepository(BaseRepository[UserRecord]):
         now = utc_now_iso()
         with self.db.transaction() as connection:
             connection.execute(
-                "UPDATE users SET last_login_at = ?, updated_at = ? WHERE user_id = ?",
+                'UPDATE users SET last_login_at = ?, updated_at = ? WHERE user_id = ?',
                 (now, now, user_id),
             )
 
     def delete(self, user_id: str, *, replacement_user_id: str) -> None:
         with self.db.transaction() as connection:
             user = connection.execute(
-                "SELECT user_id, is_active, is_server_admin FROM users WHERE user_id = ?",
+                'SELECT user_id, is_active, is_server_admin FROM users WHERE user_id = ?',
                 (user_id,),
             ).fetchone()
             if user is None:
-                raise NotFoundError(f"User {user_id} was not found.")
+                raise NotFoundError(f'User {user_id} was not found.')
 
             active_users = {
-                str(row["user_id"])
-                for row in connection.execute(
-                    "SELECT user_id FROM users WHERE is_active = 1"
-                )
+                str(row['user_id']) for row in connection.execute('SELECT user_id FROM users WHERE is_active = 1')
             }
             other_server_admin_exists = any(
-                row["user_id"] != user_id
-                for row in connection.execute(
-                    "SELECT user_id FROM users WHERE is_active = 1 AND is_server_admin = 1"
-                )
+                row['user_id'] != user_id
+                for row in connection.execute('SELECT user_id FROM users WHERE is_active = 1 AND is_server_admin = 1')
             )
             blocked_project_ids: list[str] = []
 
             for project in connection.execute(
-                "SELECT project_id, created_by_user_id FROM projects ORDER BY project_id"
+                'SELECT project_id, created_by_user_id FROM projects ORDER BY project_id'
             ):
-                project_id = str(project["project_id"])
+                project_id = str(project['project_id'])
                 grants = connection.execute(
-                    "SELECT subject_kind, user_id FROM project_role_grants "
+                    'SELECT subject_kind, user_id FROM project_role_grants '
                     "WHERE project_id = ? AND role = 'project_admin'",
                     (project_id,),
                 ).fetchall()
                 if grants:
-                    user_is_admin = bool(user["is_server_admin"]) or any(
-                        grant["subject_kind"] == "all_users"
-                        or grant["user_id"] == user_id
-                        for grant in grants
+                    user_is_admin = bool(user['is_server_admin']) or any(
+                        grant['subject_kind'] == 'all_users' or grant['user_id'] == user_id for grant in grants
                     )
                     other_admin_exists = other_server_admin_exists or any(
-                        (
-                            grant["subject_kind"] == "all_users"
-                            and bool(active_users - {user_id})
-                        )
+                        (grant['subject_kind'] == 'all_users' and bool(active_users - {user_id}))
                         or (
-                            grant["subject_kind"] == "user"
-                            and grant["user_id"] != user_id
-                            and grant["user_id"] in active_users
+                            grant['subject_kind'] == 'user'
+                            and grant['user_id'] != user_id
+                            and grant['user_id'] in active_users
                         )
                         for grant in grants
                     )
                 else:
-                    user_is_admin = bool(user["is_server_admin"]) or (
-                        project["created_by_user_id"] == user_id
-                    )
+                    user_is_admin = bool(user['is_server_admin']) or (project['created_by_user_id'] == user_id)
                     other_admin_exists = other_server_admin_exists
 
                 if user_is_admin and not other_admin_exists:
@@ -195,19 +179,19 @@ class UserRepository(BaseRepository[UserRecord]):
 
             if blocked_project_ids:
                 raise ConflictError(
-                    "Cannot delete user because they are the sole admin of project(s): "
-                    f"{', '.join(blocked_project_ids)}."
+                    'Cannot delete user because they are the sole admin of project(s): '
+                    f'{", ".join(blocked_project_ids)}.'
                 )
 
             connection.execute(
-                "UPDATE projects SET created_by_user_id = ? WHERE created_by_user_id = ?",
+                'UPDATE projects SET created_by_user_id = ? WHERE created_by_user_id = ?',
                 (replacement_user_id, user_id),
             )
             connection.execute(
-                "UPDATE jobs SET requested_by_user_id = ? WHERE requested_by_user_id = ?",
+                'UPDATE jobs SET requested_by_user_id = ? WHERE requested_by_user_id = ?',
                 (replacement_user_id, user_id),
             )
-            connection.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+            connection.execute('DELETE FROM users WHERE user_id = ?', (user_id,))
 
 
 class SessionRepository(BaseRepository[SessionRecord]):
@@ -227,8 +211,10 @@ class SessionRepository(BaseRepository[SessionRecord]):
     ) -> SessionRecord:
         with self.db.transaction() as connection:
             connection.execute(
-                "INSERT INTO sessions (session_id, user_id, secret_hash, created_at, expires_at, revoked_at, last_seen_at, user_agent, remote_addr) "
-                "VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)",
+                'INSERT INTO sessions '
+                '(session_id, user_id, secret_hash, created_at, expires_at, revoked_at, '
+                'last_seen_at, user_agent, remote_addr) '
+                'VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)',
                 (
                     session_id,
                     user_id,
@@ -240,16 +226,12 @@ class SessionRepository(BaseRepository[SessionRecord]):
                     remote_addr,
                 ),
             )
-            row = connection.execute(
-                "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
-            ).fetchone()
+            row = connection.execute('SELECT * FROM sessions WHERE session_id = ?', (session_id,)).fetchone()
         return self._row_to_model(row)  # type: ignore[return-value]
 
     def get(self, session_id: str) -> SessionRecord | None:
         with self.db.read() as connection:
-            row = connection.execute(
-                "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
-            ).fetchone()
+            row = connection.execute('SELECT * FROM sessions WHERE session_id = ?', (session_id,)).fetchone()
         return self._row_to_model(row)
 
     def touch(
@@ -260,13 +242,10 @@ class SessionRepository(BaseRepository[SessionRecord]):
         only_if_last_seen_at: str | None = None,
     ) -> None:
         now = utc_now_iso()
-        query = (
-            "UPDATE sessions SET last_seen_at = ?, expires_at = ? "
-            "WHERE session_id = ? AND revoked_at IS NULL"
-        )
+        query = 'UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE session_id = ? AND revoked_at IS NULL'
         params: list[str] = [now, expires_at, session_id]
         if only_if_last_seen_at is not None:
-            query += " AND (last_seen_at IS NULL OR last_seen_at <= ?)"
+            query += ' AND (last_seen_at IS NULL OR last_seen_at <= ?)'
             params.append(only_if_last_seen_at)
         with self.db.transaction() as connection:
             connection.execute(query, tuple(params))
@@ -274,13 +253,13 @@ class SessionRepository(BaseRepository[SessionRecord]):
     def revoke(self, session_id: str) -> None:
         with self.db.transaction() as connection:
             connection.execute(
-                "UPDATE sessions SET revoked_at = ? WHERE session_id = ?",
+                'UPDATE sessions SET revoked_at = ? WHERE session_id = ?',
                 (utc_now_iso(), session_id),
             )
 
     def delete_for_user(self, user_id: str) -> None:
         with self.db.transaction() as connection:
-            connection.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+            connection.execute('DELETE FROM sessions WHERE user_id = ?', (user_id,))
 
 
 class OAuthRepository(BaseRepository[OAuthAccessTokenRecord]):
@@ -297,7 +276,9 @@ class OAuthRepository(BaseRepository[OAuthAccessTokenRecord]):
     ) -> None:
         with self.db.transaction() as connection:
             connection.execute(
-                "INSERT INTO oauth_clients (client_id, client_secret_hash, redirect_uris_json, client_name, created_at, revoked_at) VALUES (?, ?, ?, ?, ?, NULL)",
+                'INSERT INTO oauth_clients '
+                '(client_id, client_secret_hash, redirect_uris_json, client_name, created_at, revoked_at) '
+                'VALUES (?, ?, ?, ?, ?, NULL)',
                 (
                     client_id,
                     client_secret_hash,
@@ -310,24 +291,27 @@ class OAuthRepository(BaseRepository[OAuthAccessTokenRecord]):
     def get_client(self, client_id: str):
         with self.db.read() as connection:
             return connection.execute(
-                "SELECT * FROM oauth_clients WHERE client_id = ? AND revoked_at IS NULL",
+                'SELECT * FROM oauth_clients WHERE client_id = ? AND revoked_at IS NULL',
                 (client_id,),
             ).fetchone()
 
     def create_code(self, **data: str) -> None:
         with self.db.transaction() as connection:
             connection.execute(
-                "INSERT INTO oauth_authorization_codes (code_hash, user_id, client_id, project_id, resource, redirect_uri, scopes, code_challenge, expires_at, consumed_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
+                'INSERT INTO oauth_authorization_codes '
+                '(code_hash, user_id, client_id, project_id, resource, redirect_uri, scopes, '
+                'code_challenge, expires_at, consumed_at, created_at) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)',
                 (
-                    data["code_hash"],
-                    data["user_id"],
-                    data["client_id"],
-                    data["project_id"],
-                    data["resource"],
-                    data["redirect_uri"],
-                    data["scopes"],
-                    data["code_challenge"],
-                    data["expires_at"],
+                    data['code_hash'],
+                    data['user_id'],
+                    data['client_id'],
+                    data['project_id'],
+                    data['resource'],
+                    data['redirect_uri'],
+                    data['scopes'],
+                    data['code_challenge'],
+                    data['expires_at'],
                     utc_now_iso(),
                 ),
             )
@@ -335,12 +319,12 @@ class OAuthRepository(BaseRepository[OAuthAccessTokenRecord]):
     def consume_code(self, code_hash: str):
         with self.db.transaction() as connection:
             row = connection.execute(
-                "SELECT * FROM oauth_authorization_codes WHERE code_hash = ? AND consumed_at IS NULL",
+                'SELECT * FROM oauth_authorization_codes WHERE code_hash = ? AND consumed_at IS NULL',
                 (code_hash,),
             ).fetchone()
             if row is not None:
                 connection.execute(
-                    "UPDATE oauth_authorization_codes SET consumed_at = ? WHERE code_hash = ?",
+                    'UPDATE oauth_authorization_codes SET consumed_at = ? WHERE code_hash = ?',
                     (utc_now_iso(), code_hash),
                 )
         return row
@@ -348,59 +332,63 @@ class OAuthRepository(BaseRepository[OAuthAccessTokenRecord]):
     def create_access_token(self, **data: str) -> OAuthAccessTokenRecord:
         with self.db.transaction() as connection:
             connection.execute(
-                "INSERT INTO oauth_access_tokens (token_id, token_hash, user_id, client_id, project_id, resource, scopes, issued_at, expires_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+                'INSERT INTO oauth_access_tokens '
+                '(token_id, token_hash, user_id, client_id, project_id, resource, scopes, issued_at, '
+                'expires_at, revoked_at) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)',
                 tuple(
                     data[key]
                     for key in (
-                        "token_id",
-                        "token_hash",
-                        "user_id",
-                        "client_id",
-                        "project_id",
-                        "resource",
-                        "scopes",
-                        "issued_at",
-                        "expires_at",
+                        'token_id',
+                        'token_hash',
+                        'user_id',
+                        'client_id',
+                        'project_id',
+                        'resource',
+                        'scopes',
+                        'issued_at',
+                        'expires_at',
                     )
                 ),
             )
             row = connection.execute(
-                "SELECT * FROM oauth_access_tokens WHERE token_id = ?",
-                (data["token_id"],),
+                'SELECT * FROM oauth_access_tokens WHERE token_id = ?',
+                (data['token_id'],),
             ).fetchone()
         return self._row_to_model(row)  # type: ignore[return-value]
 
     def get_access_token(self, token_hash: str) -> OAuthAccessTokenRecord | None:
         with self.db.read() as connection:
-            row = connection.execute(
-                "SELECT * FROM oauth_access_tokens WHERE token_hash = ?", (token_hash,)
-            ).fetchone()
+            row = connection.execute('SELECT * FROM oauth_access_tokens WHERE token_hash = ?', (token_hash,)).fetchone()
         return self._row_to_model(row)
 
     def revoke_access_token(self, token_hash: str) -> None:
         with self.db.transaction() as connection:
             connection.execute(
-                "UPDATE oauth_access_tokens SET revoked_at = ? WHERE token_hash = ?",
+                'UPDATE oauth_access_tokens SET revoked_at = ? WHERE token_hash = ?',
                 (utc_now_iso(), token_hash),
             )
 
     def create_refresh_token(self, **data: str) -> None:
         with self.db.transaction() as connection:
             connection.execute(
-                "INSERT INTO oauth_refresh_tokens (token_id, token_hash, family_id, user_id, client_id, project_id, resource, scopes, issued_at, expires_at, replaced_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)",
+                'INSERT INTO oauth_refresh_tokens '
+                '(token_id, token_hash, family_id, user_id, client_id, project_id, resource, scopes, '
+                'issued_at, expires_at, replaced_at, revoked_at) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)',
                 tuple(
                     data[key]
                     for key in (
-                        "token_id",
-                        "token_hash",
-                        "family_id",
-                        "user_id",
-                        "client_id",
-                        "project_id",
-                        "resource",
-                        "scopes",
-                        "issued_at",
-                        "expires_at",
+                        'token_id',
+                        'token_hash',
+                        'family_id',
+                        'user_id',
+                        'client_id',
+                        'project_id',
+                        'resource',
+                        'scopes',
+                        'issued_at',
+                        'expires_at',
                     )
                 ),
             )
@@ -408,28 +396,24 @@ class OAuthRepository(BaseRepository[OAuthAccessTokenRecord]):
     def consume_refresh_token(self, token_hash: str):
         with self.db.transaction() as connection:
             row = connection.execute(
-                "SELECT * FROM oauth_refresh_tokens WHERE token_hash = ?", (token_hash,)
+                'SELECT * FROM oauth_refresh_tokens WHERE token_hash = ?', (token_hash,)
             ).fetchone()
-            if (
-                row is not None
-                and row["replaced_at"] is None
-                and row["revoked_at"] is None
-            ):
+            if row is not None and row['replaced_at'] is None and row['revoked_at'] is None:
                 connection.execute(
-                    "UPDATE oauth_refresh_tokens SET replaced_at = ? WHERE token_hash = ?",
+                    'UPDATE oauth_refresh_tokens SET replaced_at = ? WHERE token_hash = ?',
                     (utc_now_iso(), token_hash),
                 )
             elif row is not None:
                 connection.execute(
-                    "UPDATE oauth_refresh_tokens SET revoked_at = ? WHERE family_id = ?",
-                    (utc_now_iso(), row["family_id"]),
+                    'UPDATE oauth_refresh_tokens SET revoked_at = ? WHERE family_id = ?',
+                    (utc_now_iso(), row['family_id']),
                 )
         return row
 
     def revoke_refresh_token(self, token_hash: str) -> None:
         with self.db.transaction() as connection:
             connection.execute(
-                "UPDATE oauth_refresh_tokens SET revoked_at = ? WHERE token_hash = ?",
+                'UPDATE oauth_refresh_tokens SET revoked_at = ? WHERE token_hash = ?',
                 (utc_now_iso(), token_hash),
             )
 
@@ -439,59 +423,48 @@ class ProjectRepository(BaseRepository[ProjectRecord]):
         super().__init__(db, ProjectRecord)
 
     def create(self, **data: Any) -> ProjectRecord:
-        columns = ", ".join(data.keys())
-        placeholders = ", ".join("?" for _ in data)
+        columns = ', '.join(data.keys())
+        placeholders = ', '.join('?' for _ in data)
         with self.db.transaction() as connection:
             connection.execute(
-                f"INSERT INTO projects ({columns}) VALUES ({placeholders})",
+                f'INSERT INTO projects ({columns}) VALUES ({placeholders})',  # noqa: S608 - Columns derive from fixed project repository fields.
                 tuple(self._coerce_write_value(value) for value in data.values()),
             )
-            row = connection.execute(
-                "SELECT * FROM projects WHERE project_id = ?", (data["project_id"],)
-            ).fetchone()
+            row = connection.execute('SELECT * FROM projects WHERE project_id = ?', (data['project_id'],)).fetchone()
         return self._row_to_model(row)  # type: ignore[return-value]
 
     def get(self, project_id: str) -> ProjectRecord | None:
         with self.db.read() as connection:
-            row = connection.execute(
-                "SELECT * FROM projects WHERE project_id = ?", (project_id,)
-            ).fetchone()
+            row = connection.execute('SELECT * FROM projects WHERE project_id = ?', (project_id,)).fetchone()
         return self._row_to_model(row)
 
     def require(self, project_id: str) -> ProjectRecord:
         project = self.get(project_id)
         if project is None:
-            raise NotFoundError(f"Project {project_id} was not found.")
+            raise NotFoundError(f'Project {project_id} was not found.')
         return project
 
     def list_all(self) -> list[ProjectRecord]:
         with self.db.read() as connection:
-            rows = connection.execute(
-                "SELECT * FROM projects ORDER BY project_id"
-            ).fetchall()
+            rows = connection.execute('SELECT * FROM projects ORDER BY project_id').fetchall()
         return [self._row_to_model(row) for row in rows if row is not None]  # type: ignore[list-item]
 
     def update(self, project_id: str, **changes: Any) -> ProjectRecord:
         changes = dict(changes)
-        changes["updated_at"] = utc_now_iso()
-        assignments = ", ".join(f"{key} = ?" for key in changes)
-        params = [self._coerce_write_value(value) for value in changes.values()] + [
-            project_id
-        ]
+        changes['updated_at'] = utc_now_iso()
+        assignments = ', '.join(f'{key} = ?' for key in changes)
+        params = [self._coerce_write_value(value) for value in changes.values()] + [project_id]
         with self.db.transaction() as connection:
             connection.execute(
-                f"UPDATE projects SET {assignments} WHERE project_id = ?", params
+                f'UPDATE projects SET {assignments} WHERE project_id = ?',  # noqa: S608 - Assignments derive from fixed project repository fields.
+                params,
             )
-            row = connection.execute(
-                "SELECT * FROM projects WHERE project_id = ?", (project_id,)
-            ).fetchone()
+            row = connection.execute('SELECT * FROM projects WHERE project_id = ?', (project_id,)).fetchone()
         return self._row_to_model(row)  # type: ignore[return-value]
 
     def delete(self, project_id: str) -> None:
         with self.db.transaction() as connection:
-            connection.execute(
-                "DELETE FROM projects WHERE project_id = ?", (project_id,)
-            )
+            connection.execute('DELETE FROM projects WHERE project_id = ?', (project_id,))
 
     def clear_runtime(self, project_id: str) -> ProjectRecord:
         return self.update(
@@ -516,9 +489,9 @@ class ProjectRoleGrantRepository(BaseRepository[ProjectRoleGrantRecord]):
     def list_for_project(self, project_id: str) -> list[ProjectRoleGrantRecord]:
         with self.db.read() as connection:
             rows = connection.execute(
-                "SELECT g.*, u.username, u.display_name FROM project_role_grants g "
-                "LEFT JOIN users u ON u.user_id = g.user_id "
-                "WHERE g.project_id = ? ORDER BY g.role, g.subject_kind, u.username",
+                'SELECT g.*, u.username, u.display_name FROM project_role_grants g '
+                'LEFT JOIN users u ON u.user_id = g.user_id '
+                'WHERE g.project_id = ? ORDER BY g.role, g.subject_kind, u.username',
                 (project_id,),
             ).fetchall()
         return [self._row_to_model(row) for row in rows if row is not None]  # type: ignore[list-item]
@@ -526,30 +499,26 @@ class ProjectRoleGrantRepository(BaseRepository[ProjectRoleGrantRecord]):
     def list_project_ids_visible_to(self, user_id: str) -> list[str]:
         with self.db.read() as connection:
             rows = connection.execute(
-                "SELECT DISTINCT project_id FROM project_role_grants "
+                'SELECT DISTINCT project_id FROM project_role_grants '
                 "WHERE (subject_kind = 'user' AND user_id = ?) OR subject_kind = 'all_users' "
-                "ORDER BY project_id",
+                'ORDER BY project_id',
                 (user_id,),
             ).fetchall()
         return [str(row[0]) for row in rows]
 
-    def replace_for_project(
-        self, project_id: str, grants: list[dict[str, str | None]]
-    ) -> None:
+    def replace_for_project(self, project_id: str, grants: list[dict[str, str | None]]) -> None:
         now = utc_now_iso()
         with self.db.transaction() as connection:
-            connection.execute(
-                "DELETE FROM project_role_grants WHERE project_id = ?", (project_id,)
-            )
+            connection.execute('DELETE FROM project_role_grants WHERE project_id = ?', (project_id,))
             connection.executemany(
-                "INSERT INTO project_role_grants (project_id, subject_kind, user_id, role, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                'INSERT INTO project_role_grants (project_id, subject_kind, user_id, role, created_at, updated_at) '
+                'VALUES (?, ?, ?, ?, ?, ?)',
                 [
                     (
                         project_id,
-                        grant["subject_kind"],
-                        grant["user_id"],
-                        grant["role"],
+                        grant['subject_kind'],
+                        grant['user_id'],
+                        grant['role'],
                         now,
                         now,
                     )
@@ -557,20 +526,18 @@ class ProjectRoleGrantRepository(BaseRepository[ProjectRoleGrantRecord]):
                 ],
             )
 
-    def create_for_project(
-        self, project_id: str, grants: list[dict[str, str | None]]
-    ) -> None:
+    def create_for_project(self, project_id: str, grants: list[dict[str, str | None]]) -> None:
         now = utc_now_iso()
         with self.db.transaction() as connection:
             connection.executemany(
-                "INSERT INTO project_role_grants (project_id, subject_kind, user_id, role, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                'INSERT INTO project_role_grants (project_id, subject_kind, user_id, role, created_at, updated_at) '
+                'VALUES (?, ?, ?, ?, ?, ?)',
                 [
                     (
                         project_id,
-                        grant["subject_kind"],
-                        grant["user_id"],
-                        grant["role"],
+                        grant['subject_kind'],
+                        grant['user_id'],
+                        grant['role'],
                         now,
                         now,
                     )
@@ -584,41 +551,36 @@ class JobRepository(BaseRepository[JobRecord]):
         super().__init__(db, JobRecord)
 
     def create(self, **data: Any) -> JobRecord:
-        columns = ", ".join(data.keys())
-        placeholders = ", ".join("?" for _ in data)
+        columns = ', '.join(data.keys())
+        placeholders = ', '.join('?' for _ in data)
         with self.db.transaction() as connection:
             connection.execute(
-                f"INSERT INTO jobs ({columns}) VALUES ({placeholders})",
+                f'INSERT INTO jobs ({columns}) VALUES ({placeholders})',  # noqa: S608 - Columns derive from fixed job repository fields.
                 tuple(data.values()),
             )
-            row = connection.execute(
-                "SELECT * FROM jobs WHERE job_id = ?", (data["job_id"],)
-            ).fetchone()
+            row = connection.execute('SELECT * FROM jobs WHERE job_id = ?', (data['job_id'],)).fetchone()
         return self._row_to_model(row)  # type: ignore[return-value]
 
     def get(self, job_id: str) -> JobRecord | None:
         with self.db.read() as connection:
-            row = connection.execute(
-                "SELECT * FROM jobs WHERE job_id = ?", (job_id,)
-            ).fetchone()
+            row = connection.execute('SELECT * FROM jobs WHERE job_id = ?', (job_id,)).fetchone()
         return self._row_to_model(row)
 
     def update(self, job_id: str, **changes: Any) -> JobRecord:
-        assignments = ", ".join(f"{key} = ?" for key in changes)
-        params = list(changes.values()) + [job_id]
+        assignments = ', '.join(f'{key} = ?' for key in changes)
+        params = [*list(changes.values()), job_id]
         with self.db.transaction() as connection:
             connection.execute(
-                f"UPDATE jobs SET {assignments} WHERE job_id = ?", params
+                f'UPDATE jobs SET {assignments} WHERE job_id = ?',  # noqa: S608 - Assignments derive from fixed job repository fields.
+                params,
             )
-            row = connection.execute(
-                "SELECT * FROM jobs WHERE job_id = ?", (job_id,)
-            ).fetchone()
+            row = connection.execute('SELECT * FROM jobs WHERE job_id = ?', (job_id,)).fetchone()
         return self._row_to_model(row)  # type: ignore[return-value]
 
     def list_for_project(self, project_id: str, *, limit: int = 20) -> list[JobRecord]:
         with self.db.read() as connection:
             rows = connection.execute(
-                "SELECT * FROM jobs WHERE project_id = ? ORDER BY created_at DESC, job_id DESC LIMIT ?",
+                'SELECT * FROM jobs WHERE project_id = ? ORDER BY created_at DESC, job_id DESC LIMIT ?',
                 (project_id, limit),
             ).fetchall()
         return [self._row_to_model(row) for row in rows if row is not None]  # type: ignore[list-item]
@@ -626,7 +588,7 @@ class JobRepository(BaseRepository[JobRecord]):
     def list_log_paths_for_project(self, project_id: str) -> list[str]:
         with self.db.read() as connection:
             rows = connection.execute(
-                "SELECT log_path FROM jobs WHERE project_id = ? AND log_path IS NOT NULL",
+                'SELECT log_path FROM jobs WHERE project_id = ? AND log_path IS NOT NULL',
                 (project_id,),
             ).fetchall()
         return [str(row[0]) for row in rows if row and row[0]]
@@ -634,18 +596,16 @@ class JobRepository(BaseRepository[JobRecord]):
     def has_active_mutation(self, project_id: str) -> bool:
         with self.db.read() as connection:
             row = connection.execute(
-                "SELECT 1 FROM jobs WHERE project_id = ? AND status IN (?, ?) LIMIT 1",
+                'SELECT 1 FROM jobs WHERE project_id = ? AND status IN (?, ?) LIMIT 1',
                 (project_id, JobStatus.QUEUED.value, JobStatus.RUNNING.value),
             ).fetchone()
         return row is not None
 
-    def delete_for_project(
-        self, project_id: str, *, exclude_job_id: str | None = None
-    ) -> None:
-        query = "DELETE FROM jobs WHERE project_id = ?"
+    def delete_for_project(self, project_id: str, *, exclude_job_id: str | None = None) -> None:
+        query = 'DELETE FROM jobs WHERE project_id = ?'
         params: list[str] = [project_id]
         if exclude_job_id is not None:
-            query += " AND job_id != ?"
+            query += ' AND job_id != ?'
             params.append(exclude_job_id)
         with self.db.transaction() as connection:
             connection.execute(query, tuple(params))

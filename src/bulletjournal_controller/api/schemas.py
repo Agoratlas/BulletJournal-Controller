@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra='forbid')
 
 
 class LoginRequest(StrictModel):
@@ -47,7 +47,7 @@ class CreateProjectRequest(LimitsRequest):
     project_id: str
     python_version: str | None = None
     bulletjournal_version: str | None = None
-    custom_requirements_text: str = ""
+    custom_requirements_text: str = ''
     project_admins: RoleSubjectRequest | None = None
     editors: RoleSubjectRequest | None = None
 

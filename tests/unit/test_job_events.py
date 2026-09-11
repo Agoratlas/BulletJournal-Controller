@@ -10,11 +10,11 @@ def test_job_event_broker_delivers_published_events() -> None:
         broker = JobEventBroker()
         subscriber = await broker.subscribe()
 
-        broker.publish({"job_id": "job-1", "status": "running"})
+        broker.publish({'job_id': 'job-1', 'status': 'running'})
 
         assert await asyncio.wait_for(subscriber.get(), timeout=1.0) == {
-            "job_id": "job-1",
-            "status": "running",
+            'job_id': 'job-1',
+            'status': 'running',
         }
         await broker.unsubscribe(subscriber)
 

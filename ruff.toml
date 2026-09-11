@@ -1,0 +1,52 @@
+line-length = 120
+target-version = "py311"
+
+[lint]
+select = [
+    "E",   # pycodestyle errors - code style violations
+    "F",   # Pyflakes - logical errors, unused imports, undefined names
+    "I",   # isort - import sorting and organization
+    "B",   # flake8-bugbear - likely bugs and design problems
+    "UP",  # pyupgrade - automatic Python syntax modernization
+    "S",   # flake8-bandit - security issues
+    "T10", # flake8-debugger - detect debugger statements (breakpoint, pdb)
+    "SIM", # flake8-simplify - code simplification suggestions
+    "PERF", # Perflint - performance anti-patterns
+    "PLE", # Pylint errors - additional error detection
+    "RUF", # Ruff-specific rules
+]
+
+ignore = [
+    # Framework exception
+    "B008", # FastAPI requires Depends() in endpoint and dependency parameter defaults
+
+    # Security exceptions
+    "S311", # Allow standard pseudo-random generators (not used for cryptographic purposes)
+
+    # Performance exceptions
+    "PERF203", # Allow try-except in loops (sometimes necessary for error handling)
+
+    # Simplification exceptions
+    "SIM102", # Allow nested if statements (sometimes clearer than combined conditions)
+    "SIM108", # Allow if-else blocks instead of ternary (sometimes more readable)
+]
+
+[lint.per-file-ignores]
+"tests/**/*.py" = [
+    "B018", # Allow direct attribute access checks in tests
+    "E501", # Allow long fixture strings and snapshot-like literals in tests
+    "F841", # Allow unused intermediates in integration-style tests
+    "PERF401", # Avoid churn from list-comprehension micro-optimizations in tests
+    "S101", # Allow assert statements in tests (standard pytest practice)
+    "S104", # Allow test coverage for broad host bindings
+    "S106", # Allow dummy tokens and passwords in tests
+    "S108", # Allow fixed temporary paths in tests
+    "S603", # Allow subprocess usage in integration tests
+    "SIM117", # Allow nested context managers in tests when clearer
+]
+
+[format]
+quote-style = "single"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

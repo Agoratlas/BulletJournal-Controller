@@ -19,7 +19,9 @@ def wait_for_project_health(*, host_port: int, timeout_seconds: float = 90.0) ->
     return False
 
 
-def fetch_controller_status(*, host_port: int, project_id: str, controller_token: str | None = None) -> dict[str, object]:
+def fetch_controller_status(
+    *, host_port: int, project_id: str, controller_token: str | None = None
+) -> dict[str, object]:
     import httpx
 
     headers = {'authorization': f'Bearer {controller_token}'} if controller_token else None

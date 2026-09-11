@@ -2,7 +2,7 @@ from __future__ import annotations
 
 MIGRATIONS: list[tuple[str, str]] = [
     (
-        "001_initial",
+        '001_initial',
         """
         CREATE TABLE IF NOT EXISTS schema_migrations (
             name TEXT PRIMARY KEY,
@@ -89,14 +89,14 @@ MIGRATIONS: list[tuple[str, str]] = [
         """,
     ),
     (
-        "002_project_activity_columns",
+        '002_project_activity_columns',
         """
         ALTER TABLE projects ADD COLUMN last_graph_edit_at TEXT;
         ALTER TABLE projects ADD COLUMN last_notebook_edit_at TEXT;
         """,
     ),
     (
-        "003_jobs_without_project_fk",
+        '003_jobs_without_project_fk',
         """
         CREATE TABLE jobs_new (
             job_id TEXT PRIMARY KEY,
@@ -131,7 +131,7 @@ MIGRATIONS: list[tuple[str, str]] = [
         """,
     ),
     (
-        "004_project_controller_status_token",
+        '004_project_controller_status_token',
         """
         ALTER TABLE projects ADD COLUMN controller_status_token TEXT;
         UPDATE projects
@@ -140,7 +140,7 @@ MIGRATIONS: list[tuple[str, str]] = [
         """,
     ),
     (
-        "005_nullable_project_limits",
+        '005_nullable_project_limits',
         """
         CREATE TABLE projects_new (
             project_id TEXT PRIMARY KEY,
@@ -199,25 +199,25 @@ MIGRATIONS: list[tuple[str, str]] = [
         """,
     ),
     (
-        "006_project_runtime_venv_size_bytes",
+        '006_project_runtime_venv_size_bytes',
         """
         ALTER TABLE projects ADD COLUMN runtime_venv_size_bytes INTEGER;
         """,
     ),
     (
-        "007_project_disk_soft_limit_bytes",
+        '007_project_disk_soft_limit_bytes',
         """
         ALTER TABLE projects ADD COLUMN disk_soft_limit_bytes INTEGER;
         """,
     ),
     (
-        "008_project_runtime_uv_cache_size_bytes",
+        '008_project_runtime_uv_cache_size_bytes',
         """
         ALTER TABLE projects ADD COLUMN runtime_uv_cache_size_bytes INTEGER;
         """,
     ),
     (
-        "009_project_rbac",
+        '009_project_rbac',
         """
         ALTER TABLE users ADD COLUMN is_server_admin INTEGER NOT NULL DEFAULT 0;
 
@@ -244,7 +244,7 @@ MIGRATIONS: list[tuple[str, str]] = [
         """,
     ),
     (
-        "010_oauth_mcp",
+        '010_oauth_mcp',
         """
         CREATE TABLE oauth_clients (
             client_id TEXT PRIMARY KEY,

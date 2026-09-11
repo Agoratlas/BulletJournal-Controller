@@ -15,9 +15,7 @@ class DummyProjectService:
     def list_projects(self):
         return [self.project]
 
-    def apply_runtime_status(
-        self, *, project_id: str, status_payload: dict[str, object]
-    ):
+    def apply_runtime_status(self, *, project_id: str, status_payload: dict[str, object]):
         self.applied_statuses.append((project_id, status_payload))
 
     def stop_project(self, project_id: str, *, reason: str | None = None):
@@ -54,12 +52,10 @@ class DummyRuntimeService:
 
 
 def test_reconcile_does_not_stop_project_before_idle_timeout_elapsed() -> None:
-    project = SimpleNamespace(
-        project_id="study-a", status="running", container_port=8765
-    )
+    project = SimpleNamespace(project_id='study-a', status='running', container_port=8765)
     status_payload = {
-        "idle_shutdown_eligible": True,
-        "idle_shutdown_eligible_since": "2026-03-23T11:58:00Z",
+        'idle_shutdown_eligible': True,
+        'idle_shutdown_eligible_since': '2026-03-23T11:58:00Z',
     }
     project_service = DummyProjectService(project)
     runtime_service = DummyRuntimeService(status_payload)
@@ -73,24 +69,20 @@ def test_reconcile_does_not_stop_project_before_idle_timeout_elapsed() -> None:
 
     original_utc_now = reconcile_module.utc_now
     try:
-        reconcile_module.utc_now = lambda: reconcile_module.parse_iso8601(
-            "2026-03-23T12:03:00Z"
-        )
+        reconcile_module.utc_now = lambda: reconcile_module.parse_iso8601('2026-03-23T12:03:00Z')
         service.run_once()
     finally:
         reconcile_module.utc_now = original_utc_now
 
-    assert project_service.applied_statuses == [("study-a", status_payload)]
+    assert project_service.applied_statuses == [('study-a', status_payload)]
     assert project_service.stopped == []
 
 
 def test_reconcile_stops_project_after_idle_timeout_elapsed() -> None:
-    project = SimpleNamespace(
-        project_id="study-a", status="running", container_port=8765
-    )
+    project = SimpleNamespace(project_id='study-a', status='running', container_port=8765)
     status_payload = {
-        "idle_shutdown_eligible": True,
-        "idle_shutdown_eligible_since": "2026-03-22T10:00:00Z",
+        'idle_shutdown_eligible': True,
+        'idle_shutdown_eligible_since': '2026-03-22T10:00:00Z',
     }
     project_service = DummyProjectService(project)
     runtime_service = DummyRuntimeService(status_payload)
@@ -106,32 +98,28 @@ def test_reconcile_stops_project_after_idle_timeout_elapsed() -> None:
 
     original_utc_now = reconcile_module.utc_now
     try:
-        reconcile_module.utc_now = lambda: reconcile_module.parse_iso8601(
-            "2026-03-23T10:00:01Z"
-        )
+        reconcile_module.utc_now = lambda: reconcile_module.parse_iso8601('2026-03-23T10:00:01Z')
         service.run_once()
     finally:
         reconcile_module.utc_now = original_utc_now
 
     assert project_service.stopped == []
-    assert job_service.stop_requests == [("study-a", "idle_timeout")]
+    assert job_service.stop_requests == [('study-a', 'idle_timeout')]
 
 
-def test_reconcile_marks_project_crashed_when_status_fetch_fails_for_missing_container() -> (
-    None
-):
+def test_reconcile_marks_project_crashed_when_status_fetch_fails_for_missing_container() -> None:
     project = SimpleNamespace(
-        project_id="study-a",
-        status="running",
+        project_id='study-a',
+        status='running',
         container_port=8765,
-        container_name="bulletjournal-main-study-a",
+        container_name='bulletjournal-main-study-a',
     )
     project_service = DummyProjectService(project)
     runtime_service = DummyRuntimeService(status_payload={})
 
     def raise_fetch_error(*, project):
         _ = project
-        raise RuntimeError("connection failed")
+        raise RuntimeError('connection failed')
 
     runtime_service.fetch_project_status = raise_fetch_error
     service = ReconcileService(
@@ -142,6 +130,6 @@ def test_reconcile_marks_project_crashed_when_status_fetch_fails_for_missing_con
 
     service.run_once()
 
-    assert project_service.crashed == ["study-a"]
+    assert project_service.crashed == ['study-a']
     assert project_service.applied_statuses == []
     assert len(runtime_service.captured) == 1

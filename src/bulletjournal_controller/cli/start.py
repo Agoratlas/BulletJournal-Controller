@@ -26,34 +26,34 @@ def start_server(instance_root: str) -> None:
 
 def build_log_config(log_path: Path) -> dict[str, object]:
     log_config = deepcopy(LOGGING_CONFIG)
-    handlers = log_config.setdefault("handlers", {})
-    loggers = log_config.setdefault("loggers", {})
-    handlers["controller_file_default"] = {
-        "class": "logging.FileHandler",
-        "formatter": "default",
-        "filename": str(log_path),
-        "mode": "a",
-        "encoding": "utf-8",
+    handlers = log_config.setdefault('handlers', {})
+    loggers = log_config.setdefault('loggers', {})
+    handlers['controller_file_default'] = {
+        'class': 'logging.FileHandler',
+        'formatter': 'default',
+        'filename': str(log_path),
+        'mode': 'a',
+        'encoding': 'utf-8',
     }
-    handlers["controller_file_access"] = {
-        "class": "logging.FileHandler",
-        "formatter": "access",
-        "filename": str(log_path),
-        "mode": "a",
-        "encoding": "utf-8",
+    handlers['controller_file_access'] = {
+        'class': 'logging.FileHandler',
+        'formatter': 'access',
+        'filename': str(log_path),
+        'mode': 'a',
+        'encoding': 'utf-8',
     }
-    _append_handler(loggers.setdefault("uvicorn", {}), "controller_file_default")
-    _append_handler(loggers.setdefault("uvicorn.error", {}), "controller_file_default")
-    _append_handler(loggers.setdefault("uvicorn.access", {}), "controller_file_access")
-    access_logger = loggers.setdefault("bulletjournal_controller.access", {"handlers": [], "level": "INFO"})
-    _append_handler(access_logger, "controller_file_default")
-    access_logger["propagate"] = False
-    root = log_config.setdefault("root", {"handlers": [], "level": "INFO"})
-    _append_handler(root, "controller_file_default")
+    _append_handler(loggers.setdefault('uvicorn', {}), 'controller_file_default')
+    _append_handler(loggers.setdefault('uvicorn.error', {}), 'controller_file_default')
+    _append_handler(loggers.setdefault('uvicorn.access', {}), 'controller_file_access')
+    access_logger = loggers.setdefault('bulletjournal_controller.access', {'handlers': [], 'level': 'INFO'})
+    _append_handler(access_logger, 'controller_file_default')
+    access_logger['propagate'] = False
+    root = log_config.setdefault('root', {'handlers': [], 'level': 'INFO'})
+    _append_handler(root, 'controller_file_default')
     return log_config
 
 
 def _append_handler(config: dict[str, object], handler_name: str) -> None:
-    handlers = config.setdefault("handlers", [])
+    handlers = config.setdefault('handlers', [])
     if isinstance(handlers, list) and handler_name not in handlers:
         handlers.append(handler_name)

@@ -22,92 +22,88 @@ class RecordingDockerAdapter:
         self.calls: list[list[str]] = []
 
     def docker_base_command(self) -> list[str]:
-        return ["docker"]
+        return ['docker']
 
     def run(self, command: list[str], *, timeout: int = 30):
         _ = timeout
         self.calls.append(command)
-        if command[1:3] == ["stats", "--no-stream"]:
+        if command[1:3] == ['stats', '--no-stream']:
             return type(
-                "Result",
+                'Result',
                 (),
                 {
-                    "returncode": 0,
-                    "stdout": json.dumps(
+                    'returncode': 0,
+                    'stdout': json.dumps(
                         {
-                            "Name": "container-a",
-                            "CPUPerc": "1.5%",
-                            "MemUsage": "10MiB / 1GiB",
+                            'Name': 'container-a',
+                            'CPUPerc': '1.5%',
+                            'MemUsage': '10MiB / 1GiB',
                         }
                     )
-                    + "\n",
-                    "stderr": "",
+                    + '\n',
+                    'stderr': '',
                 },
             )()
-        if command[1:3] == ["inspect", "--size"]:
+        if command[1:3] == ['inspect', '--size']:
             return type(
-                "Result",
+                'Result',
                 (),
                 {
-                    "returncode": 0,
-                    "stdout": json.dumps([{"SizeRw": 1234}]),
-                    "stderr": "",
+                    'returncode': 0,
+                    'stdout': json.dumps([{'SizeRw': 1234}]),
+                    'stderr': '',
                 },
             )()
-        raise AssertionError(f"Unexpected docker command: {command}")
+        raise AssertionError(f'Unexpected docker command: {command}')
 
 
 def make_project(root: Path, **changes) -> ProjectRecord:
     data = {
-        "project_id": "study-a",
-        "controller_status_token": "token",
-        "status": "running",
-        "status_reason": None,
-        "root_path": str(root),
-        "created_by_user_id": "user-1",
-        "created_at": "2026-04-14T00:00:00Z",
-        "updated_at": "2026-04-14T00:00:00Z",
-        "last_graph_edit_at": None,
-        "last_notebook_edit_at": None,
-        "last_edit_at": None,
-        "last_run_finished_at": None,
-        "idle_shutdown_eligible_at": None,
-        "python_version": "3.11",
-        "bulletjournal_version": "0.1.0",
-        "custom_requirements_text": "",
-        "lock_sha256": None,
-        "runtime_venv_size_bytes": None,
-        "runtime_uv_cache_size_bytes": None,
-        "install_status": "ready",
-        "last_install_at": None,
-        "cpu_limit_millis": 1000,
-        "memory_limit_bytes": 1024,
-        "disk_soft_limit_bytes": None,
-        "gpu_enabled": False,
-        "container_name": None,
-        "container_id": None,
-        "container_port": None,
-        "runtime_started_at": None,
-        "runtime_stopped_at": None,
+        'project_id': 'study-a',
+        'controller_status_token': 'token',
+        'status': 'running',
+        'status_reason': None,
+        'root_path': str(root),
+        'created_by_user_id': 'user-1',
+        'created_at': '2026-04-14T00:00:00Z',
+        'updated_at': '2026-04-14T00:00:00Z',
+        'last_graph_edit_at': None,
+        'last_notebook_edit_at': None,
+        'last_edit_at': None,
+        'last_run_finished_at': None,
+        'idle_shutdown_eligible_at': None,
+        'python_version': '3.11',
+        'bulletjournal_version': '0.1.0',
+        'custom_requirements_text': '',
+        'lock_sha256': None,
+        'runtime_venv_size_bytes': None,
+        'runtime_uv_cache_size_bytes': None,
+        'install_status': 'ready',
+        'last_install_at': None,
+        'cpu_limit_millis': 1000,
+        'memory_limit_bytes': 1024,
+        'disk_soft_limit_bytes': None,
+        'gpu_enabled': False,
+        'container_name': None,
+        'container_id': None,
+        'container_port': None,
+        'runtime_started_at': None,
+        'runtime_stopped_at': None,
     }
     data.update(changes)
     return ProjectRecord(**data)
 
 
-def test_project_disk_usage_uses_cached_runtime_venv_size(
-    tmp_path, monkeypatch
-) -> None:
-    project_root = tmp_path / "study-a"
-    (project_root / "graph").mkdir(parents=True)
-    (project_root / ".runtime" / "venv").mkdir(parents=True)
-    (project_root / ".runtime" / "uv-cache").mkdir(parents=True)
-    (project_root / ".runtime" / "logs").mkdir(parents=True)
-    (project_root / "graph" / "nodes.json").write_text("12345", encoding="utf-8")
-    (project_root / ".runtime" / "logs" / "server.log").write_text(
-        "1234567", encoding="utf-8"
-    )
-    (project_root / ".runtime" / "venv" / "cached.bin").write_bytes(b"x" * 11)
-    (project_root / ".runtime" / "uv-cache" / "archive.bin").write_bytes(b"x" * 13)
+def test_project_disk_usage_uses_cached_runtime_venv_size(tmp_path, monkeypatch) -> None:
+    project_root = tmp_path / 'study-a'
+    (project_root / 'graph').mkdir(parents=True)
+    (project_root / '.runtime' / 'venv').mkdir(parents=True)
+    (project_root / '.runtime' / 'uv-cache').mkdir(parents=True)
+    (project_root / '.runtime' / 'logs').mkdir(parents=True)
+    (project_root / 'graph' / 'nodes.json').write_text('12345', encoding='utf-8')
+    (project_root / '.runtime' / 'logs' / 'server.log').write_text('1234567', encoding='utf-8')
+    (project_root / '.runtime' / 'venv' / 'cached.bin').write_bytes(b'x' * 11)
+    (project_root / '.runtime' / 'uv-cache' / 'archive.bin').write_bytes(b'x' * 13)
     project = make_project(
         project_root,
         runtime_venv_size_bytes=11,
@@ -120,9 +116,9 @@ def test_project_disk_usage_uses_cached_runtime_venv_size(
         calls.append((path, exclude))
         return original(path, exclude=exclude)
 
-    monkeypatch.setattr(metrics_module, "path_size_bytes", recording_path_size)
+    monkeypatch.setattr(metrics_module, 'path_size_bytes', recording_path_size)
     service = MetricsService(
-        instance_paths=type("InstancePaths", (), {"root": tmp_path})(),
+        instance_paths=type('InstancePaths', (), {'root': tmp_path})(),
         docker_adapter=RecordingDockerAdapter(),
         runtime_config_service=object(),
         jobs=DummyJobs(),
@@ -130,28 +126,26 @@ def test_project_disk_usage_uses_cached_runtime_venv_size(
 
     metrics = service.project_metrics(project)
 
-    assert metrics["disk_used_bytes"] == 36
+    assert metrics['disk_used_bytes'] == 36
     assert calls == [
         (
             project_root,
             (
-                project_root / ".runtime" / "venv",
-                project_root / ".runtime" / "uv-cache",
+                project_root / '.runtime' / 'venv',
+                project_root / '.runtime' / 'uv-cache',
             ),
         ),
     ]
 
 
-def test_project_metrics_cache_avoids_repeated_filesystem_and_docker_work(
-    tmp_path, monkeypatch
-) -> None:
-    project_root = tmp_path / "study-a"
+def test_project_metrics_cache_avoids_repeated_filesystem_and_docker_work(tmp_path, monkeypatch) -> None:
+    project_root = tmp_path / 'study-a'
     project_root.mkdir()
     project = make_project(
         project_root,
         runtime_venv_size_bytes=5,
-        container_name="container-a",
-        container_id="container-id",
+        container_name='container-a',
+        container_id='container-id',
         container_port=8765,
     )
     path_size_calls = 0
@@ -162,10 +156,10 @@ def test_project_metrics_cache_avoids_repeated_filesystem_and_docker_work(
         path_size_calls += 1
         return 7
 
-    monkeypatch.setattr(metrics_module, "path_size_bytes", fake_path_size)
+    monkeypatch.setattr(metrics_module, 'path_size_bytes', fake_path_size)
     docker = RecordingDockerAdapter()
     service = MetricsService(
-        instance_paths=type("InstancePaths", (), {"root": tmp_path})(),
+        instance_paths=type('InstancePaths', (), {'root': tmp_path})(),
         docker_adapter=docker,
         runtime_config_service=object(),
         jobs=DummyJobs(),
@@ -175,36 +169,34 @@ def test_project_metrics_cache_avoids_repeated_filesystem_and_docker_work(
     second = service.project_metrics(project)
 
     assert first == second
-    assert first["disk_used_bytes"] == 7 + 5 + 1234
-    assert first["cpu_percent"] == 1.5
+    assert first['disk_used_bytes'] == 7 + 5 + 1234
+    assert first['cpu_percent'] == 1.5
     assert path_size_calls == 1
     assert len(docker.calls) == 2
 
 
-def test_cached_project_metrics_returns_stale_snapshot_without_io(
-    tmp_path, monkeypatch
-) -> None:
-    project_root = tmp_path / "study-a"
+def test_cached_project_metrics_returns_stale_snapshot_without_io(tmp_path, monkeypatch) -> None:
+    project_root = tmp_path / 'study-a'
     project_root.mkdir()
     project = make_project(
         project_root,
-        container_name="container-a",
-        container_id="container-id",
+        container_name='container-a',
+        container_id='container-id',
         container_port=8765,
     )
     docker = RecordingDockerAdapter()
     service = MetricsService(
-        instance_paths=type("InstancePaths", (), {"root": tmp_path})(),
+        instance_paths=type('InstancePaths', (), {'root': tmp_path})(),
         docker_adapter=docker,
         runtime_config_service=object(),
         jobs=DummyJobs(),
     )
     service.project_metrics(project)
     docker.calls.clear()
-    monkeypatch.setattr(metrics_module.time, "monotonic", lambda: float("inf"))
+    monkeypatch.setattr(metrics_module.time, 'monotonic', lambda: float('inf'))
 
     metrics = service.cached_project_metrics_map([project])
 
-    assert metrics[project.project_id]["cpu_percent"] == 1.5
-    assert metrics[project.project_id]["disk_used_bytes"] == 1234
+    assert metrics[project.project_id]['cpu_percent'] == 1.5
+    assert metrics[project.project_id]['disk_used_bytes'] == 1234
     assert docker.calls == []

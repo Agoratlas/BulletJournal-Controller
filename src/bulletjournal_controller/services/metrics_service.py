@@ -29,12 +29,8 @@ class MetricsService:
         self.docker_adapter = docker_adapter
         self.runtime_config_service = runtime_config_service
         self.jobs = jobs
-        self._project_disk_usage_cache: dict[
-            str, tuple[str, int | None, int | None, float, int]
-        ] = {}
-        self._docker_stats_cache: dict[
-            tuple[str, ...], tuple[float, dict[str, dict[str, object]]]
-        ] = {}
+        self._project_disk_usage_cache: dict[str, tuple[str, int | None, int | None, float, int]] = {}
+        self._docker_stats_cache: dict[tuple[str, ...], tuple[float, dict[str, dict[str, object]]]] = {}
         self._container_rw_size_cache: dict[str, tuple[float, int | None]] = {}
         self._system_metrics_cache: tuple[float, dict[str, object]] | None = None
 
@@ -45,19 +41,17 @@ class MetricsService:
             return cached[1]
         disk = shutil.disk_usage(self.instance_paths.root)
         metrics = {
-            "cpu_percent": self._system_cpu_percent(),
-            "memory": self._system_memory_metrics(),
-            "disk": {
-                "used_bytes": int(disk.used),
-                "total_bytes": int(disk.total),
+            'cpu_percent': self._system_cpu_percent(),
+            'memory': self._system_memory_metrics(),
+            'disk': {
+                'used_bytes': int(disk.used),
+                'total_bytes': int(disk.total),
             },
         }
         self._system_metrics_cache = (now + SYSTEM_METRICS_TTL_SECONDS, metrics)
         return metrics
 
-    def project_metrics_map(
-        self, projects: list[ProjectRecord]
-    ) -> dict[str, dict[str, object]]:
+    def project_metrics_map(self, projects: list[ProjectRecord]) -> dict[str, dict[str, object]]:
         runtime_metrics = self._docker_stats_by_container_name(
             [project.container_name for project in projects if project.container_name]
         )
@@ -65,30 +59,24 @@ class MetricsService:
         for project in projects:
             disk_used_bytes = self._project_disk_usage(project)
             project_metrics: dict[str, object] = {
-                "disk_used_bytes": disk_used_bytes,
+                'disk_used_bytes': disk_used_bytes,
             }
             if project.container_name:
                 runtime = runtime_metrics.get(project.container_name)
                 if runtime is not None:
-                    project_metrics["cpu_percent"] = runtime.get("cpu_percent")
-                    project_metrics["memory_used_bytes"] = runtime.get(
-                        "memory_used_bytes"
-                    )
-                    project_metrics["memory_limit_bytes"] = runtime.get(
-                        "memory_limit_bytes"
-                    )
+                    project_metrics['cpu_percent'] = runtime.get('cpu_percent')
+                    project_metrics['memory_used_bytes'] = runtime.get('memory_used_bytes')
+                    project_metrics['memory_limit_bytes'] = runtime.get('memory_limit_bytes')
                 size_bytes = self._container_rw_size(project.container_name)
                 if size_bytes is not None:
-                    project_metrics["disk_used_bytes"] = disk_used_bytes + size_bytes
+                    project_metrics['disk_used_bytes'] = disk_used_bytes + size_bytes
             metrics[project.project_id] = project_metrics
         return metrics
 
     def project_metrics(self, project: ProjectRecord) -> dict[str, object]:
         return self.project_metrics_map([project]).get(project.project_id, {})
 
-    def cached_project_metrics_map(
-        self, projects: list[ProjectRecord]
-    ) -> dict[str, dict[str, object]]:
+    def cached_project_metrics_map(self, projects: list[ProjectRecord]) -> dict[str, dict[str, object]]:
         """Return the latest collected values without blocking on metric collection."""
         metrics: dict[str, dict[str, object]] = {}
         for project in projects:
@@ -96,7 +84,7 @@ class MetricsService:
             cached_disk = self._project_disk_usage_cache.get(project.project_id)
             if cached_disk is not None:
                 _, _, _, _, total = cached_disk
-                project_metrics["disk_used_bytes"] = total
+                project_metrics['disk_used_bytes'] = total
             if project.container_name:
                 for _, stats in self._docker_stats_cache.values():
                     runtime = stats.get(project.container_name)
@@ -104,10 +92,10 @@ class MetricsService:
                         project_metrics.update(runtime)
                         break
                 cached_size = self._container_rw_size_cache.get(project.container_name)
-                if cached_size is not None and "disk_used_bytes" in project_metrics:
+                if cached_size is not None and 'disk_used_bytes' in project_metrics:
                     _, size_rw = cached_size
                     if size_rw is not None:
-                        project_metrics["disk_used_bytes"] += size_rw
+                        project_metrics['disk_used_bytes'] += size_rw
             metrics[project.project_id] = project_metrics
         return metrics
 
@@ -129,14 +117,16 @@ class MetricsService:
                 and now < deadline
             ):
                 return cached_total
-        total = path_size_bytes(
-            Path(project.root_path),
-            exclude=(
-                Path(project.root_path) / ".runtime" / "venv",
-                Path(project.root_path) / ".runtime" / "uv-cache",
-            ),
-        ) + int(project.runtime_venv_size_bytes or 0) + int(
-            project.runtime_uv_cache_size_bytes or 0
+        total = (
+            path_size_bytes(
+                Path(project.root_path),
+                exclude=(
+                    Path(project.root_path) / '.runtime' / 'venv',
+                    Path(project.root_path) / '.runtime' / 'uv-cache',
+                ),
+            )
+            + int(project.runtime_venv_size_bytes or 0)
+            + int(project.runtime_uv_cache_size_bytes or 0)
         )
         for log_path_text in self.jobs.list_log_paths_for_project(project.project_id):
             total += path_size_bytes(Path(log_path_text))
@@ -149,9 +139,7 @@ class MetricsService:
         )
         return total
 
-    def _docker_stats_by_container_name(
-        self, container_names: list[str]
-    ) -> dict[str, dict[str, object]]:
+    def _docker_stats_by_container_name(self, container_names: list[str]) -> dict[str, dict[str, object]]:
         resolved_names = [name for name in container_names if name]
         if not resolved_names:
             return {}
@@ -162,11 +150,12 @@ class MetricsService:
             deadline, stats = cached
             if now < deadline:
                 return stats
-        command = self.docker_adapter.docker_base_command() + [
-            "stats",
-            "--no-stream",
-            "--format",
-            "{{json .}}",
+        command = [
+            *self.docker_adapter.docker_base_command(),
+            'stats',
+            '--no-stream',
+            '--format',
+            '{{json .}}',
             *resolved_names,
         ]
         try:
@@ -176,7 +165,7 @@ class MetricsService:
         if result.returncode != 0:
             return {}
         stats: dict[str, dict[str, object]] = {}
-        for line in (result.stdout or "").splitlines():
+        for line in (result.stdout or '').splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -184,18 +173,14 @@ class MetricsService:
                 payload = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            name = str(payload.get("Name") or "").strip()
+            name = str(payload.get('Name') or '').strip()
             if not name:
                 continue
-            memory_used_bytes, memory_limit_bytes = self._parse_memory_usage(
-                str(payload.get("MemUsage") or "")
-            )
+            memory_used_bytes, memory_limit_bytes = self._parse_memory_usage(str(payload.get('MemUsage') or ''))
             stats[name] = {
-                "cpu_percent": self._parse_percentage(
-                    str(payload.get("CPUPerc") or "")
-                ),
-                "memory_used_bytes": memory_used_bytes,
-                "memory_limit_bytes": memory_limit_bytes,
+                'cpu_percent': self._parse_percentage(str(payload.get('CPUPerc') or '')),
+                'memory_used_bytes': memory_used_bytes,
+                'memory_limit_bytes': memory_limit_bytes,
             }
         self._docker_stats_cache[cache_key] = (
             now + DOCKER_STATS_TTL_SECONDS,
@@ -210,11 +195,7 @@ class MetricsService:
             deadline, size_rw = cached
             if now < deadline:
                 return size_rw
-        command = self.docker_adapter.docker_base_command() + [
-            "inspect",
-            "--size",
-            container_name,
-        ]
+        command = [*self.docker_adapter.docker_base_command(), 'inspect', '--size', container_name]
         try:
             result = self.docker_adapter.run(command, timeout=30)
         except Exception:
@@ -222,7 +203,7 @@ class MetricsService:
         if result.returncode != 0:
             return None
         try:
-            payload = json.loads(result.stdout or "[]")
+            payload = json.loads(result.stdout or '[]')
         except json.JSONDecodeError:
             return None
         if not isinstance(payload, list) or not payload:
@@ -230,7 +211,7 @@ class MetricsService:
         record = payload[0]
         if not isinstance(record, dict):
             return None
-        size_rw = record.get("SizeRw")
+        size_rw = record.get('SizeRw')
         if isinstance(size_rw, int):
             self._container_rw_size_cache[container_name] = (
                 now + CONTAINER_RW_SIZE_TTL_SECONDS,
@@ -242,8 +223,8 @@ class MetricsService:
     def _system_cpu_percent(self) -> float | None:
         try:
             cpu_count = os.cpu_count() or 1
-            result = subprocess.run(
-                ["ps", "-A", "-o", "%cpu="],
+            result = subprocess.run(  # noqa: S603, RUF100 - Fixed local system probe command.
+                ['/bin/ps', '-A', '-o', '%cpu='],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -257,7 +238,7 @@ class MetricsService:
                         continue
                     total += float(line)
                 return round(max(0.0, min(100.0, total / cpu_count)), 1)
-        except Exception:
+        except Exception:  # noqa: S110 - Fall back to load average when ps is unavailable or malformed.
             pass
         try:
             cpu_count = os.cpu_count() or 1
@@ -266,24 +247,22 @@ class MetricsService:
             return None
 
     def _system_memory_metrics(self) -> dict[str, int] | None:
-        total = self._sysctl_int("hw.memsize")
+        total = self._sysctl_int('hw.memsize')
         if total is not None:
-            page_size = self._sysctl_int("hw.pagesize") or 4096
+            page_size = self._sysctl_int('hw.pagesize') or 4096
             vm_stats = self._vm_stat_pages()
             if vm_stats is not None:
-                available_pages = vm_stats.get("Pages free", 0) + vm_stats.get(
-                    "Pages speculative", 0
-                )
+                available_pages = vm_stats.get('Pages free', 0) + vm_stats.get('Pages speculative', 0)
                 used_bytes = max(0, total - (available_pages * page_size))
                 return {
-                    "used_bytes": int(used_bytes),
-                    "total_bytes": int(total),
+                    'used_bytes': int(used_bytes),
+                    'total_bytes': int(total),
                 }
         return self._linux_memory_metrics()
 
     @staticmethod
     def _parse_percentage(value: str) -> float | None:
-        stripped = value.strip().removesuffix("%")
+        stripped = value.strip().removesuffix('%')
         if not stripped:
             return None
         try:
@@ -293,12 +272,10 @@ class MetricsService:
 
     @staticmethod
     def _parse_memory_usage(value: str) -> tuple[int | None, int | None]:
-        if not value or "/" not in value:
+        if not value or '/' not in value:
             return None, None
-        used_text, limit_text = [part.strip() for part in value.split("/", 1)]
-        return MetricsService._parse_size(used_text), MetricsService._parse_size(
-            limit_text
-        )
+        used_text, limit_text = [part.strip() for part in value.split('/', 1)]
+        return MetricsService._parse_size(used_text), MetricsService._parse_size(limit_text)
 
     @staticmethod
     def _parse_size(value: str) -> int | None:
@@ -308,28 +285,24 @@ class MetricsService:
         parts = text.split()
         token = parts[0]
         index = 0
-        while index < len(token) and (token[index].isdigit() or token[index] in ".-"):
+        while index < len(token) and (token[index].isdigit() or token[index] in '.-'):
             index += 1
         number_text = token[:index]
-        unit = (
-            token[index:]
-            if index < len(token)
-            else (parts[1] if len(parts) > 1 else "B")
-        )
+        unit = token[index:] if index < len(token) else (parts[1] if len(parts) > 1 else 'B')
         try:
             number = float(number_text)
         except ValueError:
             return None
         multipliers = {
-            "b": 1,
-            "kb": 1000,
-            "kib": 1024,
-            "mb": 1000**2,
-            "mib": 1024**2,
-            "gb": 1000**3,
-            "gib": 1024**3,
-            "tb": 1000**4,
-            "tib": 1024**4,
+            'b': 1,
+            'kb': 1000,
+            'kib': 1024,
+            'mb': 1000**2,
+            'mib': 1024**2,
+            'gb': 1000**3,
+            'gib': 1024**3,
+            'tb': 1000**4,
+            'tib': 1024**4,
         }
         multiplier = multipliers.get(unit.strip().lower())
         if multiplier is None:
@@ -339,8 +312,8 @@ class MetricsService:
     @staticmethod
     def _sysctl_int(name: str) -> int | None:
         try:
-            result = subprocess.run(
-                ["sysctl", "-n", name],
+            result = subprocess.run(  # noqa: S603, RUF100 - Fixed system probe command with a validated sysctl key.
+                ['/usr/sbin/sysctl', '-n', name],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -361,8 +334,8 @@ class MetricsService:
     @staticmethod
     def _vm_stat_pages() -> dict[str, int] | None:
         try:
-            result = subprocess.run(
-                ["vm_stat"],
+            result = subprocess.run(  # noqa: S603, RUF100 - Fixed local system probe command.
+                ['/usr/bin/vm_stat'],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -374,10 +347,10 @@ class MetricsService:
             return None
         pages: dict[str, int] = {}
         for line in result.stdout.splitlines():
-            if ":" not in line:
+            if ':' not in line:
                 continue
-            name, raw_value = line.split(":", 1)
-            cleaned = raw_value.strip().rstrip(".").replace(".", "")
+            name, raw_value = line.split(':', 1)
+            cleaned = raw_value.strip().rstrip('.').replace('.', '')
             try:
                 pages[name.strip()] = int(cleaned)
             except ValueError:
@@ -386,14 +359,14 @@ class MetricsService:
 
     @staticmethod
     def _linux_memory_metrics() -> dict[str, int] | None:
-        meminfo = Path("/proc/meminfo")
+        meminfo = Path('/proc/meminfo')
         if not meminfo.exists():
             return None
         values: dict[str, int] = {}
-        for line in meminfo.read_text(encoding="utf-8").splitlines():
-            if ":" not in line:
+        for line in meminfo.read_text(encoding='utf-8').splitlines():
+            if ':' not in line:
                 continue
-            key, raw_value = line.split(":", 1)
+            key, raw_value = line.split(':', 1)
             parts = raw_value.strip().split()
             if not parts:
                 continue
@@ -401,11 +374,11 @@ class MetricsService:
                 values[key] = int(parts[0]) * 1024
             except ValueError:
                 continue
-        total = values.get("MemTotal")
-        available = values.get("MemAvailable")
+        total = values.get('MemTotal')
+        available = values.get('MemAvailable')
         if total is None or available is None:
             return None
         return {
-            "used_bytes": max(0, total - available),
-            "total_bytes": total,
+            'used_bytes': max(0, total - available),
+            'total_bytes': total,
         }

@@ -21,23 +21,17 @@ def create_user(
     update: bool = False,
     is_server_admin: bool | None = None,
 ) -> dict[str, object]:
-    provided_secret_sources = sum(
-        [password is not None, password_hash is not None, password_hash_stdin]
-    )
+    provided_secret_sources = sum([password is not None, password_hash is not None, password_hash_stdin])
     if provided_secret_sources > 1:
-        raise ValidationError(
-            "Provide exactly one of password, password_hash, or password_hash_stdin."
-        )
+        raise ValidationError('Provide exactly one of password, password_hash, or password_hash_stdin.')
     if password_hash_stdin:
         password_hash = sys.stdin.read().strip()
     if password is None and password_hash is None:
-        resolved_password = getpass.getpass("Password: ")
+        resolved_password = getpass.getpass('Password: ')
     else:
         resolved_password = password
     instance_paths = require_instance_root(Path(instance_root))
-    server_config = ServerConfig(
-        session_secret="cli-session-secret", cookie_secure=False
-    )
+    server_config = ServerConfig(session_secret='cli-session-secret', cookie_secure=False)  # noqa: S106 - Offline command never serves sessions.
     container = ServiceContainer(
         instance_paths=instance_paths,
         server_config=server_config,
@@ -47,13 +41,11 @@ def create_user(
     if password_hash is not None:
         resolved_password_hash = password_hash
         if update:
-            user, created = (
-                container.auth_service.create_or_update_user_with_password_hash(
-                    username=username,
-                    display_name=display_name,
-                    password_hash=resolved_password_hash,
-                    is_server_admin=is_server_admin,
-                )
+            user, created = container.auth_service.create_or_update_user_with_password_hash(
+                username=username,
+                display_name=display_name,
+                password_hash=resolved_password_hash,
+                is_server_admin=is_server_admin,
             )
         else:
             user = container.auth_service.create_user_with_password_hash(
@@ -65,18 +57,14 @@ def create_user(
             created = True
     else:
         if resolved_password is None:
-            raise ValidationError("Password is required.")
+            raise ValidationError('Password is required.')
         if update:
-            resolved_password_hash = container.auth_service.password_hasher.hash(
-                resolved_password
-            )
-            user, created = (
-                container.auth_service.create_or_update_user_with_password_hash(
-                    username=username,
-                    display_name=display_name,
-                    password_hash=resolved_password_hash,
-                    is_server_admin=is_server_admin,
-                )
+            resolved_password_hash = container.auth_service.password_hasher.hash(resolved_password)
+            user, created = container.auth_service.create_or_update_user_with_password_hash(
+                username=username,
+                display_name=display_name,
+                password_hash=resolved_password_hash,
+                is_server_admin=is_server_admin,
             )
         else:
             user = container.auth_service.create_user(
@@ -87,10 +75,10 @@ def create_user(
             )
             created = True
     return {
-        "created": created,
-        "user_id": user.user_id,
-        "username": user.username,
-        "display_name": user.display_name,
-        "is_active": user.is_active,
-        "is_server_admin": user.is_server_admin,
+        'created': created,
+        'user_id': user.user_id,
+        'username': user.username,
+        'display_name': user.display_name,
+        'is_active': user.is_active,
+        'is_server_admin': user.is_server_admin,
     }

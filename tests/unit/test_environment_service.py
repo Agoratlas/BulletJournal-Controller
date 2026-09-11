@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from dataclasses import replace
-from types import SimpleNamespace
+from dataclasses import dataclass, replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 
 from bulletjournal_controller.config import default_instance_config
 from bulletjournal_controller.domain.errors import ValidationError
-from bulletjournal_controller.runtime.installer import InstallerRunner
 from bulletjournal_controller.runtime.docker_adapter import DockerAdapter
+from bulletjournal_controller.runtime.installer import InstallerRunner
 from bulletjournal_controller.services.environment_service import EnvironmentService
 
 
@@ -24,12 +23,12 @@ class DummyRuntimeConfigService:
         self._default_dependencies_file = default_dependencies_file
         self._env_file = env_file
         self.runtime_config = type(
-            "RuntimeConfig",
+            'RuntimeConfig',
             (),
             {
-                "runtime_image_name": "bulletjournal-runtime:local",
-                "container_uid": None,
-                "container_gid": None,
+                'runtime_image_name': 'bulletjournal-runtime:local',
+                'container_uid': None,
+                'container_gid': None,
             },
         )()
 
@@ -59,7 +58,7 @@ class DummyProjectPaths:
 
 
 class FakeResult:
-    def __init__(self, *, returncode: int, stdout: str = "", stderr: str = ""):
+    def __init__(self, *, returncode: int, stdout: str = '', stderr: str = ''):
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
@@ -73,19 +72,19 @@ class RetryingInstaller:
 
     def build_project_init_command(self, **kwargs):
         _ = kwargs
-        return ["docker", "run", "init-project"]
+        return ['docker', 'run', 'init-project']
 
     def build_install_command(self, **kwargs):
         _ = kwargs
-        return ["docker", "run", "test"]
+        return ['docker', 'run', 'test']
 
     def build_mark_stale_command(self, **kwargs):
         _ = kwargs
-        return ["docker", "run", "mark-stale"]
+        return ['docker', 'run', 'mark-stale']
 
     def build_validate_environment_command(self, **kwargs):
         _ = kwargs
-        return ["docker", "run", "validate-environment"]
+        return ['docker', 'run', 'validate-environment']
 
     def run(self, command):
         self.commands.append(command)
@@ -96,34 +95,34 @@ class RetryingInstaller:
 
 @dataclass
 class DummyProjectRecord:
-    project_id: str = "study-a"
-    python_version: str = "3.11"
-    bulletjournal_version: str = "0.1.0"
-    custom_requirements_text: str = "bulletjournal-editor==0.1.0\n"
+    project_id: str = 'study-a'
+    python_version: str = '3.11'
+    bulletjournal_version: str = '0.1.0'
+    custom_requirements_text: str = 'bulletjournal-editor==0.1.0\n'
     gpu_enabled: bool = False
 
 
 def make_project_paths(project_root: Path) -> Any:
-    runtime_uv_cache_dir = project_root / ".runtime" / "uv-cache"
+    runtime_uv_cache_dir = project_root / '.runtime' / 'uv-cache'
     runtime_uv_cache_dir.mkdir(parents=True, exist_ok=True)
     return type(
-        "ProjectPaths",
+        'ProjectPaths',
         (),
         {
-            "root": project_root,
-            "runtime_venv_dir": project_root / ".runtime" / "venv",
-            "runtime_uv_cache_dir": runtime_uv_cache_dir,
-            "pyproject_path": project_root / "pyproject.toml",
-            "uv_lock_path": project_root / "uv.lock",
+            'root': project_root,
+            'runtime_venv_dir': project_root / '.runtime' / 'venv',
+            'runtime_uv_cache_dir': runtime_uv_cache_dir,
+            'pyproject_path': project_root / 'pyproject.toml',
+            'uv_lock_path': project_root / 'uv.lock',
         },
     )()
 
 
 def test_parse_default_dependencies_and_merge_precedence(tmp_path: Path) -> None:
-    default_file = tmp_path / "deps.txt"
+    default_file = tmp_path / 'deps.txt'
     default_file.write_text(
-        "# comment\nbulletjournal-editor==0.1.0\nalpha==1\nbeta\n",
-        encoding="utf-8",
+        '# comment\nbulletjournal-editor==0.1.0\nalpha==1\nbeta\n',
+        encoding='utf-8',
     )
     config = default_instance_config()
     config = replace(config, default_dependencies_file=str(default_file))
@@ -133,14 +132,14 @@ def test_parse_default_dependencies_and_merge_precedence(tmp_path: Path) -> None
         runtime_config_service=DummyRuntimeConfigService(default_file),
     )
     merged = service.merge_dependency_lines(
-        bulletjournal_version="0.2.0",
-        custom_requirements_text="bulletjournal-editor==0.2.0\nbeta==2\ngamma @ git+ssh://example/repo.git@abc123\n",
+        bulletjournal_version='0.2.0',
+        custom_requirements_text='bulletjournal-editor==0.2.0\nbeta==2\ngamma @ git+ssh://example/repo.git@abc123\n',
     )
     assert merged == [
-        "bulletjournal-editor==0.2.0",
-        "alpha==1",
-        "beta==2",
-        "gamma @ git+ssh://example/repo.git@abc123",
+        'bulletjournal-editor==0.2.0',
+        'alpha==1',
+        'beta==2',
+        'gamma @ git+ssh://example/repo.git@abc123',
     ]
 
 
@@ -151,17 +150,17 @@ def test_render_pyproject_contains_expected_fields() -> None:
         runtime_config_service=DummyRuntimeConfigService(),
     )
     rendered = service.render_pyproject(
-        project_id="study-a",
-        python_version="3.11",
-        dependencies=["bulletjournal-editor==0.1.0", "alpha"],
+        project_id='study-a',
+        python_version='3.11',
+        dependencies=['bulletjournal-editor==0.1.0', 'alpha'],
     )
     assert 'name = "bulletjournal-project-study-a"' in rendered
     assert 'requires-python = "==3.11.*"' in rendered
-    assert "schema_version = 1" in rendered
+    assert 'schema_version = 1' in rendered
     assert 'build-backend = "setuptools.build_meta"' in rendered
-    assert "[tool.marimo.display]" in rendered
+    assert '[tool.marimo.display]' in rendered
     assert 'theme = "system"' in rendered
-    assert "packages = []" in rendered
+    assert 'packages = []' in rendered
 
 
 def test_parse_dependency_config_supports_index_shorthand() -> None:
@@ -170,12 +169,10 @@ def test_parse_dependency_config_supports_index_shorthand() -> None:
         installer=InstallerRunner(DockerAdapter()),
         runtime_config_service=DummyRuntimeConfigService(),
     )
-    config = service.parse_dependency_config(
-        "cugraph-cu13 @ https://pypi.nvidia.com\npandas\n"
-    )
-    assert config.dependency_lines == ["cugraph-cu13", "pandas"]
-    assert config.extra_index_urls == ["https://pypi.nvidia.com"]
-    assert config.source_indexes == {"cugraph-cu13": "https://pypi.nvidia.com"}
+    config = service.parse_dependency_config('cugraph-cu13 @ https://pypi.nvidia.com\npandas\n')
+    assert config.dependency_lines == ['cugraph-cu13', 'pandas']
+    assert config.extra_index_urls == ['https://pypi.nvidia.com']
+    assert config.source_indexes == {'cugraph-cu13': 'https://pypi.nvidia.com'}
 
 
 def test_parse_dependency_config_supports_inline_index_comment() -> None:
@@ -184,12 +181,10 @@ def test_parse_dependency_config_supports_inline_index_comment() -> None:
         installer=InstallerRunner(DockerAdapter()),
         runtime_config_service=DummyRuntimeConfigService(),
     )
-    config = service.parse_dependency_config(
-        "cugraph-cu13 # index-url: https://pypi.nvidia.com\npandas\n"
-    )
-    assert config.dependency_lines == ["cugraph-cu13", "pandas"]
-    assert config.extra_index_urls == ["https://pypi.nvidia.com"]
-    assert config.source_indexes == {"cugraph-cu13": "https://pypi.nvidia.com"}
+    config = service.parse_dependency_config('cugraph-cu13 # index-url: https://pypi.nvidia.com\npandas\n')
+    assert config.dependency_lines == ['cugraph-cu13', 'pandas']
+    assert config.extra_index_urls == ['https://pypi.nvidia.com']
+    assert config.source_indexes == {'cugraph-cu13': 'https://pypi.nvidia.com'}
 
 
 def test_render_pyproject_emits_uv_index_sources_for_shorthand_index() -> None:
@@ -199,13 +194,13 @@ def test_render_pyproject_emits_uv_index_sources_for_shorthand_index() -> None:
         runtime_config_service=DummyRuntimeConfigService(),
     )
     rendered = service.render_pyproject(
-        project_id="study-a",
-        python_version="3.11",
-        dependencies=["cugraph-cu13", "pandas"],
-        extra_index_urls=["https://pypi.nvidia.com"],
-        source_indexes={"cugraph-cu13": "https://pypi.nvidia.com"},
+        project_id='study-a',
+        python_version='3.11',
+        dependencies=['cugraph-cu13', 'pandas'],
+        extra_index_urls=['https://pypi.nvidia.com'],
+        source_indexes={'cugraph-cu13': 'https://pypi.nvidia.com'},
     )
-    assert "[[tool.uv.index]]" in rendered
+    assert '[[tool.uv.index]]' in rendered
     assert 'url = "https://pypi.nvidia.com"' in rendered
     assert 'cugraph-cu13 = { index = "extra_index_1" }' in rendered
 
@@ -213,10 +208,10 @@ def test_render_pyproject_emits_uv_index_sources_for_shorthand_index() -> None:
 def test_default_dependency_text_reloads_from_runtime_config_service(
     tmp_path: Path,
 ) -> None:
-    defaults_a = tmp_path / "defaults-a.txt"
-    defaults_b = tmp_path / "defaults-b.txt"
-    defaults_a.write_text("bulletjournal-editor==0.1.0\nalpha==1\n", encoding="utf-8")
-    defaults_b.write_text("bulletjournal-editor==0.1.0\nbeta==2\n", encoding="utf-8")
+    defaults_a = tmp_path / 'defaults-a.txt'
+    defaults_b = tmp_path / 'defaults-b.txt'
+    defaults_a.write_text('bulletjournal-editor==0.1.0\nalpha==1\n', encoding='utf-8')
+    defaults_b.write_text('bulletjournal-editor==0.1.0\nbeta==2\n', encoding='utf-8')
 
     class MutableRuntimeConfigService(DummyRuntimeConfigService):
         def __init__(self, path: Path):
@@ -233,16 +228,16 @@ def test_default_dependency_text_reloads_from_runtime_config_service(
         runtime_config_service=runtime_config_service,
     )
 
-    assert "alpha==1" in service.default_dependency_text()
+    assert 'alpha==1' in service.default_dependency_text()
     runtime_config_service.path = defaults_b
-    assert "beta==2" in service.default_dependency_text()
+    assert 'beta==2' in service.default_dependency_text()
 
 
 def test_default_dependency_text_preserves_comments_for_ui(tmp_path: Path) -> None:
-    defaults = tmp_path / "defaults.txt"
+    defaults = tmp_path / 'defaults.txt'
     defaults.write_text(
-        "# comment\ncugraph-cu13 # index-url: https://pypi.nvidia.com\n",
-        encoding="utf-8",
+        '# comment\ncugraph-cu13 # index-url: https://pypi.nvidia.com\n',
+        encoding='utf-8',
     )
     service = EnvironmentService(
         instance_config=default_instance_config(),
@@ -250,9 +245,9 @@ def test_default_dependency_text_preserves_comments_for_ui(tmp_path: Path) -> No
         runtime_config_service=DummyRuntimeConfigService(defaults),
     )
     rendered = service.default_dependency_text()
-    assert "# comment" in rendered
-    assert "# index-url: https://pypi.nvidia.com" in rendered
-    assert "bulletjournal-editor" in rendered
+    assert '# comment' in rendered
+    assert '# index-url: https://pypi.nvidia.com' in rendered
+    assert 'bulletjournal-editor' in rendered
 
 
 def test_resolve_bulletjournal_version_prefers_dependency_text_pin() -> None:
@@ -263,10 +258,10 @@ def test_resolve_bulletjournal_version_prefers_dependency_text_pin() -> None:
     )
 
     resolved = service.resolve_bulletjournal_version(
-        custom_requirements_text="bulletjournal-editor==0.4.0\nalpha==1\n",
+        custom_requirements_text='bulletjournal-editor==0.4.0\nalpha==1\n',
     )
 
-    assert resolved == "0.4.0"
+    assert resolved == '0.4.0'
 
 
 def test_resolve_bulletjournal_version_accepts_direct_reference() -> None:
@@ -277,10 +272,10 @@ def test_resolve_bulletjournal_version_accepts_direct_reference() -> None:
     )
 
     resolved = service.resolve_bulletjournal_version(
-        custom_requirements_text="bulletjournal-editor @ git+https://github.com/Agoratlas/BulletJournal\n",
+        custom_requirements_text='bulletjournal-editor @ git+https://github.com/Agoratlas/BulletJournal\n',
     )
 
-    assert resolved == "git+https://github.com/Agoratlas/BulletJournal"
+    assert resolved == 'git+https://github.com/Agoratlas/BulletJournal'
 
 
 def test_resolve_installed_bulletjournal_version_reads_metadata_and_git_commit(
@@ -291,31 +286,31 @@ def test_resolve_installed_bulletjournal_version_reads_metadata_and_git_commit(
         installer=InstallerRunner(DockerAdapter()),
         runtime_config_service=DummyRuntimeConfigService(),
     )
-    project_root = tmp_path / "project"
+    project_root = tmp_path / 'project'
     dist_info = (
         project_root
-        / ".runtime"
-        / "venv"
-        / "lib"
-        / "python3.11"
-        / "site-packages"
-        / "bulletjournal_editor-1.0.0.dist-info"
+        / '.runtime'
+        / 'venv'
+        / 'lib'
+        / 'python3.11'
+        / 'site-packages'
+        / 'bulletjournal_editor-1.0.0.dist-info'
     )
     dist_info.mkdir(parents=True)
-    (dist_info / "METADATA").write_text(
-        "Metadata-Version: 2.4\nName: bulletjournal-editor\nVersion: 1.0.0\n",
-        encoding="utf-8",
+    (dist_info / 'METADATA').write_text(
+        'Metadata-Version: 2.4\nName: bulletjournal-editor\nVersion: 1.0.0\n',
+        encoding='utf-8',
     )
-    (dist_info / "direct_url.json").write_text(
+    (dist_info / 'direct_url.json').write_text(
         '{"url":"https://github.com/Agoratlas/BulletJournal","vcs_info":{"vcs":"git","commit_id":"4e8e21707279ead345c30fef1709726ea9e3f7c9"}}',
-        encoding="utf-8",
+        encoding='utf-8',
     )
 
     resolved = service.resolve_installed_bulletjournal_version(
         project_paths=cast(Any, make_project_paths(project_root))
     )
 
-    assert resolved == "1.0.0 (4e8e217)"
+    assert resolved == '1.0.0 (4e8e217)'
 
 
 def test_resolve_bulletjournal_version_requires_managed_dependency() -> None:
@@ -325,18 +320,18 @@ def test_resolve_bulletjournal_version_requires_managed_dependency() -> None:
         runtime_config_service=DummyRuntimeConfigService(),
     )
 
-    with pytest.raises(ValidationError, match="custom_requirements_text"):
-        service.resolve_bulletjournal_version(custom_requirements_text="alpha==1\n")
+    with pytest.raises(ValidationError, match='custom_requirements_text'):
+        service.resolve_bulletjournal_version(custom_requirements_text='alpha==1\n')
 
 
 def test_write_project_environment_does_not_create_placeholder_lockfile(
     tmp_path: Path,
 ) -> None:
-    project_root = tmp_path / "project"
+    project_root = tmp_path / 'project'
     project_root.mkdir(parents=True)
     project_paths = DummyProjectPaths(
-        pyproject_path=project_root / "pyproject.toml",
-        uv_lock_path=project_root / "uv.lock",
+        pyproject_path=project_root / 'pyproject.toml',
+        uv_lock_path=project_root / 'uv.lock',
     )
     service = EnvironmentService(
         instance_config=default_instance_config(),
@@ -345,14 +340,14 @@ def test_write_project_environment_does_not_create_placeholder_lockfile(
     )
     service.write_project_environment(
         project_paths=cast(Any, project_paths),
-        project_id="study-a",
-        python_version="3.11",
-        bulletjournal_version="0.1.0",
-        custom_requirements_text="bulletjournal-editor==0.1.0\n",
+        project_id='study-a',
+        python_version='3.11',
+        bulletjournal_version='0.1.0',
+        custom_requirements_text='bulletjournal-editor==0.1.0\n',
     )
     assert project_paths.pyproject_path.is_file()
-    rendered = project_paths.pyproject_path.read_text(encoding="utf-8")
-    assert "[tool.marimo.display]" in rendered
+    rendered = project_paths.pyproject_path.read_text(encoding='utf-8')
+    assert '[tool.marimo.display]' in rendered
     assert 'theme = "system"' in rendered
     assert not project_paths.uv_lock_path.exists()
 
@@ -360,10 +355,10 @@ def test_write_project_environment_does_not_create_placeholder_lockfile(
 def test_install_environment_retries_transient_missing_bind_mount(
     tmp_path: Path,
 ) -> None:
-    project_root = tmp_path / "project"
+    project_root = tmp_path / 'project'
     project_root.mkdir(parents=True)
     project_paths = make_project_paths(project_root)
-    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
+    project_paths.uv_lock_path.write_text('lock = true\n', encoding='utf-8')
     installer = RetryingInstaller(
         [
             FakeResult(returncode=0),
@@ -382,31 +377,31 @@ def test_install_environment_retries_transient_missing_bind_mount(
 
     project = DummyProjectRecord()
     logs: list[str] = []
-    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+    service.compute_lock_sha256 = lambda _path: 'lock-sha'  # type: ignore[method-assign]
 
     result = service.install_environment(
         project=cast(Any, project),
         project_paths=cast(Any, project_paths),
         log_writer=logs.append,
         mark_all_artifacts_stale=False,
-        reason="test",
+        reason='test',
     )
 
-    assert result == "lock-sha"
+    assert result == 'lock-sha'
     assert installer.calls == 3
-    assert any("retrying" in entry for entry in logs)
+    assert any('retrying' in entry for entry in logs)
 
 
 def test_install_environment_reports_project_init_failure_details(tmp_path: Path) -> None:
-    project_root = tmp_path / "project"
+    project_root = tmp_path / 'project'
     project_root.mkdir(parents=True)
     project_paths = make_project_paths(project_root)
     installer = RetryingInstaller(
         [
             FakeResult(
                 returncode=17,
-                stdout="downloaded one\ndownloaded two\n",
-                stderr="Traceback line 1\nTraceback line 2\n",
+                stdout='downloaded one\ndownloaded two\n',
+                stderr='Traceback line 1\nTraceback line 2\n',
             )
         ]
     )
@@ -416,23 +411,23 @@ def test_install_environment_reports_project_init_failure_details(tmp_path: Path
         runtime_config_service=DummyRuntimeConfigService(),
     )
 
-    with pytest.raises(RuntimeError, match="Project initialization failed with exit code 17") as exc:
+    with pytest.raises(RuntimeError, match='Project initialization failed with exit code 17') as exc:
         service.install_environment(
             project=cast(Any, DummyProjectRecord()),
             project_paths=cast(Any, project_paths),
             log_writer=lambda _message: None,
             mark_all_artifacts_stale=False,
-            reason="test",
+            reason='test',
         )
 
     message = str(exc.value)
-    assert "Command: docker run init-project" in message
-    assert "stdout tail:\ndownloaded one\ndownloaded two" in message
-    assert "stderr tail:\nTraceback line 1\nTraceback line 2" in message
+    assert 'Command: docker run init-project' in message
+    assert 'stdout tail:\ndownloaded one\ndownloaded two' in message
+    assert 'stderr tail:\nTraceback line 1\nTraceback line 2' in message
 
 
 def test_install_environment_reports_install_failure_details(tmp_path: Path) -> None:
-    project_root = tmp_path / "project"
+    project_root = tmp_path / 'project'
     project_root.mkdir(parents=True)
     project_paths = make_project_paths(project_root)
     installer = RetryingInstaller(
@@ -440,8 +435,8 @@ def test_install_environment_reports_install_failure_details(tmp_path: Path) -> 
             FakeResult(returncode=0),
             FakeResult(
                 returncode=23,
-                stdout="Resolved 10 packages\nInstalled 9 packages\n",
-                stderr="bulletjournal init failed\nValueError: bad config\n",
+                stdout='Resolved 10 packages\nInstalled 9 packages\n',
+                stderr='bulletjournal init failed\nValueError: bad config\n',
             ),
         ]
     )
@@ -451,28 +446,28 @@ def test_install_environment_reports_install_failure_details(tmp_path: Path) -> 
         runtime_config_service=DummyRuntimeConfigService(),
     )
 
-    with pytest.raises(RuntimeError, match="Environment install failed with exit code 23") as exc:
+    with pytest.raises(RuntimeError, match='Environment install failed with exit code 23') as exc:
         service.install_environment(
             project=cast(Any, DummyProjectRecord()),
             project_paths=cast(Any, project_paths),
             log_writer=lambda _message: None,
             mark_all_artifacts_stale=False,
-            reason="test",
+            reason='test',
         )
 
     message = str(exc.value)
-    assert "Command: docker run test" in message
-    assert "stdout tail:\nResolved 10 packages\nInstalled 9 packages" in message
-    assert "stderr tail:\nbulletjournal init failed\nValueError: bad config" in message
+    assert 'Command: docker run test' in message
+    assert 'stdout tail:\nResolved 10 packages\nInstalled 9 packages' in message
+    assert 'stderr tail:\nbulletjournal init failed\nValueError: bad config' in message
 
 
 def test_install_environment_validates_before_marking_artifacts_stale(
     tmp_path: Path,
 ) -> None:
-    project_root = tmp_path / "project"
+    project_root = tmp_path / 'project'
     project_root.mkdir(parents=True)
     project_paths = make_project_paths(project_root)
-    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
+    project_paths.uv_lock_path.write_text('lock = true\n', encoding='utf-8')
     installer = RetryingInstaller(
         [
             FakeResult(returncode=0),
@@ -486,37 +481,37 @@ def test_install_environment_validates_before_marking_artifacts_stale(
         installer=cast(Any, installer),
         runtime_config_service=DummyRuntimeConfigService(),
     )
-    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+    service.compute_lock_sha256 = lambda _path: 'lock-sha'  # type: ignore[method-assign]
 
     result = service.install_environment(
         project=cast(Any, DummyProjectRecord()),
         project_paths=cast(Any, project_paths),
         log_writer=lambda _message: None,
         mark_all_artifacts_stale=True,
-        reason="test",
+        reason='test',
     )
 
-    assert result == "lock-sha"
+    assert result == 'lock-sha'
     assert installer.commands == [
-        ["docker", "run", "init-project"],
-        ["docker", "run", "test"],
-        ["docker", "run", "validate-environment"],
-        ["docker", "run", "mark-stale"],
+        ['docker', 'run', 'init-project'],
+        ['docker', 'run', 'test'],
+        ['docker', 'run', 'validate-environment'],
+        ['docker', 'run', 'mark-stale'],
     ]
 
 
 def test_install_environment_skips_mark_stale_when_validation_fails(
     tmp_path: Path,
 ) -> None:
-    project_root = tmp_path / "project"
+    project_root = tmp_path / 'project'
     project_root.mkdir(parents=True)
     project_paths = make_project_paths(project_root)
-    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
+    project_paths.uv_lock_path.write_text('lock = true\n', encoding='utf-8')
     installer = RetryingInstaller(
         [
             FakeResult(returncode=0),
             FakeResult(returncode=0),
-            FakeResult(returncode=1, stderr="invalid templates"),
+            FakeResult(returncode=1, stderr='invalid templates'),
         ]
     )
     service = EnvironmentService(
@@ -525,38 +520,35 @@ def test_install_environment_skips_mark_stale_when_validation_fails(
         runtime_config_service=DummyRuntimeConfigService(),
     )
     logs: list[str] = []
-    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+    service.compute_lock_sha256 = lambda _path: 'lock-sha'  # type: ignore[method-assign]
 
     result = service.install_environment(
         project=cast(Any, DummyProjectRecord()),
         project_paths=cast(Any, project_paths),
         log_writer=logs.append,
         mark_all_artifacts_stale=True,
-        reason="test",
+        reason='test',
     )
 
-    assert result == "lock-sha"
+    assert result == 'lock-sha'
     assert installer.commands == [
-        ["docker", "run", "init-project"],
-        ["docker", "run", "test"],
-        ["docker", "run", "validate-environment"],
+        ['docker', 'run', 'init-project'],
+        ['docker', 'run', 'test'],
+        ['docker', 'run', 'validate-environment'],
     ]
-    assert any("Skipping artifact invalidation" in entry for entry in logs)
+    assert any('Skipping artifact invalidation' in entry for entry in logs)
 
 
 def test_install_environment_uses_extended_retry_budget_for_mount_visibility(
     tmp_path: Path,
 ) -> None:
-    project_root = tmp_path / "project"
+    project_root = tmp_path / 'project'
     project_root.mkdir(parents=True)
     project_paths = make_project_paths(project_root)
-    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
+    project_paths.uv_lock_path.write_text('lock = true\n', encoding='utf-8')
     installer = RetryingInstaller(
         [FakeResult(returncode=0)]
-        + [
-            FakeResult(returncode=1, stderr="bind source path does not exist")
-            for _ in range(6)
-        ]
+        + [FakeResult(returncode=1, stderr='bind source path does not exist') for _ in range(6)]
         + [FakeResult(returncode=0)]
     )
     service = EnvironmentService(
@@ -564,7 +556,7 @@ def test_install_environment_uses_extended_retry_budget_for_mount_visibility(
         installer=cast(Any, installer),
         runtime_config_service=DummyRuntimeConfigService(),
     )
-    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+    service.compute_lock_sha256 = lambda _path: 'lock-sha'  # type: ignore[method-assign]
     project = DummyProjectRecord()
 
     result = service.install_environment(
@@ -572,22 +564,22 @@ def test_install_environment_uses_extended_retry_budget_for_mount_visibility(
         project_paths=cast(Any, project_paths),
         log_writer=lambda _message: None,
         mark_all_artifacts_stale=False,
-        reason="test",
+        reason='test',
     )
 
-    assert result == "lock-sha"
+    assert result == 'lock-sha'
     assert installer.calls == 8
 
 
 def test_install_environment_retries_when_additional_mount_is_not_immediately_visible(
     tmp_path: Path,
 ) -> None:
-    project_root = tmp_path / "project"
+    project_root = tmp_path / 'project'
     project_root.mkdir(parents=True)
-    ssh_root = tmp_path / "ssh"
+    ssh_root = tmp_path / 'ssh'
     ssh_root.mkdir(parents=True)
     project_paths = make_project_paths(project_root)
-    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
+    project_paths.uv_lock_path.write_text('lock = true\n', encoding='utf-8')
     installer = RetryingInstaller(
         [
             FakeResult(returncode=0),
@@ -601,11 +593,9 @@ def test_install_environment_retries_when_additional_mount_is_not_immediately_vi
     service = EnvironmentService(
         instance_config=default_instance_config(),
         installer=cast(Any, installer),
-        runtime_config_service=DummyRuntimeConfigServiceWithMounts(
-            [(ssh_root, "/home/bulletjournal/.ssh", True)]
-        ),
+        runtime_config_service=DummyRuntimeConfigServiceWithMounts([(ssh_root, '/home/bulletjournal/.ssh', True)]),
     )
-    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+    service.compute_lock_sha256 = lambda _path: 'lock-sha'  # type: ignore[method-assign]
     project = DummyProjectRecord()
 
     result = service.install_environment(
@@ -613,22 +603,22 @@ def test_install_environment_retries_when_additional_mount_is_not_immediately_vi
         project_paths=cast(Any, project_paths),
         log_writer=lambda _message: None,
         mark_all_artifacts_stale=False,
-        reason="test",
+        reason='test',
     )
 
-    assert result == "lock-sha"
+    assert result == 'lock-sha'
     assert installer.calls == 3
 
 
 def test_install_environment_passes_runtime_env_file_to_installer(
     tmp_path: Path,
 ) -> None:
-    project_root = tmp_path / "project"
+    project_root = tmp_path / 'project'
     project_root.mkdir(parents=True)
-    env_file = tmp_path / ".env"
-    env_file.write_text("OPENAI_API_KEY=test\n", encoding="utf-8")
+    env_file = tmp_path / '.env'
+    env_file.write_text('OPENAI_API_KEY=test\n', encoding='utf-8')
     project_paths = make_project_paths(project_root)
-    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
+    project_paths.uv_lock_path.write_text('lock = true\n', encoding='utf-8')
 
     class RecordingInstaller(RetryingInstaller):
         def __init__(self):
@@ -637,7 +627,7 @@ def test_install_environment_passes_runtime_env_file_to_installer(
 
         def build_install_command(self, **kwargs):
             self.install_kwargs = kwargs
-            return ["docker", "run", "test"]
+            return ['docker', 'run', 'test']
 
     installer = RecordingInstaller()
     service = EnvironmentService(
@@ -645,7 +635,7 @@ def test_install_environment_passes_runtime_env_file_to_installer(
         installer=cast(Any, installer),
         runtime_config_service=DummyRuntimeConfigService(env_file=env_file),
     )
-    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+    service.compute_lock_sha256 = lambda _path: 'lock-sha'  # type: ignore[method-assign]
     project = DummyProjectRecord()
 
     result = service.install_environment(
@@ -653,22 +643,22 @@ def test_install_environment_passes_runtime_env_file_to_installer(
         project_paths=cast(Any, project_paths),
         log_writer=lambda _message: None,
         mark_all_artifacts_stale=False,
-        reason="test",
+        reason='test',
     )
 
-    assert result == "lock-sha"
+    assert result == 'lock-sha'
     assert installer.install_kwargs is not None
-    assert installer.install_kwargs["env_file"] == env_file
+    assert installer.install_kwargs['env_file'] == env_file
 
 
 def test_install_environment_passes_additional_mounts_to_installer(
     tmp_path: Path,
 ) -> None:
-    project_root = tmp_path / "project"
+    project_root = tmp_path / 'project'
     project_root.mkdir(parents=True)
     project_paths = make_project_paths(project_root)
-    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
-    additional_mounts = [(tmp_path / "shared", "/opt/shared", False)]
+    project_paths.uv_lock_path.write_text('lock = true\n', encoding='utf-8')
+    additional_mounts = [(tmp_path / 'shared', '/opt/shared', False)]
     additional_mounts[0][0].mkdir()
 
     class RecordingInstaller(RetryingInstaller):
@@ -678,7 +668,7 @@ def test_install_environment_passes_additional_mounts_to_installer(
 
         def build_install_command(self, **kwargs):
             self.install_kwargs = kwargs
-            return ["docker", "run", "test"]
+            return ['docker', 'run', 'test']
 
     installer = RecordingInstaller()
     service = EnvironmentService(
@@ -686,7 +676,7 @@ def test_install_environment_passes_additional_mounts_to_installer(
         installer=cast(Any, installer),
         runtime_config_service=DummyRuntimeConfigServiceWithMounts(additional_mounts),
     )
-    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+    service.compute_lock_sha256 = lambda _path: 'lock-sha'  # type: ignore[method-assign]
     project = DummyProjectRecord()
 
     result = service.install_environment(
@@ -694,21 +684,21 @@ def test_install_environment_passes_additional_mounts_to_installer(
         project_paths=cast(Any, project_paths),
         log_writer=lambda _message: None,
         mark_all_artifacts_stale=False,
-        reason="test",
+        reason='test',
     )
 
-    assert result == "lock-sha"
+    assert result == 'lock-sha'
     assert installer.install_kwargs is not None
-    assert installer.install_kwargs["additional_mounts"] == additional_mounts
+    assert installer.install_kwargs['additional_mounts'] == additional_mounts
 
 
 def test_install_environment_passes_controller_uid_gid_to_installer(
     tmp_path: Path,
 ) -> None:
-    project_root = tmp_path / "project"
+    project_root = tmp_path / 'project'
     project_root.mkdir(parents=True)
     project_paths = make_project_paths(project_root)
-    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
+    project_paths.uv_lock_path.write_text('lock = true\n', encoding='utf-8')
 
     class RecordingInstaller(RetryingInstaller):
         def __init__(self):
@@ -717,12 +707,12 @@ def test_install_environment_passes_controller_uid_gid_to_installer(
 
         def build_install_command(self, **kwargs):
             self.install_kwargs = kwargs
-            return ["docker", "run", "test"]
+            return ['docker', 'run', 'test']
 
     installer = RecordingInstaller()
     runtime_config_service = SimpleNamespace(
         runtime_config=SimpleNamespace(
-            runtime_image_name="bulletjournal-runtime:local",
+            runtime_image_name='bulletjournal-runtime:local',
             container_uid=1000,
             container_gid=1000,
         ),
@@ -735,7 +725,7 @@ def test_install_environment_passes_controller_uid_gid_to_installer(
         installer=cast(Any, installer),
         runtime_config_service=runtime_config_service,
     )
-    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+    service.compute_lock_sha256 = lambda _path: 'lock-sha'  # type: ignore[method-assign]
     project = DummyProjectRecord()
 
     result = service.install_environment(
@@ -743,20 +733,20 @@ def test_install_environment_passes_controller_uid_gid_to_installer(
         project_paths=cast(Any, project_paths),
         log_writer=lambda _message: None,
         mark_all_artifacts_stale=False,
-        reason="test",
+        reason='test',
     )
 
-    assert result == "lock-sha"
+    assert result == 'lock-sha'
     assert installer.install_kwargs is not None
-    assert installer.install_kwargs["user_uid"] == 1000
-    assert installer.install_kwargs["user_gid"] == 1000
+    assert installer.install_kwargs['user_uid'] == 1000
+    assert installer.install_kwargs['user_gid'] == 1000
 
 
 def test_install_environment_can_request_upgrade_all(tmp_path: Path) -> None:
-    project_root = tmp_path / "project"
+    project_root = tmp_path / 'project'
     project_root.mkdir(parents=True)
     project_paths = make_project_paths(project_root)
-    project_paths.uv_lock_path.write_text("lock = true\n", encoding="utf-8")
+    project_paths.uv_lock_path.write_text('lock = true\n', encoding='utf-8')
 
     class RecordingInstaller(RetryingInstaller):
         def __init__(self):
@@ -765,7 +755,7 @@ def test_install_environment_can_request_upgrade_all(tmp_path: Path) -> None:
 
         def build_install_command(self, **kwargs):
             self.install_kwargs = kwargs
-            return ["docker", "run", "test"]
+            return ['docker', 'run', 'test']
 
     installer = RecordingInstaller()
     service = EnvironmentService(
@@ -773,28 +763,28 @@ def test_install_environment_can_request_upgrade_all(tmp_path: Path) -> None:
         installer=cast(Any, installer),
         runtime_config_service=DummyRuntimeConfigService(),
     )
-    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+    service.compute_lock_sha256 = lambda _path: 'lock-sha'  # type: ignore[method-assign]
 
     service.install_environment(
         project=cast(Any, DummyProjectRecord()),
         project_paths=cast(Any, project_paths),
         log_writer=lambda _message: None,
         mark_all_artifacts_stale=False,
-        reason="test",
+        reason='test',
         upgrade_all=True,
     )
 
     assert installer.install_kwargs is not None
-    assert installer.install_kwargs["upgrade_all"] is True
+    assert installer.install_kwargs['upgrade_all'] is True
 
 
 def test_install_environment_rewrites_pyproject_before_locking(tmp_path: Path) -> None:
-    project_root = tmp_path / "project"
+    project_root = tmp_path / 'project'
     project_root.mkdir(parents=True)
-    pyproject_path = project_root / "pyproject.toml"
-    pyproject_path.write_text("stale = true\n", encoding="utf-8")
-    lock_path = project_root / "uv.lock"
-    lock_path.write_text("lock = true\n", encoding="utf-8")
+    pyproject_path = project_root / 'pyproject.toml'
+    pyproject_path.write_text('stale = true\n', encoding='utf-8')
+    lock_path = project_root / 'uv.lock'
+    lock_path.write_text('lock = true\n', encoding='utf-8')
     project_paths = make_project_paths(project_root)
     installer = RetryingInstaller([FakeResult(returncode=0), FakeResult(returncode=0)])
     service = EnvironmentService(
@@ -802,33 +792,33 @@ def test_install_environment_rewrites_pyproject_before_locking(tmp_path: Path) -
         installer=cast(Any, installer),
         runtime_config_service=DummyRuntimeConfigService(),
     )
-    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+    service.compute_lock_sha256 = lambda _path: 'lock-sha'  # type: ignore[method-assign]
 
     service.install_environment(
         project=cast(
             Any,
             DummyProjectRecord(
-                bulletjournal_version="0.2.0",
-                custom_requirements_text="bulletjournal-editor==0.2.0\nalpha==1\n",
+                bulletjournal_version='0.2.0',
+                custom_requirements_text='bulletjournal-editor==0.2.0\nalpha==1\n',
             ),
         ),
         project_paths=cast(Any, project_paths),
         log_writer=lambda _message: None,
         mark_all_artifacts_stale=False,
-        reason="test",
+        reason='test',
     )
 
-    rendered = pyproject_path.read_text(encoding="utf-8")
+    rendered = pyproject_path.read_text(encoding='utf-8')
     assert 'requires-python = "==3.11.*"' in rendered
     assert '"bulletjournal-editor==0.2.0"' in rendered
     assert '"alpha==1"' in rendered
 
 
 def test_install_environment_runs_project_init_before_locking(tmp_path: Path) -> None:
-    project_root = tmp_path / "project"
+    project_root = tmp_path / 'project'
     project_root.mkdir(parents=True)
-    lock_path = project_root / "uv.lock"
-    lock_path.write_text("lock = true\n", encoding="utf-8")
+    lock_path = project_root / 'uv.lock'
+    lock_path.write_text('lock = true\n', encoding='utf-8')
     project_paths = make_project_paths(project_root)
     installer = RetryingInstaller([FakeResult(returncode=0), FakeResult(returncode=0)])
     service = EnvironmentService(
@@ -836,17 +826,17 @@ def test_install_environment_runs_project_init_before_locking(tmp_path: Path) ->
         installer=cast(Any, installer),
         runtime_config_service=DummyRuntimeConfigService(),
     )
-    service.compute_lock_sha256 = lambda _path: "lock-sha"  # type: ignore[method-assign]
+    service.compute_lock_sha256 = lambda _path: 'lock-sha'  # type: ignore[method-assign]
 
     service.install_environment(
         project=cast(Any, DummyProjectRecord()),
         project_paths=cast(Any, project_paths),
         log_writer=lambda _message: None,
         mark_all_artifacts_stale=False,
-        reason="test",
+        reason='test',
     )
 
     assert installer.commands[:2] == [
-        ["docker", "run", "init-project"],
-        ["docker", "run", "test"],
+        ['docker', 'run', 'init-project'],
+        ['docker', 'run', 'test'],
     ]

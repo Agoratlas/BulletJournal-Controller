@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import sys
-import os
 from pathlib import Path
 
 import pytest
 
 from bulletjournal_controller.config import ServerConfig
 from bulletjournal_controller.storage import init_instance_root
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / 'src'

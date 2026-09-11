@@ -9,7 +9,6 @@ from bulletjournal_controller.config import bundled_defaults_root
 from bulletjournal_controller.domain.errors import ConfigurationError
 from bulletjournal_controller.storage.instance_fs import InstancePaths
 
-
 RUNTIME_CONFIG_SCHEMA_VERSION = 2
 
 
@@ -37,9 +36,7 @@ class RuntimeConfigService:
     def additional_mounts(self) -> list[tuple[Path, str, bool]]:
         mounts: list[tuple[Path, str, bool]] = []
         if self.runtime_config.ssh_dir is not None:
-            mounts.append(
-                (self.runtime_config.ssh_dir, "/home/bulletjournal/.ssh", True)
-            )
+            mounts.append((self.runtime_config.ssh_dir, '/home/bulletjournal/.ssh', True))
         mounts.extend(self.runtime_config.additional_mounts)
         return mounts
 
@@ -58,44 +55,32 @@ class RuntimeConfigService:
             user_gid=self.runtime_config.container_gid,
         )
         if result.returncode != 0:
-            raise ConfigurationError(
-                result.stderr.strip() or "Failed to build local runtime image."
-            )
+            raise ConfigurationError(result.stderr.strip() or 'Failed to build local runtime image.')
 
     def _load_runtime_config(self) -> RuntimeConfig:
-        defaults_root = bundled_defaults_root() / "runtime"
+        defaults_root = bundled_defaults_root() / 'runtime'
         configured_root = self.instance_paths.local_config_dir
-        runtime_json_path = configured_root / "runtime.json"
+        runtime_json_path = configured_root / 'runtime.json'
         if runtime_json_path.is_file():
-            data = json.loads(runtime_json_path.read_text(encoding="utf-8"))
+            data = json.loads(runtime_json_path.read_text(encoding='utf-8'))
         else:
-            data = json.loads(
-                (defaults_root / "runtime.json").read_text(encoding="utf-8")
-            )
+            data = json.loads((defaults_root / 'runtime.json').read_text(encoding='utf-8'))
         if not isinstance(data, dict):
-            raise ConfigurationError("runtime.json must contain a JSON object.")
+            raise ConfigurationError('runtime.json must contain a JSON object.')
         self._validate_schema_version(data)
 
-        runtime_image_name = _required_str(data, "runtime_image_name")
-        runtime_dockerfile = self._resolve_path(
-            configured_root, defaults_root, data.get("runtime_dockerfile")
-        )
-        runtime_build_context = self._resolve_path(
-            configured_root, defaults_root, data.get("runtime_build_context")
-        )
+        runtime_image_name = _required_str(data, 'runtime_image_name')
+        runtime_dockerfile = self._resolve_path(configured_root, defaults_root, data.get('runtime_dockerfile'))
+        runtime_build_context = self._resolve_path(configured_root, defaults_root, data.get('runtime_build_context'))
         default_dependencies_file = self._resolve_optional_path(
-            configured_root, defaults_root, data.get("default_dependencies_file")
+            configured_root, defaults_root, data.get('default_dependencies_file')
         )
-        env_file = self._resolve_optional_path(
-            configured_root, defaults_root, data.get("env_file")
-        )
-        ssh_dir = self._resolve_optional_path(
-            configured_root, defaults_root, data.get("ssh_dir")
-        )
+        env_file = self._resolve_optional_path(configured_root, defaults_root, data.get('env_file'))
+        ssh_dir = self._resolve_optional_path(configured_root, defaults_root, data.get('ssh_dir'))
         additional_mounts = self._parse_additional_mounts(
             configured_root,
             defaults_root,
-            data.get("additional_mounts"),
+            data.get('additional_mounts'),
         )
         container_uid = self._current_uid()
         container_gid = self._current_gid()
@@ -117,75 +102,60 @@ class RuntimeConfigService:
         if raw is None:
             return ()
         if not isinstance(raw, list):
-            raise ConfigurationError("runtime.json field additional_mounts must be a JSON array.")
+            raise ConfigurationError('runtime.json field additional_mounts must be a JSON array.')
         mounts: list[tuple[Path, str, bool]] = []
         for index, entry in enumerate(raw, start=1):
             if not isinstance(entry, dict):
-                raise ConfigurationError(
-                    f"runtime.json additional_mounts[{index}] must be a JSON object."
-                )
-            source = self._resolve_optional_path(
-                config_root, defaults_root, entry.get("source")
-            )
+                raise ConfigurationError(f'runtime.json additional_mounts[{index}] must be a JSON object.')
+            source = self._resolve_optional_path(config_root, defaults_root, entry.get('source'))
             if source is None:
-                raise ConfigurationError(
-                    f"runtime.json additional_mounts[{index}].source is required."
-                )
-            target = str(entry.get("target", "")).strip()
+                raise ConfigurationError(f'runtime.json additional_mounts[{index}].source is required.')
+            target = str(entry.get('target', '')).strip()
             if not target:
+                raise ConfigurationError(f'runtime.json additional_mounts[{index}].target is required.')
+            if not target.startswith('/'):
                 raise ConfigurationError(
-                    f"runtime.json additional_mounts[{index}].target is required."
+                    f'runtime.json additional_mounts[{index}].target must be an absolute container path.'
                 )
-            if not target.startswith("/"):
-                raise ConfigurationError(
-                    f"runtime.json additional_mounts[{index}].target must be an absolute container path."
-                )
-            read_only = entry.get("read_only", False)
+            read_only = entry.get('read_only', False)
             if not isinstance(read_only, bool):
-                raise ConfigurationError(
-                    f"runtime.json additional_mounts[{index}].read_only must be a boolean."
-                )
+                raise ConfigurationError(f'runtime.json additional_mounts[{index}].read_only must be a boolean.')
             mounts.append((source, target, read_only))
         return tuple(mounts)
 
     @staticmethod
     def _validate_schema_version(data: dict[str, object]) -> None:
-        raw = data.get("schema_version")
+        raw = data.get('schema_version')
         if not isinstance(raw, int):
-            raise ConfigurationError("runtime.json field schema_version is required.")
+            raise ConfigurationError('runtime.json field schema_version is required.')
         if raw != RUNTIME_CONFIG_SCHEMA_VERSION:
             raise ConfigurationError(
-                "Unsupported runtime.json schema version "
-                f"{raw}; expected {RUNTIME_CONFIG_SCHEMA_VERSION}."
+                f'Unsupported runtime.json schema version {raw}; expected {RUNTIME_CONFIG_SCHEMA_VERSION}.'
             )
 
     @staticmethod
     def _current_uid() -> int | None:
-        getter = getattr(os, "getuid", None)
+        getter = getattr(os, 'getuid', None)
         if getter is None:
             return None
         return int(getter())
 
     @staticmethod
     def _current_gid() -> int | None:
-        getter = getattr(os, "getgid", None)
+        getter = getattr(os, 'getgid', None)
         if getter is None:
             return None
         return int(getter())
 
     @staticmethod
     def _resolve_path(config_root: Path, defaults_root: Path, raw: object) -> Path:
-        candidate = RuntimeConfigService._resolve_optional_path(
-            config_root, defaults_root, raw
-        )
+        candidate = RuntimeConfigService._resolve_optional_path(config_root, defaults_root, raw)
         if candidate is None:
-            raise ConfigurationError("runtime.json is missing a required path value.")
+            raise ConfigurationError('runtime.json is missing a required path value.')
         return candidate
 
     @staticmethod
-    def _resolve_optional_path(
-        config_root: Path, defaults_root: Path, raw: object
-    ) -> Path | None:
+    def _resolve_optional_path(config_root: Path, defaults_root: Path, raw: object) -> Path | None:
         if raw is None:
             return None
         text = str(raw).strip()
@@ -202,7 +172,7 @@ class RuntimeConfigService:
 
 
 def _required_str(data: dict[str, object], key: str) -> str:
-    value = str(data.get(key, "")).strip()
+    value = str(data.get(key, '')).strip()
     if not value:
-        raise ConfigurationError(f"runtime.json field {key} is required.")
+        raise ConfigurationError(f'runtime.json field {key} is required.')
     return value

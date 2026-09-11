@@ -39,8 +39,7 @@ class AuthorizationService:
         return {
             ProjectRole(grant.role)
             for grant in grants
-            if grant.subject_kind == RoleSubjectKind.ALL_USERS.value
-            or grant.user_id == user.user_id
+            if grant.subject_kind == RoleSubjectKind.ALL_USERS.value or grant.user_id == user.user_id
         }
 
     def effective_role(self, user: UserRecord, project_id: str) -> str | None:
@@ -54,19 +53,19 @@ class AuthorizationService:
     def require_project_viewer(self, user: UserRecord, project_id: str) -> ProjectRecord:
         project = self.projects.get(project_id)
         if project is None or self.effective_role(user, project_id) is None:
-            raise NotFoundError(f"Project {project_id} was not found.")
+            raise NotFoundError(f'Project {project_id} was not found.')
         return project
 
     def require_project_admin(self, user: UserRecord, project_id: str) -> ProjectRecord:
         project = self.projects.get(project_id)
         if project is None or self.effective_role(user, project_id) != ProjectRole.PROJECT_ADMIN.value:
-            raise NotFoundError(f"Project {project_id} was not found.")
+            raise NotFoundError(f'Project {project_id} was not found.')
         return project
 
     def require_job_viewer(self, user: UserRecord, job_id: str) -> JobRecord:
         job = self.jobs.get(job_id)
         if job is None or job.project_id is None:
-            raise NotFoundError(f"Job {job_id} was not found.")
+            raise NotFoundError(f'Job {job_id} was not found.')
         self.require_project_viewer(user, job.project_id)
         return job
 
@@ -78,12 +77,12 @@ class AuthorizationService:
 
     def role_summary(self, project_id: str) -> dict[str, object]:
         summary: dict[str, object] = {}
-        for role, key in ((ProjectRole.PROJECT_ADMIN, "project_admins"), (ProjectRole.EDITOR, "editors")):
+        for role, key in ((ProjectRole.PROJECT_ADMIN, 'project_admins'), (ProjectRole.EDITOR, 'editors')):
             grants = [grant for grant in self.role_grants.list_for_project(project_id) if grant.role == role.value]
             summary[key] = {
-                "all_users": any(grant.subject_kind == RoleSubjectKind.ALL_USERS.value for grant in grants),
-                "users": [
-                    {"user_id": grant.user_id, "username": grant.username, "display_name": grant.display_name}
+                'all_users': any(grant.subject_kind == RoleSubjectKind.ALL_USERS.value for grant in grants),
+                'users': [
+                    {'user_id': grant.user_id, 'username': grant.username, 'display_name': grant.display_name}
                     for grant in grants
                     if grant.subject_kind == RoleSubjectKind.USER.value
                 ],
@@ -93,25 +92,26 @@ class AuthorizationService:
     def normalize_role_payload(self, payload: dict[str, object]) -> list[dict[str, str | None]]:
         grants: list[dict[str, str | None]] = []
         assignable = {user.user_id for user in self.users.list_active_assignable()}
-        for role, key in ((ProjectRole.PROJECT_ADMIN, "project_admins"), (ProjectRole.EDITOR, "editors")):
+        for role, key in ((ProjectRole.PROJECT_ADMIN, 'project_admins'), (ProjectRole.EDITOR, 'editors')):
             raw_subject = payload.get(key)
             if not isinstance(raw_subject, dict):
-                raise ValidationError(f"{key} is required.")
-            all_users = raw_subject.get("all_users")
-            user_ids = raw_subject.get("user_ids")
-            if not isinstance(all_users, bool) or not isinstance(user_ids, list) or not all(isinstance(value, str) for value in user_ids):
-                raise ValidationError(f"{key} must contain all_users and user_ids.")
+                raise ValidationError(f'{key} is required.')
+            all_users = raw_subject.get('all_users')
+            user_ids = raw_subject.get('user_ids')
+            valid_user_ids = isinstance(user_ids, list) and all(isinstance(value, str) for value in user_ids)
+            if not isinstance(all_users, bool) or not valid_user_ids:
+                raise ValidationError(f'{key} must contain all_users and user_ids.')
             if all_users:
                 if user_ids:
-                    raise ValidationError(f"{key}.user_ids must be empty when all_users is selected.")
-                grants.append({"subject_kind": RoleSubjectKind.ALL_USERS.value, "user_id": None, "role": role.value})
+                    raise ValidationError(f'{key}.user_ids must be empty when all_users is selected.')
+                grants.append({'subject_kind': RoleSubjectKind.ALL_USERS.value, 'user_id': None, 'role': role.value})
                 continue
             for user_id in sorted(set(user_ids)):
                 if user_id not in assignable:
-                    raise ValidationError(f"User {user_id} is not an active assignable user.")
-                grants.append({"subject_kind": RoleSubjectKind.USER.value, "user_id": user_id, "role": role.value})
-        if not any(grant["role"] == ProjectRole.PROJECT_ADMIN.value for grant in grants):
-            raise ValidationError("At least one project admin must be selected.")
+                    raise ValidationError(f'User {user_id} is not an active assignable user.')
+                grants.append({'subject_kind': RoleSubjectKind.USER.value, 'user_id': user_id, 'role': role.value})
+        if not any(grant['role'] == ProjectRole.PROJECT_ADMIN.value for grant in grants):
+            raise ValidationError('At least one project admin must be selected.')
         return grants
 
     def replace_project_roles(self, user: UserRecord, project_id: str, payload: dict[str, object]) -> None:

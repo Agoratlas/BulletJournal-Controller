@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+
 from bulletjournal_controller.domain.enums import (
     InstallStatus,
     ProjectStatus,
@@ -54,21 +56,14 @@ class ProjectService:
 
     def backfill_runtime_size_bytes(self) -> None:
         for project in self.projects.list_all():
-            if (
-                project.runtime_venv_size_bytes is not None
-                and project.runtime_uv_cache_size_bytes is not None
-            ):
+            if project.runtime_venv_size_bytes is not None and project.runtime_uv_cache_size_bytes is not None:
                 continue
             project_paths = self.instance_paths.project_paths(project.project_id)
             updates = {}
             if project.runtime_venv_size_bytes is None:
-                updates["runtime_venv_size_bytes"] = path_size_bytes(
-                    project_paths.runtime_venv_dir
-                )
+                updates['runtime_venv_size_bytes'] = path_size_bytes(project_paths.runtime_venv_dir)
             if project.runtime_uv_cache_size_bytes is None:
-                updates["runtime_uv_cache_size_bytes"] = path_size_bytes(
-                    project_paths.runtime_uv_cache_dir
-                )
+                updates['runtime_uv_cache_size_bytes'] = path_size_bytes(project_paths.runtime_uv_cache_dir)
             self.projects.update(project.project_id, **updates)
 
     def get_project(self, project_id: str) -> ProjectRecord:
@@ -89,11 +84,9 @@ class ProjectService:
         self._require_gpu_supported(gpu_enabled)
         resolved_project_id = validate_project_id(project_id)
         if self.projects.get(resolved_project_id) is not None:
-            raise ConflictError(f"Project {resolved_project_id} already exists.")
-        resolved_bulletjournal_version = (
-            self.environment_service.resolve_bulletjournal_version(
-                custom_requirements_text=custom_requirements_text
-            )
+            raise ConflictError(f'Project {resolved_project_id} already exists.')
+        resolved_bulletjournal_version = self.environment_service.resolve_bulletjournal_version(
+            custom_requirements_text=custom_requirements_text
         )
         project_paths = create_project_root(self.instance_paths, resolved_project_id)
         self.environment_service.write_project_environment(
@@ -141,9 +134,9 @@ class ProjectService:
                 project.project_id,
                 [
                     {
-                        "subject_kind": "user",
-                        "user_id": created_by_user_id,
-                        "role": "project_admin",
+                        'subject_kind': 'user',
+                        'user_id': created_by_user_id,
+                        'role': 'project_admin',
                     }
                 ],
             )
@@ -165,9 +158,7 @@ class ProjectService:
         if current.status != status:
             ensure_transition_allowed(current.status, status)
         validate_status_reason(ProjectStatus(status), status_reason)
-        return self.projects.update(
-            project_id, status=status, status_reason=status_reason, **changes
-        )
+        return self.projects.update(project_id, status=status, status_reason=status_reason, **changes)
 
     def update_limits(
         self,
@@ -192,11 +183,11 @@ class ProjectService:
 
     def _require_gpu_supported(self, gpu_enabled: bool) -> None:
         if gpu_enabled and not self.gpu_enabled:
-            raise ValidationError("GPU is not supported on this instance.")
+            raise ValidationError('GPU is not supported on this instance.')
 
     def mark_installing(self, project_id: str) -> ProjectRecord:
         project = self.get_project(project_id)
-        updates = {"install_status": InstallStatus.INSTALLING.value}
+        updates = {'install_status': InstallStatus.INSTALLING.value}
         if project.status in {ProjectStatus.CREATING.value, ProjectStatus.ERROR.value}:
             return self.set_status(
                 project_id=project_id,
@@ -216,19 +207,17 @@ class ProjectService:
     ) -> ProjectRecord:
         project = self.get_project(project_id)
         updates = {
-            "install_status": InstallStatus.READY.value,
-            "lock_sha256": lock_sha256,
-            "runtime_venv_size_bytes": runtime_venv_size_bytes,
-            "runtime_uv_cache_size_bytes": runtime_uv_cache_size_bytes,
-            "last_install_at": utc_now_iso(),
+            'install_status': InstallStatus.READY.value,
+            'lock_sha256': lock_sha256,
+            'runtime_venv_size_bytes': runtime_venv_size_bytes,
+            'runtime_uv_cache_size_bytes': runtime_uv_cache_size_bytes,
+            'last_install_at': utc_now_iso(),
         }
-        installed_version = (
-            self.environment_service.resolve_installed_bulletjournal_version(
-                project_paths=self.project_paths(project_id)
-            )
+        installed_version = self.environment_service.resolve_installed_bulletjournal_version(
+            project_paths=self.project_paths(project_id)
         )
         if installed_version is not None:
-            updates["bulletjournal_version"] = installed_version
+            updates['bulletjournal_version'] = installed_version
         if project.status == ProjectStatus.INSTALLING.value:
             return self.set_status(
                 project_id=project_id,
@@ -240,7 +229,7 @@ class ProjectService:
 
     def mark_install_failed(self, project_id: str) -> ProjectRecord:
         project = self.get_project(project_id)
-        updates = {"install_status": InstallStatus.FAILED.value}
+        updates = {'install_status': InstallStatus.FAILED.value}
         if project.status == ProjectStatus.INSTALLING.value:
             return self.set_status(
                 project_id=project_id,
@@ -258,16 +247,14 @@ class ProjectService:
             ProjectStatus.STOPPED.value,
             ProjectStatus.ERROR.value,
         }:
-            raise ConflictError(f"Cannot start project from status {project.status}.")
+            raise ConflictError(f'Cannot start project from status {project.status}.')
         self.set_status(
             project_id=project_id,
             status=ProjectStatus.STARTING.value,
             status_reason=None,
         )
         project = self.get_project(project_id)
-        runtime = self.runtime_service.start_project(
-            project=project, project_paths=self.project_paths(project_id)
-        )
+        runtime = self.runtime_service.start_project(project=project, project_paths=self.project_paths(project_id))
         return self.set_status(
             project_id=project_id,
             status=ProjectStatus.RUNNING.value,
@@ -279,14 +266,12 @@ class ProjectService:
             runtime_stopped_at=None,
         )
 
-    def stop_project(
-        self, project_id: str, *, reason: str | None = None
-    ) -> ProjectRecord:
+    def stop_project(self, project_id: str, *, reason: str | None = None) -> ProjectRecord:
         project = self.get_project(project_id)
         if project.status == ProjectStatus.STOPPED.value:
             return project
         if project.status != ProjectStatus.RUNNING.value:
-            raise ConflictError(f"Cannot stop project from status {project.status}.")
+            raise ConflictError(f'Cannot stop project from status {project.status}.')
         self.set_status(
             project_id=project_id,
             status=ProjectStatus.STOPPING.value,
@@ -320,9 +305,7 @@ class ProjectService:
         }:
             return project
         target_status = (
-            ProjectStatus.STOPPED.value
-            if project.status == ProjectStatus.STOPPING.value
-            else ProjectStatus.ERROR.value
+            ProjectStatus.STOPPED.value if project.status == ProjectStatus.STOPPING.value else ProjectStatus.ERROR.value
         )
         reason = (
             ProjectStatusReason.MANUAL_STOP.value
@@ -339,30 +322,22 @@ class ProjectService:
             runtime_stopped_at=utc_now_iso(),
         )
 
-    def apply_runtime_status(
-        self, *, project_id: str, status_payload: dict[str, object]
-    ) -> ProjectRecord:
-        graph_edit = status_payload.get("last_graph_edit_at")
-        notebook_edit = status_payload.get("last_notebook_edit_at")
+    def apply_runtime_status(self, *, project_id: str, status_payload: dict[str, object]) -> ProjectRecord:
+        graph_edit = status_payload.get('last_graph_edit_at')
+        notebook_edit = status_payload.get('last_notebook_edit_at')
         last_edit_at = max(
             [value for value in [graph_edit, notebook_edit] if isinstance(value, str)],
             default=None,
         )
-        last_run_finished_at = status_payload.get("last_run_finished_at")
-        idle_since = status_payload.get("idle_shutdown_eligible_since")
+        last_run_finished_at = status_payload.get('last_run_finished_at')
+        idle_since = status_payload.get('idle_shutdown_eligible_since')
         return self.projects.update(
             project_id,
             last_graph_edit_at=graph_edit if isinstance(graph_edit, str) else None,
-            last_notebook_edit_at=notebook_edit
-            if isinstance(notebook_edit, str)
-            else None,
+            last_notebook_edit_at=notebook_edit if isinstance(notebook_edit, str) else None,
             last_edit_at=last_edit_at,
-            last_run_finished_at=last_run_finished_at
-            if isinstance(last_run_finished_at, str)
-            else None,
-            idle_shutdown_eligible_at=idle_since
-            if isinstance(idle_since, str)
-            else None,
+            last_run_finished_at=last_run_finished_at if isinstance(last_run_finished_at, str) else None,
+            idle_shutdown_eligible_at=idle_since if isinstance(idle_since, str) else None,
         )
 
     def update_environment_inputs(
@@ -372,10 +347,8 @@ class ProjectService:
         python_version: str,
         custom_requirements_text: str,
     ) -> ProjectRecord:
-        resolved_bulletjournal_version = (
-            self.environment_service.resolve_bulletjournal_version(
-                custom_requirements_text=custom_requirements_text
-            )
+        resolved_bulletjournal_version = self.environment_service.resolve_bulletjournal_version(
+            custom_requirements_text=custom_requirements_text
         )
         project_paths = self.project_paths(project_id)
         self.environment_service.write_project_environment(
@@ -397,10 +370,8 @@ class ProjectService:
         if project.status == ProjectStatus.RUNNING.value:
             self.stop_project(project_id, reason=ProjectStatusReason.MANUAL_STOP.value)
         else:
-            try:
+            with contextlib.suppress(RuntimeOperationError):
                 self.runtime_service.cleanup_project_container(project_id)
-            except RuntimeOperationError:
-                pass
         self.jobs.delete_for_project(project_id, exclude_job_id=retain_job_id)
         delete_project_root(self.instance_paths, project_id)
         self.projects.delete(project_id)

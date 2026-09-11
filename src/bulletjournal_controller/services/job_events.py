@@ -7,9 +7,7 @@ from typing import Any
 
 class JobEventBroker:
     def __init__(self) -> None:
-        self._subscribers: dict[
-            asyncio.Queue[dict[str, Any] | None], asyncio.AbstractEventLoop
-        ] = {}
+        self._subscribers: dict[asyncio.Queue[dict[str, Any] | None], asyncio.AbstractEventLoop] = {}
         self._lock = threading.Lock()
 
     def publish(self, event: dict[str, Any]) -> None:

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import os
 import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from bulletjournal_controller.config import (
@@ -23,37 +23,30 @@ from bulletjournal_controller.utils import (
     sha256_file,
 )
 
-
-DEPENDENCY_NAME_PATTERN = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
-INDEX_DIRECT_URL_PATTERN = re.compile(
-    r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*@\s*(https?://\S+)\s*$"
-)
-INLINE_INDEX_COMMENT_PATTERN = re.compile(
-    r"^(?P<dependency>.+?)\s+#\s*index-url:\s*(?P<index_url>https?://\S+)\s*$"
-)
+DEPENDENCY_NAME_PATTERN = re.compile(r'^\s*([A-Za-z0-9][A-Za-z0-9._-]*)')
+INDEX_DIRECT_URL_PATTERN = re.compile(r'^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*@\s*(https?://\S+)\s*$')
+INLINE_INDEX_COMMENT_PATTERN = re.compile(r'^(?P<dependency>.+?)\s+#\s*index-url:\s*(?P<index_url>https?://\S+)\s*$')
 VCS_DEPENDENCY_PATTERN = re.compile(
-    r"^\s*(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)\s*@\s*(?P<url>(?:git|hg|svn|bzr)\+\S+)\s*$"
+    r'^\s*(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)\s*@\s*(?P<url>(?:git|hg|svn|bzr)\+\S+)\s*$'
 )
-MISSING_BIND_MOUNT_PATTERN = re.compile(
-    r"bind source path does not exist", re.IGNORECASE
-)
+MISSING_BIND_MOUNT_PATTERN = re.compile(r'bind source path does not exist', re.IGNORECASE)
 INSTALL_RETRY_DELAYS_SECONDS = (0.25, 0.75, 1.5, 3.0, 5.0, 8.0)
 ARCHIVE_SUFFIXES = (
-    ".whl",
-    ".tar.gz",
-    ".zip",
-    ".tar.bz2",
-    ".tar.lz",
-    ".tar.lzma",
-    ".tar.xz",
-    ".tar.zst",
-    ".tar",
-    ".tbz",
-    ".tgz",
-    ".tlz",
-    ".txz",
+    '.whl',
+    '.tar.gz',
+    '.zip',
+    '.tar.bz2',
+    '.tar.lz',
+    '.tar.lzma',
+    '.tar.xz',
+    '.tar.zst',
+    '.tar',
+    '.tbz',
+    '.tgz',
+    '.tlz',
+    '.txz',
 )
-VCS_PREFIXES = ("git+", "hg+", "svn+", "bzr+")
+VCS_PREFIXES = ('git+', 'hg+', 'svn+', 'bzr+')
 
 
 @dataclass(slots=True)
@@ -78,23 +71,18 @@ class EnvironmentService:
     def default_dependency_text(self) -> str:
         required = MANAGED_RUNTIME_PACKAGE_NAME
         runtime_defaults = self.runtime_config_service.default_dependencies_file()
-        path = (
-            str(runtime_defaults)
-            if runtime_defaults is not None
-            else self.instance_config.default_dependencies_file
-        )
+        path = str(runtime_defaults) if runtime_defaults is not None else self.instance_config.default_dependencies_file
         if path is None:
-            return required + "\n"
+            return required + '\n'
         text = read_text_if_exists(Path(path))
         if text is None:
-            return required + "\n"
-        rendered = text if text.endswith("\n") else f"{text}\n"
+            return required + '\n'
+        rendered = text if text.endswith('\n') else f'{text}\n'
         config = self.parse_dependency_config(rendered)
         if not any(
-            self.dependency_identity(line) in MANAGED_RUNTIME_PACKAGE_ALIASES
-            for line in config.dependency_lines
+            self.dependency_identity(line) in MANAGED_RUNTIME_PACKAGE_ALIASES for line in config.dependency_lines
         ):
-            return f"{required}\n{rendered}"
+            return f'{required}\n{rendered}'
         return rendered
 
     def parse_dependency_text(self, text: str) -> list[str]:
@@ -106,13 +94,13 @@ class EnvironmentService:
         source_indexes: dict[str, str] = {}
         for raw_line in text.splitlines():
             line = raw_line.strip()
-            if not line or line.startswith("#"):
+            if not line or line.startswith('#'):
                 continue
-            if line.startswith("--extra-index-url "):
-                extra_index_urls.append(line.removeprefix("--extra-index-url ").strip())
+            if line.startswith('--extra-index-url '):
+                extra_index_urls.append(line.removeprefix('--extra-index-url ').strip())
                 continue
-            if line.startswith("--index-url "):
-                extra_index_urls.append(line.removeprefix("--index-url ").strip())
+            if line.startswith('--index-url '):
+                extra_index_urls.append(line.removeprefix('--index-url ').strip())
                 continue
             inline_index = self._inline_index_comment(line)
             if inline_index is not None:
@@ -146,42 +134,34 @@ class EnvironmentService:
         managed_line = self._required_managed_runtime_dependency(
             self.parse_dependency_config(custom_requirements_text).dependency_lines
         )
-        if "==" in managed_line:
-            return managed_line.split("==", 1)[1].strip()
-        if " @ " in managed_line:
-            return managed_line.split(" @ ", 1)[1].strip()
+        if '==' in managed_line:
+            return managed_line.split('==', 1)[1].strip()
+        if ' @ ' in managed_line:
+            return managed_line.split(' @ ', 1)[1].strip()
         return managed_line.strip()
 
-    def resolve_installed_bulletjournal_version(
-        self, *, project_paths: ProjectPaths
-    ) -> str | None:
+    def resolve_installed_bulletjournal_version(self, *, project_paths: ProjectPaths) -> str | None:
         dist_info = self._managed_runtime_dist_info_dir(project_paths.runtime_venv_dir)
         if dist_info is None:
             return None
-        metadata_text = read_text_if_exists(dist_info / "METADATA")
+        metadata_text = read_text_if_exists(dist_info / 'METADATA')
         if metadata_text is None:
             return None
         version = self._metadata_version(metadata_text)
         if version is None:
             return None
-        commit_id = self._direct_url_commit_id(dist_info / "direct_url.json")
+        commit_id = self._direct_url_commit_id(dist_info / 'direct_url.json')
         if commit_id is None:
             return version
-        return f"{version} ({commit_id[:7]})"
+        return f'{version} ({commit_id[:7]})'
 
-    def merge_dependency_lines(
-        self, *, bulletjournal_version: str, custom_requirements_text: str
-    ) -> list[str]:
+    def merge_dependency_lines(self, *, bulletjournal_version: str, custom_requirements_text: str) -> list[str]:
         _ = bulletjournal_version
         defaults = self.parse_dependency_config(self.default_dependency_text())
         custom = self.parse_dependency_config(custom_requirements_text)
-        managed_line = self._required_managed_runtime_dependency(
-            custom.dependency_lines
-        )
+        managed_line = self._required_managed_runtime_dependency(custom.dependency_lines)
         default_lines = [
-            line
-            for line in defaults.dependency_lines
-            if self._dependency_key(line) != MANAGED_RUNTIME_PACKAGE_NAME
+            line for line in defaults.dependency_lines if self._dependency_key(line) != MANAGED_RUNTIME_PACKAGE_NAME
         ]
         custom_lines = custom.dependency_lines
         custom_map = {self._dependency_key(line): line for line in custom_lines}
@@ -199,9 +179,7 @@ class EnvironmentService:
                 seen.add(identity)
         return result
 
-    def merge_dependency_config(
-        self, *, bulletjournal_version: str, custom_requirements_text: str
-    ) -> DependencyConfig:
+    def merge_dependency_config(self, *, bulletjournal_version: str, custom_requirements_text: str) -> DependencyConfig:
         default_config = self.parse_dependency_config(self.default_dependency_text())
         custom_config = self.parse_dependency_config(custom_requirements_text)
         dependency_lines = self.merge_dependency_lines(
@@ -212,9 +190,7 @@ class EnvironmentService:
         source_indexes.update(custom_config.source_indexes)
         return DependencyConfig(
             dependency_lines=dependency_lines,
-            extra_index_urls=self._dedupe(
-                default_config.extra_index_urls + custom_config.extra_index_urls
-            ),
+            extra_index_urls=self._dedupe(default_config.extra_index_urls + custom_config.extra_index_urls),
             source_indexes=source_indexes,
         )
 
@@ -227,32 +203,32 @@ class EnvironmentService:
         extra_index_urls: list[str] | None = None,
         source_indexes: dict[str, str] | None = None,
     ) -> str:
-        dependency_lines = "\n".join(f'  "{line}",' for line in dependencies)
+        dependency_lines = '\n'.join(f'  "{line}",' for line in dependencies)
         source_block = self._source_block(
             dependencies=dependencies,
             extra_index_urls=extra_index_urls or [],
             source_indexes=source_indexes or {},
         )
         return (
-            "[build-system]\n"
+            '[build-system]\n'
             'requires = ["setuptools>=68", "wheel"]\n'
             'build-backend = "setuptools.build_meta"\n\n'
-            "[project]\n"
+            '[project]\n'
             f'name = "bulletjournal-project-{project_id}"\n'
             'version = "0.0.0"\n'
             f'requires-python = "=={python_version}.*"\n'
-            "dependencies = [\n"
-            f"{dependency_lines}\n"
-            "]\n\n"
-            f"{source_block}"
-            "[tool.uv]\n"
-            "package = false\n\n"
-            "[tool.marimo.display]\n"
+            'dependencies = [\n'
+            f'{dependency_lines}\n'
+            ']\n\n'
+            f'{source_block}'
+            '[tool.uv]\n'
+            'package = false\n\n'
+            '[tool.marimo.display]\n'
             'theme = "system"\n\n'
-            "[tool.setuptools]\n"
-            "packages = []\n\n"
-            "[tool.bulletjournal_controller]\n"
-            "schema_version = 1\n"
+            '[tool.setuptools]\n'
+            'packages = []\n\n'
+            '[tool.bulletjournal_controller]\n'
+            'schema_version = 1\n'
             f'project_id = "{project_id}"\n'
         )
 
@@ -301,17 +277,14 @@ class EnvironmentService:
             bulletjournal_version=project.bulletjournal_version,
             custom_requirements_text=project.custom_requirements_text,
         )
-        dependency_config = self.merge_dependency_config(
+        self.merge_dependency_config(
             bulletjournal_version=project.bulletjournal_version,
             custom_requirements_text=project.custom_requirements_text,
         )
         common_mount_paths = [
             project_paths.root,
             project_paths.runtime_uv_cache_dir,
-            *[
-                mount_path
-                for mount_path, _target, _readonly in self.runtime_config_service.additional_mounts()
-            ],
+            *[mount_path for mount_path, _target, _readonly in self.runtime_config_service.additional_mounts()],
         ]
         init_command = self.installer.build_project_init_command(
             image=self.runtime_config_service.runtime_config.runtime_image_name,
@@ -323,7 +296,7 @@ class EnvironmentService:
             user_uid=self.runtime_config_service.runtime_config.container_uid,
             user_gid=self.runtime_config_service.runtime_config.container_gid,
         )
-        log_writer(f"project init command: {' '.join(init_command)}")
+        log_writer(f'project init command: {" ".join(init_command)}')
         init_result = self._run_with_mount_retry(
             command=init_command,
             mount_paths=common_mount_paths,
@@ -332,7 +305,7 @@ class EnvironmentService:
         if init_result.returncode != 0:
             raise RuntimeError(
                 self._command_failure_message(
-                    phase="Project initialization",
+                    phase='Project initialization',
                     command=init_command,
                     returncode=init_result.returncode,
                     stdout=init_result.stdout,
@@ -350,7 +323,7 @@ class EnvironmentService:
             user_gid=self.runtime_config_service.runtime_config.container_gid,
             upgrade_all=upgrade_all,
         )
-        log_writer(f"install command: {' '.join(install_command)}")
+        log_writer(f'install command: {" ".join(install_command)}')
         result = self._run_with_mount_retry(
             command=install_command,
             mount_paths=common_mount_paths,
@@ -359,7 +332,7 @@ class EnvironmentService:
         if result.returncode != 0:
             raise RuntimeError(
                 self._command_failure_message(
-                    phase="Environment install",
+                    phase='Environment install',
                     command=install_command,
                     returncode=result.returncode,
                     stdout=result.stdout,
@@ -376,7 +349,7 @@ class EnvironmentService:
                 user_uid=self.runtime_config_service.runtime_config.container_uid,
                 user_gid=self.runtime_config_service.runtime_config.container_gid,
             )
-            log_writer(f"validate environment command: {' '.join(validate_command)}")
+            log_writer(f'validate environment command: {" ".join(validate_command)}')
             validate_result = self._run_with_mount_retry(
                 command=validate_command,
                 mount_paths=common_mount_paths,
@@ -384,7 +357,7 @@ class EnvironmentService:
             )
             if validate_result.returncode != 0:
                 log_writer(
-                    "Skipping artifact invalidation because the runtime environment failed validation after install."
+                    'Skipping artifact invalidation because the runtime environment failed validation after install.'
                 )
                 return self.compute_lock_sha256(project_paths.uv_lock_path)
             stale_command = self.installer.build_mark_stale_command(
@@ -397,29 +370,23 @@ class EnvironmentService:
                 user_uid=self.runtime_config_service.runtime_config.container_uid,
                 user_gid=self.runtime_config_service.runtime_config.container_gid,
             )
-            log_writer(f"mark stale command: {' '.join(stale_command)}")
+            log_writer(f'mark stale command: {" ".join(stale_command)}')
             stale_result = self.installer.run(stale_command)
             if stale_result.stdout:
                 log_writer(stale_result.stdout.rstrip())
             if stale_result.stderr:
                 log_writer(stale_result.stderr.rstrip())
             if stale_result.returncode != 0:
-                raise RuntimeError(
-                    "Artifact invalidation failed after environment install."
-                )
+                raise RuntimeError('Artifact invalidation failed after environment install.')
         return self.compute_lock_sha256(project_paths.uv_lock_path)
 
-    def _run_with_mount_retry(
-        self, *, command: list[str], mount_paths: list[Path], log_writer
-    ):
+    def _run_with_mount_retry(self, *, command: list[str], mount_paths: list[Path], log_writer):
         attempts = len(INSTALL_RETRY_DELAYS_SECONDS) + 1
         result = None
         for index in range(attempts):
             for mount_path in mount_paths:
                 if not mount_path.exists():
-                    raise RuntimeError(
-                        f"Container mount path disappeared before install: {mount_path}"
-                    )
+                    raise RuntimeError(f'Container mount path disappeared before install: {mount_path}')
                 self._flush_mount_path(mount_path)
             result = self.installer.run(command)
             if result.stdout:
@@ -428,17 +395,17 @@ class EnvironmentService:
                 log_writer(result.stderr.rstrip())
             if result.returncode == 0:
                 return result
-            if not self._is_missing_bind_mount_error(result.stderr or ""):
+            if not self._is_missing_bind_mount_error(result.stderr or ''):
                 return result
             if index >= len(INSTALL_RETRY_DELAYS_SECONDS):
                 return result
             delay = INSTALL_RETRY_DELAYS_SECONDS[index]
             log_writer(
-                f"detected transient Docker bind mount visibility failure; retrying in {delay:.2f}s",
+                f'detected transient Docker bind mount visibility failure; retrying in {delay:.2f}s',
             )
             time.sleep(delay)
         if result is None:
-            raise RuntimeError("Install command was never attempted.")
+            raise RuntimeError('Install command was never attempted.')
         return result
 
     @staticmethod
@@ -455,23 +422,23 @@ class EnvironmentService:
         stderr: str,
     ) -> str:
         details: list[str] = [
-            f"{phase} failed with exit code {returncode}.",
-            f"Command: {' '.join(command)}",
+            f'{phase} failed with exit code {returncode}.',
+            f'Command: {" ".join(command)}',
         ]
         stdout_tail = EnvironmentService._output_tail(stdout)
         stderr_tail = EnvironmentService._output_tail(stderr)
         if stdout_tail:
-            details.append(f"stdout tail:\n{stdout_tail}")
+            details.append(f'stdout tail:\n{stdout_tail}')
         if stderr_tail:
-            details.append(f"stderr tail:\n{stderr_tail}")
-        return "\n".join(details)
+            details.append(f'stderr tail:\n{stderr_tail}')
+        return '\n'.join(details)
 
     @staticmethod
     def _output_tail(text: str, *, lines: int = 20) -> str:
         content = text.strip()
         if not content:
-            return ""
-        return "\n".join(content.splitlines()[-lines:])
+            return ''
+        return '\n'.join(content.splitlines()[-lines:])
 
     @staticmethod
     def _flush_mount_path(project_root: Path) -> None:
@@ -496,12 +463,12 @@ class EnvironmentService:
         lines: list[str] = []
         index_names: dict[str, str] = {}
         for offset, index_url in enumerate(extra_index_urls, start=1):
-            name = f"extra_index_{offset}"
+            name = f'extra_index_{offset}'
             index_names[index_url] = name
-            lines.append("[[tool.uv.index]]")
+            lines.append('[[tool.uv.index]]')
             lines.append(f'name = "{name}"')
             lines.append(f'url = "{index_url}"')
-            lines.append("")
+            lines.append('')
 
         source_lines: list[str] = []
 
@@ -511,11 +478,11 @@ class EnvironmentService:
                 source_lines.append(f'{dependency_name} = {{ index = "{index_name}" }}')
 
         if source_lines:
-            lines.append("[tool.uv.sources]")
+            lines.append('[tool.uv.sources]')
             lines.extend(source_lines)
-            lines.append("")
+            lines.append('')
 
-        return "" if not lines else "\n".join(lines) + "\n"
+        return '' if not lines else '\n'.join(lines) + '\n'
 
     @staticmethod
     def _dedupe(values: list[str]) -> list[str]:
@@ -532,9 +499,7 @@ class EnvironmentService:
             if self._dependency_key(line) != MANAGED_RUNTIME_PACKAGE_NAME:
                 continue
             return line
-        raise ValidationError(
-            "custom_requirements_text must include a BulletJournal dependency line."
-        )
+        raise ValidationError('custom_requirements_text must include a BulletJournal dependency line.')
 
     def _dependency_key(self, line: str) -> str:
         identity = self.dependency_identity(line)
@@ -561,15 +526,15 @@ class EnvironmentService:
         match = INLINE_INDEX_COMMENT_PATTERN.match(line)
         if match is None:
             return None
-        dependency_name = match.group("dependency").strip()
-        index_url = match.group("index_url").strip()
+        dependency_name = match.group('dependency').strip()
+        index_url = match.group('index_url').strip()
         return dependency_name, index_url
 
     @staticmethod
     def _managed_runtime_dist_info_dir(runtime_venv_dir: Path) -> Path | None:
         for pattern in (
-            "lib/python*/site-packages/bulletjournal_editor-*.dist-info",
-            "Lib/site-packages/bulletjournal_editor-*.dist-info",
+            'lib/python*/site-packages/bulletjournal_editor-*.dist-info',
+            'Lib/site-packages/bulletjournal_editor-*.dist-info',
         ):
             matches = sorted(runtime_venv_dir.glob(pattern))
             if matches:
@@ -579,9 +544,9 @@ class EnvironmentService:
     @staticmethod
     def _metadata_version(metadata_text: str) -> str | None:
         for line in metadata_text.splitlines():
-            if not line.startswith("Version:"):
+            if not line.startswith('Version:'):
                 continue
-            version = line.removeprefix("Version:").strip()
+            version = line.removeprefix('Version:').strip()
             return version or None
         return None
 
@@ -596,10 +561,10 @@ class EnvironmentService:
             return None
         if not isinstance(payload, dict):
             return None
-        vcs_info = payload.get("vcs_info")
+        vcs_info = payload.get('vcs_info')
         if not isinstance(vcs_info, dict):
             return None
-        commit_id = vcs_info.get("commit_id")
+        commit_id = vcs_info.get('commit_id')
         if not isinstance(commit_id, str):
             return None
         commit_id = commit_id.strip()

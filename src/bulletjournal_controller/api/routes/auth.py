@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request, Response
 
-from bulletjournal_controller.api.auth import clear_session_cookie, get_current_session_bundle, require_same_origin, set_session_cookie
+from bulletjournal_controller.api.auth import (
+    clear_session_cookie,
+    get_current_session_bundle,
+    require_same_origin,
+    set_session_cookie,
+)
 from bulletjournal_controller.api.schemas import LoginRequest, SessionResponse, UserResponse
-
 
 router = APIRouter(prefix='/session', tags=['auth'])
 

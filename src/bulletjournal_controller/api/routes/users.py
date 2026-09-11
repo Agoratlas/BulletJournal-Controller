@@ -5,11 +5,10 @@ from fastapi import APIRouter, Depends, Request
 from bulletjournal_controller.api.auth import get_current_user
 from bulletjournal_controller.api.schemas import AssignableUserResponse
 
+router = APIRouter(prefix='/users', tags=['users'])
 
-router = APIRouter(prefix="/users", tags=["users"])
 
-
-@router.get("/assignable", response_model=list[AssignableUserResponse])
+@router.get('/assignable', response_model=list[AssignableUserResponse])
 def assignable_users(request: Request, _user=Depends(get_current_user)):
     return [
         AssignableUserResponse(

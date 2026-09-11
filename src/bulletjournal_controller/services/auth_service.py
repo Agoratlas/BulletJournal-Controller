@@ -29,7 +29,7 @@ from bulletjournal_controller.utils import (
     utc_now_iso,
 )
 
-SESSION_COOKIE_NAME = "bulletjournal_session"
+SESSION_COOKIE_NAME = 'bulletjournal_session'
 SESSION_TOUCH_INTERVAL_SECONDS = 10
 
 
@@ -51,10 +51,10 @@ class AuthService:
         self.users = users
         self.sessions = sessions
         self.server_config = server_config
-        argon2_module = import_module("argon2")
-        argon2_exceptions = import_module("argon2.exceptions")
-        self._invalid_hash_error = getattr(argon2_exceptions, "InvalidHashError")
-        self._verify_mismatch_error = getattr(argon2_exceptions, "VerifyMismatchError")
+        argon2_module = import_module('argon2')
+        argon2_exceptions = import_module('argon2.exceptions')
+        self._invalid_hash_error = argon2_exceptions.InvalidHashError
+        self._verify_mismatch_error = argon2_exceptions.VerifyMismatchError
         self.password_hasher = argon2_module.PasswordHasher()
 
     def create_user(
@@ -75,8 +75,8 @@ class AuthService:
         normalized_display_name = self._normalize_display_name(display_name)
         normalized_password_hash = self._normalize_password_hash(password_hash)
         if self.users.get_by_username(normalized_username) is not None:
-            raise ConflictError(f"User {normalized_username} already exists.")
-        user_id = f"user-{random_token(bytes_length=12)}"
+            raise ConflictError(f'User {normalized_username} already exists.')
+        user_id = f'user-{random_token(bytes_length=12)}'
         return self.users.create(
             user_id=user_id,
             username=normalized_username,
@@ -118,9 +118,9 @@ class AuthService:
         normalized_username = self._normalize_username(username)
         user = self.users.get_by_username(normalized_username)
         if user is None:
-            raise NotFoundError(f"User {normalized_username} was not found.")
+            raise NotFoundError(f'User {normalized_username} was not found.')
         if user.user_id == replacement_user_id:
-            raise ValidationError("The system user cannot be deleted.")
+            raise ValidationError('The system user cannot be deleted.')
         self.users.delete(user.user_id, replacement_user_id=replacement_user_id)
         return user
 
@@ -132,46 +132,40 @@ class AuthService:
 
     def authenticate_user(self, *, username: str, password: str) -> UserRecord:
         user = self.users.get_by_username(username.strip())
-        if (
-            user is None
-            or not user.is_active
-            or not self.verify_password(user.password_hash, password)
-        ):
-            raise AuthenticationError("Invalid username or password.")
+        if user is None or not user.is_active or not self.verify_password(user.password_hash, password):
+            raise AuthenticationError('Invalid username or password.')
         self.users.touch_last_login(user.user_id)
         refreshed = self.users.get(user.user_id)
         if refreshed is None:
-            raise AuthenticationError("User disappeared during login.")
+            raise AuthenticationError('User disappeared during login.')
         return refreshed
 
     @staticmethod
     def _normalize_username(username: str) -> str:
         normalized_username = username.strip()
         if not normalized_username:
-            raise ValidationError("Username must not be empty.")
+            raise ValidationError('Username must not be empty.')
         return normalized_username
 
     @staticmethod
     def _normalize_display_name(display_name: str) -> str:
         normalized_display_name = display_name.strip()
         if not normalized_display_name:
-            raise ValidationError("Display name must not be empty.")
+            raise ValidationError('Display name must not be empty.')
         return normalized_display_name
 
     def _normalize_password_hash(self, password_hash: str) -> str:
         normalized_password_hash = password_hash.strip()
         if not normalized_password_hash:
-            raise ValidationError("Password hash must not be empty.")
+            raise ValidationError('Password hash must not be empty.')
         try:
             self.password_hasher.check_needs_rehash(normalized_password_hash)
         except self._invalid_hash_error as exc:
-            raise ValidationError("Password hash is not a valid Argon2 hash.") from exc
+            raise ValidationError('Password hash is not a valid Argon2 hash.') from exc
         return normalized_password_hash
 
-    def create_session(
-        self, *, user: UserRecord, user_agent: str, remote_addr: str
-    ) -> SessionBundle:
-        session_id = f"session-{random_token(bytes_length=12)}"
+    def create_session(self, *, user: UserRecord, user_agent: str, remote_addr: str) -> SessionBundle:
+        session_id = f'session-{random_token(bytes_length=12)}'
         secret = random_token(bytes_length=24)
         created_at = utc_now_iso()
         expires_at = iso_after(seconds=DEFAULT_SESSION_LIFETIME_SECONDS)
@@ -181,12 +175,10 @@ class AuthService:
             secret_hash=sha256_text(secret),
             created_at=created_at,
             expires_at=expires_at,
-            user_agent=user_agent or "unknown",
-            remote_addr=remote_addr or "unknown",
+            user_agent=user_agent or 'unknown',
+            remote_addr=remote_addr or 'unknown',
         )
-        return SessionBundle(
-            user=user, session=session, cookie_value=f"{session_id}.{secret}"
-        )
+        return SessionBundle(user=user, session=session, cookie_value=f'{session_id}.{secret}')
 
     def revoke_session(self, cookie_value: str | None) -> None:
         parsed = self._parse_cookie(cookie_value)
@@ -225,27 +217,22 @@ class AuthService:
             except sqlite3.OperationalError as exc:
                 if not _is_database_locked(exc):
                     raise
-        return SessionBundle(
-            user=user, session=refreshed, cookie_value=f"{session_id}.{secret}"
-        )
+        return SessionBundle(user=user, session=refreshed, cookie_value=f'{session_id}.{secret}')
 
     @staticmethod
     def _should_refresh_session(session: SessionRecord) -> bool:
         last_seen_at = parse_iso8601(session.last_seen_at)
         if last_seen_at is None:
             return True
-        return (
-            last_seen_at + timedelta(seconds=SESSION_TOUCH_INTERVAL_SECONDS)
-            <= utc_now()
-        )
+        return last_seen_at + timedelta(seconds=SESSION_TOUCH_INTERVAL_SECONDS) <= utc_now()
 
     @staticmethod
     def _parse_cookie(cookie_value: str | None) -> tuple[str, str] | None:
         if cookie_value is None:
             return None
-        if "." not in cookie_value:
+        if '.' not in cookie_value:
             return None
-        session_id, secret = cookie_value.split(".", 1)
+        session_id, secret = cookie_value.split('.', 1)
         session_id = session_id.strip()
         secret = secret.strip()
         if not session_id or not secret:
@@ -254,4 +241,4 @@ class AuthService:
 
 
 def _is_database_locked(exc: sqlite3.OperationalError) -> bool:
-    return "database is locked" in str(exc).lower()
+    return 'database is locked' in str(exc).lower()

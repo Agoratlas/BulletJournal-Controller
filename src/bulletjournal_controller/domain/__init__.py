@@ -16,6 +16,7 @@ from bulletjournal_controller.domain.rules import ALLOWED_STATUS_TRANSITIONS, PR
 
 __all__ = [
     'ALLOWED_STATUS_TRANSITIONS',
+    'PROJECT_ID_PATTERN',
     'AuthenticationError',
     'AuthorizationError',
     'BulletJournalControllerError',
@@ -27,7 +28,6 @@ __all__ = [
     'JobStatus',
     'JobType',
     'NotFoundError',
-    'PROJECT_ID_PATTERN',
     'ProjectRecord',
     'ProjectStatus',
     'ProjectStatusReason',

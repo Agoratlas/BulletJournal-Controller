@@ -10,12 +10,10 @@ def test_opencode_archive_filename_uses_configured_instance_id(instance_root) ->
     service = McpConfigService(
         instance_paths=instance_paths,
         instance_config=load_instance_config(instance_paths.instance_json_path),
-        server_config=ServerConfig(
-            cookie_secure=False, public_origin="http://localhost:8780"
-        ),
+        server_config=ServerConfig(cookie_secure=False, public_origin='http://localhost:8780'),
     )
 
-    archive, filename = service.opencode_archive("study-a")
+    archive, filename = service.opencode_archive('study-a')
 
     assert archive
-    assert filename == "bulletjournal_main_study-a.zip"
+    assert filename == 'bulletjournal_main_study-a.zip'

@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class ProjectRole(str, Enum):
-    PROJECT_ADMIN = "project_admin"
-    EDITOR = "editor"
+class ProjectRole(StrEnum):
+    PROJECT_ADMIN = 'project_admin'
+    EDITOR = 'editor'
 
 
-class RoleSubjectKind(str, Enum):
-    USER = "user"
-    ALL_USERS = "all_users"
+class RoleSubjectKind(StrEnum):
+    USER = 'user'
+    ALL_USERS = 'all_users'
 
 
-class ProjectStatus(str, Enum):
+class ProjectStatus(StrEnum):
     CREATING = 'creating'
     INSTALLING = 'installing'
     STOPPED = 'stopped'
@@ -23,7 +23,7 @@ class ProjectStatus(str, Enum):
     ERROR = 'error'
 
 
-class ProjectStatusReason(str, Enum):
+class ProjectStatusReason(StrEnum):
     MANUAL_STOP = 'manual_stop'
     IDLE_TIMEOUT = 'idle_timeout'
     CREATE_FAILED = 'create_failed'
@@ -32,14 +32,14 @@ class ProjectStatusReason(str, Enum):
     RUNTIME_CRASHED = 'runtime_crashed'
 
 
-class InstallStatus(str, Enum):
+class InstallStatus(StrEnum):
     PENDING = 'pending'
     INSTALLING = 'installing'
     READY = 'ready'
     FAILED = 'failed'
 
 
-class JobType(str, Enum):
+class JobType(StrEnum):
     CREATE_PROJECT = 'create_project'
     INSTALL_ENVIRONMENT = 'install_environment'
     START_PROJECT = 'start_project'
@@ -52,7 +52,7 @@ class JobType(str, Enum):
     DELETE_PROJECT = 'delete_project'
 
 
-class JobStatus(str, Enum):
+class JobStatus(StrEnum):
     QUEUED = 'queued'
     RUNNING = 'running'
     SUCCEEDED = 'succeeded'

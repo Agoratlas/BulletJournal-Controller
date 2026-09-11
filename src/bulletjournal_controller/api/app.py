@@ -47,7 +47,7 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
             app.state.container.stop()
             await app.state.container.aclose()
 
-    app = FastAPI(title="BulletJournal-Controller", version="1.0.2", lifespan=lifespan)
+    app = FastAPI(title='BulletJournal-Controller', version='1.0.2', lifespan=lifespan)
     app.state.server_config = server_config
     app.state.instance_paths = instance_paths
     app.state.container = ServiceContainer(
@@ -58,11 +58,11 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
     )
     install_error_handlers(app)
 
-    @app.middleware("http")
+    @app.middleware('http')
     async def observe_controller_http(request: Request, call_next):
         bundle = _session_bundle_from_request(request)
         request.state.session_bundle = bundle
-        if request.url.path == "/metrics" or request.url.path.startswith("/p/"):
+        if request.url.path == '/metrics' or request.url.path.startswith('/p/'):
             response = await call_next(request)
             _log_authenticated_request(request, response.status_code, bundle)
             return response
@@ -73,7 +73,7 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
         duration = max(0.0, time.perf_counter() - started_at)
         app.state.container.observability.observe_route_request(
             route=route,
-            route_type="controller",
+            route_type='controller',
             method=method,
             status_code=response.status_code,
             duration=duration,
@@ -81,82 +81,74 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
         _log_authenticated_request(request, response.status_code, bundle)
         return response
 
-    @app.get("/metrics", include_in_schema=False)
+    @app.get('/metrics', include_in_schema=False)
     def prometheus_metrics(request: Request):
         _require_metrics_access(request)
         container = request.app.state.container
         return Response(
             content=container.observability.render(),
-            media_type="text/plain; version=0.0.4; charset=utf-8",
+            media_type='text/plain; version=0.0.4; charset=utf-8',
         )
 
-    api_prefix = "/api/v1"
+    api_prefix = '/api/v1'
     app.include_router(auth.router, prefix=api_prefix)
     app.include_router(users.router, prefix=api_prefix)
-    app.include_router(
-        system.router, prefix=api_prefix, dependencies=[Depends(get_current_user)]
-    )
+    app.include_router(system.router, prefix=api_prefix, dependencies=[Depends(get_current_user)])
     app.include_router(oauth.router)
     app.include_router(projects.router, prefix=api_prefix)
-    app.include_router(
-        jobs.router, prefix=api_prefix, dependencies=[Depends(get_current_user)]
-    )
-    app.include_router(
-        events.router, prefix=api_prefix, dependencies=[Depends(get_current_user)]
-    )
+    app.include_router(jobs.router, prefix=api_prefix, dependencies=[Depends(get_current_user)])
+    app.include_router(events.router, prefix=api_prefix, dependencies=[Depends(get_current_user)])
     app.include_router(proxy_router)
 
     web_root = bundled_web_root()
-    assets_dir = web_root / "assets"
+    assets_dir = web_root / 'assets'
     if assets_dir.exists():
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+        app.mount('/assets', StaticFiles(directory=assets_dir), name='assets')
 
-    favicon_path = web_root / "favicon.svg"
+    favicon_path = web_root / 'favicon.svg'
     if favicon_path.exists():
 
-        @app.get("/favicon.svg", include_in_schema=False)
+        @app.get('/favicon.svg', include_in_schema=False)
         def favicon():
             return FileResponse(favicon_path)
 
-    @app.get("/healthz")
+    @app.get('/healthz')
     def healthz():
-        return {"status": "ok"}
+        return {'status': 'ok'}
 
-    @app.get("/login")
+    @app.get('/login')
     def login_page(request: Request):
         if _session_bundle_from_request(request) is not None:
-            return RedirectResponse("/", status_code=302)
-        return _serve_spa(web_root, route="login")
+            return RedirectResponse('/', status_code=302)
+        return _serve_spa(web_root, route='login')
 
-    @app.get("/")
-    @app.get("/projects/{project_id}")
+    @app.get('/')
+    @app.get('/projects/{project_id}')
     def spa(request: Request, project_id: str | None = None):
         _ = project_id
         if _session_bundle_from_request(request) is None:
-            return RedirectResponse("/login", status_code=302)
+            return RedirectResponse('/login', status_code=302)
         return _serve_spa(web_root)
 
     return app
 
 
 def _serve_spa(web_root: Path, *, route: str | None = None):
-    if route == "login":
-        candidate = web_root / "login.html"
+    if route == 'login':
+        candidate = web_root / 'login.html'
         if candidate.exists():
-            return HTMLResponse(candidate.read_text(encoding="utf-8"))
-    index = web_root / "index.html"
+            return HTMLResponse(candidate.read_text(encoding='utf-8'))
+    index = web_root / 'index.html'
     if index.exists():
-        return HTMLResponse(index.read_text(encoding="utf-8"))
+        return HTMLResponse(index.read_text(encoding='utf-8'))
     return JSONResponse(
         status_code=503,
-        content={
-            "detail": "Frontend assets are not built yet. Use API endpoints directly or build the web app."
-        },
+        content={'detail': 'Frontend assets are not built yet. Use API endpoints directly or build the web app.'},
     )
 
 
 def _session_bundle_from_request(request: Request):
-    cached = getattr(request.state, "session_bundle", None)
+    cached = getattr(request.state, 'session_bundle', None)
     if cached is not None:
         return cached
     cookie = request.cookies.get(SESSION_COOKIE_NAME)
@@ -166,8 +158,8 @@ def _session_bundle_from_request(request: Request):
 def _log_authenticated_request(request: Request, status_code: int, bundle) -> None:
     if bundle is None:
         return
-    logging.getLogger("bulletjournal_controller.access").info(
-        "username=%s method=%s path=%s status=%s",
+    logging.getLogger('bulletjournal_controller.access').info(
+        'username=%s method=%s path=%s status=%s',
         bundle.user.username,
         request.method,
         normalized_controller_route(request.url.path),
@@ -178,11 +170,11 @@ def _log_authenticated_request(request: Request, status_code: int, bundle) -> No
 def _require_metrics_access(request: Request) -> None:
     instance_config = request.app.state.container.instance_config
     mode = instance_config.prometheus_metrics_mode
-    if mode == "off":
-        raise HTTPException(status_code=404, detail="Not found.")
-    if mode == "unauthenticated":
+    if mode == 'off':
+        raise HTTPException(status_code=404, detail='Not found.')
+    if mode == 'unauthenticated':
         return
     expected_key = request.app.state.server_config.prometheus_api_key
-    provided_key = request.headers.get("x-api-key", "")
+    provided_key = request.headers.get('x-api-key', '')
     if not expected_key or not hmac.compare_digest(provided_key, expected_key):
-        raise HTTPException(status_code=401, detail="Prometheus API key required.")
+        raise HTTPException(status_code=401, detail='Prometheus API key required.')

@@ -8,7 +8,7 @@ from bulletjournal_controller.utils import utc_now_iso
 
 
 def test_existing_projects_table_gains_runtime_venv_size_column(tmp_path) -> None:
-    db_path = tmp_path / "state.db"
+    db_path = tmp_path / 'state.db'
     connection = sqlite3.connect(db_path)
     try:
         connection.executescript(
@@ -50,14 +50,14 @@ def test_existing_projects_table_gains_runtime_venv_size_column(tmp_path) -> Non
             """
         )
         for name in [
-            "001_initial",
-            "002_project_activity_columns",
-            "003_jobs_without_project_fk",
-            "004_project_controller_status_token",
-            "005_nullable_project_limits",
+            '001_initial',
+            '002_project_activity_columns',
+            '003_jobs_without_project_fk',
+            '004_project_controller_status_token',
+            '005_nullable_project_limits',
         ]:
             connection.execute(
-                "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)",
+                'INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)',
                 (name, utc_now_iso()),
             )
         connection.commit()
@@ -67,52 +67,49 @@ def test_existing_projects_table_gains_runtime_venv_size_column(tmp_path) -> Non
     StateDB(db_path)
 
     with sqlite3.connect(db_path) as connection:
-        columns = {
-            row[1]
-            for row in connection.execute("PRAGMA table_info(projects)").fetchall()
-        }
+        columns = {row[1] for row in connection.execute('PRAGMA table_info(projects)').fetchall()}
 
-    assert "runtime_venv_size_bytes" in columns
+    assert 'runtime_venv_size_bytes' in columns
 
 
 def test_existing_projects_table_gains_runtime_uv_cache_size_column(tmp_path) -> None:
-    db = StateDB(tmp_path / "state.db")
+    db = StateDB(tmp_path / 'state.db')
     now = utc_now_iso()
     with db.transaction() as connection:
         connection.execute(
-            "INSERT INTO users (user_id, username, display_name, password_hash, is_active, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("user-1", "admin", "Admin", "hash", 1, now, now),
+            'INSERT INTO users (user_id, username, display_name, password_hash, is_active, created_at, updated_at) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?)',
+            ('user-1', 'admin', 'Admin', 'hash', 1, now, now),
         )
         connection.execute(
-            "INSERT INTO projects (project_id, controller_status_token, status, root_path, created_by_user_id, "
-            "created_at, updated_at, python_version, bulletjournal_version, custom_requirements_text, "
-            "runtime_venv_size_bytes, install_status, gpu_enabled) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            'INSERT INTO projects (project_id, controller_status_token, status, root_path, created_by_user_id, '
+            'created_at, updated_at, python_version, bulletjournal_version, custom_requirements_text, '
+            'runtime_venv_size_bytes, install_status, gpu_enabled) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (
-                "study-a",
-                "token",
-                "stopped",
-                str(tmp_path / "study-a"),
-                "user-1",
+                'study-a',
+                'token',
+                'stopped',
+                str(tmp_path / 'study-a'),
+                'user-1',
                 now,
                 now,
-                "3.11",
-                "0.1.0",
-                "",
+                '3.11',
+                '0.1.0',
+                '',
                 17,
-                "ready",
+                'ready',
                 0,
             ),
         )
-        connection.execute("DELETE FROM schema_migrations WHERE name = ?", ("008_project_runtime_uv_cache_size_bytes",))
+        connection.execute('DELETE FROM schema_migrations WHERE name = ?', ('008_project_runtime_uv_cache_size_bytes',))
 
     StateDB(db.path)
 
     with db.read() as connection:
         stored_sizes = connection.execute(
-            "SELECT runtime_venv_size_bytes, runtime_uv_cache_size_bytes FROM projects WHERE project_id = ?",
-            ("study-a",),
+            'SELECT runtime_venv_size_bytes, runtime_uv_cache_size_bytes FROM projects WHERE project_id = ?',
+            ('study-a',),
         ).fetchone()
 
     assert tuple(stored_sizes) == (17, None)
@@ -124,7 +121,7 @@ def test_connect_does_not_reapply_journal_mode_after_initialization(monkeypatch,
 
     class RecordingConnection:
         def __init__(self, connection: sqlite3.Connection):
-            object.__setattr__(self, "_connection", connection)
+            object.__setattr__(self, '_connection', connection)
 
         def execute(self, sql: str, parameters=()):
             recorded_statements.append(sql)
@@ -146,14 +143,14 @@ def test_connect_does_not_reapply_journal_mode_after_initialization(monkeypatch,
     def recording_connect(path: str | Path, *args, **kwargs):
         return RecordingConnection(original_connect(path, *args, **kwargs))
 
-    monkeypatch.setattr(sqlite3, "connect", recording_connect)
+    monkeypatch.setattr(sqlite3, 'connect', recording_connect)
 
-    db = StateDB(tmp_path / "state.db")
+    db = StateDB(tmp_path / 'state.db')
     recorded_after_init = list(recorded_statements)
 
     with db.read() as connection:
-        connection.execute("SELECT 1").fetchone()
+        connection.execute('SELECT 1').fetchone()
 
-    assert "PRAGMA journal_mode = WAL" in recorded_after_init
-    assert recorded_statements.count("PRAGMA journal_mode = WAL") == 1
-    assert recorded_statements[-1] == "SELECT 1"
+    assert 'PRAGMA journal_mode = WAL' in recorded_after_init
+    assert recorded_statements.count('PRAGMA journal_mode = WAL') == 1
+    assert recorded_statements[-1] == 'SELECT 1'

@@ -16,7 +16,7 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 
-from bulletjournal_controller.api.auth import get_current_user
+from bulletjournal_controller.api.auth import get_current_user, set_session_cookie
 from bulletjournal_controller.api.deps import ServiceContainer
 from bulletjournal_controller.api.errors import install_error_handlers
 from bulletjournal_controller.api.proxy import router as proxy_router
@@ -64,11 +64,13 @@ def create_app(*, instance_root: Path, server_config: ServerConfig) -> FastAPI:
         request.state.session_bundle = bundle
         if request.url.path == '/metrics' or request.url.path.startswith('/p/'):
             response = await call_next(request)
+            _refresh_session_cookie(request, response, bundle)
             _log_authenticated_request(request, response.status_code, bundle)
             return response
         method = request.method
         started_at = time.perf_counter()
         response = await call_next(request)
+        _refresh_session_cookie(request, response, bundle)
         route = normalized_controller_route(request.url.path)
         duration = max(0.0, time.perf_counter() - started_at)
         app.state.container.observability.observe_route_request(
@@ -165,6 +167,11 @@ def _log_authenticated_request(request: Request, status_code: int, bundle) -> No
         normalized_controller_route(request.url.path),
         status_code,
     )
+
+
+def _refresh_session_cookie(request: Request, response: Response, bundle) -> None:
+    if bundle is not None and bundle.was_refreshed and request.url.path != '/api/v1/session/logout':
+        set_session_cookie(response, bundle=bundle, request=request)
 
 
 def _require_metrics_access(request: Request) -> None:

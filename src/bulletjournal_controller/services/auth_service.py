@@ -38,6 +38,7 @@ class SessionBundle:
     user: UserRecord
     session: SessionRecord
     cookie_value: str
+    was_refreshed: bool = False
 
 
 class AuthService:
@@ -204,6 +205,7 @@ class AuthService:
         if user is None or not user.is_active:
             return None
         refreshed = session
+        was_refreshed = False
         if self._should_refresh_session(session):
             try:
                 self.sessions.touch(
@@ -214,10 +216,16 @@ class AuthService:
                 refreshed = self.sessions.get(session_id)
                 if refreshed is None:
                     return None
+                was_refreshed = True
             except sqlite3.OperationalError as exc:
                 if not _is_database_locked(exc):
                     raise
-        return SessionBundle(user=user, session=refreshed, cookie_value=f'{session_id}.{secret}')
+        return SessionBundle(
+            user=user,
+            session=refreshed,
+            cookie_value=f'{session_id}.{secret}',
+            was_refreshed=was_refreshed,
+        )
 
     @staticmethod
     def _should_refresh_session(session: SessionRecord) -> bool:

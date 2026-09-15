@@ -5,7 +5,7 @@
 - password hashing uses Argon2id
 - session cookies are `HttpOnly` and `SameSite=Lax`
 - cookie `Secure` behavior is driven by `BULLETJOURNAL_COOKIE_SECURE`
-- sessions expire after seven days of inactivity
+- sessions and their browser cookies expire after seven days of inactivity; authenticated HTTP activity renews both every 10 seconds
 
 ## CSRF and Origin Checks
 

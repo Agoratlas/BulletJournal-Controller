@@ -27,6 +27,46 @@ def test_login_logout_and_current_session(instance_root, server_config) -> None:
         assert client.get('/api/v1/session/current').status_code == 401
 
 
+def test_activity_renews_the_session_cookie_after_the_session_is_refreshed(instance_root, server_config) -> None:
+    app = create_app(instance_root=instance_root, server_config=server_config)
+    container: ServiceContainer = app.state.container
+    container.auth_service.create_user(username='admin', display_name='Admin', password='secret-pass')
+    with TestClient(app) as client:
+        login = client.post('/api/v1/session/login', json={'username': 'admin', 'password': 'secret-pass'})
+        assert login.status_code == 200
+        session_id = login.cookies.get('bulletjournal_session').split('.', 1)[0]
+        with container.state_db.transaction() as connection:
+            connection.execute(
+                'UPDATE sessions SET last_seen_at = ? WHERE session_id = ?',
+                ('2000-01-01T00:00:00Z', session_id),
+            )
+
+        current = client.get('/api/v1/session/current')
+
+    assert current.status_code == 200
+    assert 'bulletjournal_session=' in current.headers['set-cookie']
+    assert 'Max-Age=604800' in current.headers['set-cookie']
+
+
+def test_logout_does_not_replace_the_deleted_session_cookie(instance_root, server_config) -> None:
+    app = create_app(instance_root=instance_root, server_config=server_config)
+    container: ServiceContainer = app.state.container
+    container.auth_service.create_user(username='admin', display_name='Admin', password='secret-pass')
+    with TestClient(app) as client:
+        login = client.post('/api/v1/session/login', json={'username': 'admin', 'password': 'secret-pass'})
+        session_id = login.cookies.get('bulletjournal_session').split('.', 1)[0]
+        with container.state_db.transaction() as connection:
+            connection.execute(
+                'UPDATE sessions SET last_seen_at = ? WHERE session_id = ?',
+                ('2000-01-01T00:00:00Z', session_id),
+            )
+
+        logout = client.post('/api/v1/session/logout', headers={'origin': 'http://testserver'})
+
+    assert logout.status_code == 200
+    assert 'Max-Age=0' in logout.headers['set-cookie']
+
+
 def test_logout_requires_authentication(instance_root, server_config) -> None:
     app = create_app(instance_root=instance_root, server_config=server_config)
     with TestClient(app) as client:

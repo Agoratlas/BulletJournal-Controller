@@ -177,6 +177,44 @@ def test_start_project_passes_runtime_env_file_to_adapter(monkeypatch) -> None:
     assert adapter.run_kwargs['controller_token'] == 'project-token'  # noqa: S105 - Fixture token assertion.
 
 
+def test_start_project_waits_up_to_ten_minutes_for_health(monkeypatch) -> None:
+    adapter = FakeAdapter([SimpleNamespace(returncode=0, stdout='container-id\n', stderr='')])
+    service = RuntimeService(
+        instance_config=_instance_config(),
+        server_config=ServerConfig(session_secret='secret', cookie_secure=False),
+        adapter=cast(Any, adapter),
+        runtime_config_service=SimpleNamespace(
+            runtime_config=SimpleNamespace(
+                runtime_image_name='img',
+                container_uid=None,
+                container_gid=None,
+            ),
+            env_file=lambda: None,
+            additional_mounts=lambda: [],
+        ),
+    )
+    health_call = {}
+    monkeypatch.setattr(
+        'bulletjournal_controller.services.runtime_service.wait_for_project_health',
+        lambda **kwargs: health_call.update(kwargs) or True,
+    )
+    monkeypatch.setattr(service, 'remove_container_by_name', lambda _container_name: None)
+    project = SimpleNamespace(
+        project_id='study-a',
+        controller_status_token='project-token',
+        cpu_limit_millis=1000,
+        memory_limit_bytes=1024,
+        disk_soft_limit_bytes=None,
+        gpu_enabled=False,
+    )
+
+    service.start_project(
+        project=cast(Any, project), project_paths=cast(Any, SimpleNamespace(root='/srv/projects/study-a'))
+    )
+
+    assert health_call['timeout_seconds'] == 600.0
+
+
 def test_start_project_passes_additional_mounts_to_adapter(monkeypatch) -> None:
     adapter = FakeAdapter([SimpleNamespace(returncode=0, stdout='container-id\n', stderr='')])
     additional_mounts = [('/srv/config', '/opt/config', True)]

@@ -444,7 +444,7 @@ class JobService:
             JobType.UPDATE_ENVIRONMENT.value,
             JobType.REINSTALL_ENVIRONMENT.value,
         }:
-            if job.job_type == JobType.CREATE_PROJECT.value and project.status == ProjectStatus.STARTING.value:
+            if project.status == ProjectStatus.STARTING.value:
                 self.project_service.set_status(
                     project_id=project.project_id,
                     status=ProjectStatus.ERROR.value,

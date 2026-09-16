@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from bulletjournal_controller.domain.enums import JobType, ProjectStatus
+from bulletjournal_controller.domain.enums import JobType, ProjectStatus, ProjectStatusReason
 from bulletjournal_controller.domain.errors import ConflictError
 from bulletjournal_controller.services.job_service import JobService
 
@@ -292,6 +292,42 @@ def test_reinstall_environment_defaults_to_marking_artifacts_stale() -> None:
     assert result['project_id'] == 'study-a'
     assert captured_install_call is not None
     assert captured_install_call['mark_all_artifacts_stale'] is True
+
+
+def test_reinstall_start_failure_preserves_successful_install_state() -> None:
+    updates = []
+
+    class DummyProjectService:
+        def get_project(self, _project_id: str):
+            return SimpleNamespace(
+                project_id='study-a',
+                status=ProjectStatus.STARTING.value,
+                install_status='ready',
+            )
+
+        def set_status(self, **kwargs):
+            updates.append(kwargs)
+
+        def mark_install_failed(self, _project_id: str):
+            raise AssertionError('A post-install startup failure is not an installation failure.')
+
+    service = JobService(instance_paths=SimpleNamespace(), jobs=SimpleNamespace())
+    service.project_service = DummyProjectService()
+
+    service._apply_project_failure_state(
+        SimpleNamespace(
+            job_type=JobType.REINSTALL_ENVIRONMENT.value,
+            project_id='study-a',
+        )
+    )
+
+    assert updates == [
+        {
+            'project_id': 'study-a',
+            'status': ProjectStatus.ERROR.value,
+            'status_reason': ProjectStatusReason.START_FAILED.value,
+        }
+    ]
 
 
 def test_stop_project_job_uses_payload_reason() -> None:

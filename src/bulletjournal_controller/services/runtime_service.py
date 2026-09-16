@@ -78,7 +78,7 @@ class RuntimeService:
         if result.returncode != 0:
             raise RuntimeOperationError(result.stderr.strip() or 'Docker run failed.')
         container_id = (result.stdout or '').strip() or container_name
-        if not wait_for_project_health(host_port=host_port, timeout_seconds=90.0):
+        if not wait_for_project_health(host_port=host_port, timeout_seconds=600.0):
             logs = self.container_logs(container_name)
             self.write_crash_diagnostics(
                 project=project,
@@ -86,7 +86,7 @@ class RuntimeService:
                 container_id=container_id,
             )
             self.remove_container_by_name(container_name)
-            detail = 'Project did not become healthy within 90 seconds.'
+            detail = 'Project did not become healthy within 600 seconds.'
             if logs:
                 detail = f'{detail} Container logs:\n{logs}'
             raise RuntimeOperationError(detail)

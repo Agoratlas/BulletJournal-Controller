@@ -85,7 +85,8 @@ def test_project_init_command_invokes_bulletjournal_init_without_environment() -
         network_mode='bridge',
     )
     joined = ' '.join(command)
-    assert 'uv run --project /project bulletjournal init /project --project-id study-a --skip-environment' in joined
+    assert '/project/.runtime/venv/bin/bulletjournal init /project --project-id study-a --skip-environment' in joined
+    assert 'uv run' not in joined
     assert 'UV_CACHE_DIR=/project/.runtime/uv-cache' in joined
 
 
@@ -110,3 +111,23 @@ def test_mark_stale_command_mounts_project_local_uv_cache() -> None:
     )
     joined = ' '.join(command)
     assert 'UV_CACHE_DIR=/project/.runtime/uv-cache' in joined
+
+
+def test_install_command_applies_device_write_bandwidth_limits() -> None:
+    runner = InstallerRunner(DockerAdapter())
+    command = runner.build_install_command(
+        image='runtime',
+        project_root=Path('/srv/project'),
+        network_mode='bridge',
+        gpu_enabled=False,
+        device_write_bps={'/dev/sda': 10485760, '/dev/sdb': 20971520},
+    )
+    assert '--device-write-bps /dev/sda:10485760' in ' '.join(command)
+    assert '--device-write-bps /dev/sdb:20971520' in ' '.join(command)
+
+
+def test_install_command_defaults_to_unlimited_writes() -> None:
+    command = InstallerRunner(DockerAdapter()).build_install_command(
+        image='runtime', project_root=Path('/srv/project'), network_mode='bridge', gpu_enabled=False
+    )
+    assert '--device-write-bps' not in command

@@ -114,6 +114,7 @@ def make_project_paths(project_root: Path) -> Any:
             'runtime_uv_cache_dir': runtime_uv_cache_dir,
             'pyproject_path': project_root / 'pyproject.toml',
             'uv_lock_path': project_root / 'uv.lock',
+            'project_json_path': project_root / 'metadata' / 'project.json',
         },
     )()
 
@@ -352,6 +353,33 @@ def test_write_project_environment_does_not_create_placeholder_lockfile(
     assert not project_paths.uv_lock_path.exists()
 
 
+def test_reinstall_skips_project_initialization_and_passes_bandwidth_limit(tmp_path: Path) -> None:
+    project_paths = make_project_paths(tmp_path)
+    project_paths.project_json_path.parent.mkdir()
+    project_paths.project_json_path.write_text('{}', encoding='utf-8')
+    project_paths.uv_lock_path.write_text('lock = true', encoding='utf-8')
+
+    class RecordingInstaller(RetryingInstaller):
+        def build_install_command(self, **kwargs):
+            assert kwargs['device_write_bps'] == {'/dev/sda': 10485760}
+            return super().build_install_command(**kwargs)
+
+    installer = RecordingInstaller([FakeResult(returncode=0)])
+    service = EnvironmentService(
+        instance_config=replace(default_instance_config(), installer_device_write_bps={'/dev/sda': 10485760}),
+        installer=cast(Any, installer),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+    service.install_environment(
+        project=cast(Any, DummyProjectRecord()),
+        project_paths=project_paths,
+        log_writer=lambda _message: None,
+        mark_all_artifacts_stale=False,
+        reason='test',
+    )
+    assert installer.commands == [['docker', 'run', 'test']]
+
+
 def test_install_environment_retries_transient_missing_bind_mount(
     tmp_path: Path,
 ) -> None:
@@ -398,11 +426,12 @@ def test_install_environment_reports_project_init_failure_details(tmp_path: Path
     project_paths = make_project_paths(project_root)
     installer = RetryingInstaller(
         [
+            FakeResult(returncode=0),
             FakeResult(
                 returncode=17,
                 stdout='downloaded one\ndownloaded two\n',
                 stderr='Traceback line 1\nTraceback line 2\n',
-            )
+            ),
         ]
     )
     service = EnvironmentService(
@@ -432,7 +461,6 @@ def test_install_environment_reports_install_failure_details(tmp_path: Path) -> 
     project_paths = make_project_paths(project_root)
     installer = RetryingInstaller(
         [
-            FakeResult(returncode=0),
             FakeResult(
                 returncode=23,
                 stdout='Resolved 10 packages\nInstalled 9 packages\n',
@@ -493,8 +521,8 @@ def test_install_environment_validates_before_marking_artifacts_stale(
 
     assert result == 'lock-sha'
     assert installer.commands == [
-        ['docker', 'run', 'init-project'],
         ['docker', 'run', 'test'],
+        ['docker', 'run', 'init-project'],
         ['docker', 'run', 'validate-environment'],
         ['docker', 'run', 'mark-stale'],
     ]
@@ -532,8 +560,8 @@ def test_install_environment_skips_mark_stale_when_validation_fails(
 
     assert result == 'lock-sha'
     assert installer.commands == [
-        ['docker', 'run', 'init-project'],
         ['docker', 'run', 'test'],
+        ['docker', 'run', 'init-project'],
         ['docker', 'run', 'validate-environment'],
     ]
     assert any('Skipping artifact invalidation' in entry for entry in logs)
@@ -814,7 +842,7 @@ def test_install_environment_rewrites_pyproject_before_locking(tmp_path: Path) -
     assert '"alpha==1"' in rendered
 
 
-def test_install_environment_runs_project_init_before_locking(tmp_path: Path) -> None:
+def test_install_environment_initializes_new_project_after_installing(tmp_path: Path) -> None:
     project_root = tmp_path / 'project'
     project_root.mkdir(parents=True)
     lock_path = project_root / 'uv.lock'
@@ -837,6 +865,6 @@ def test_install_environment_runs_project_init_before_locking(tmp_path: Path) ->
     )
 
     assert installer.commands[:2] == [
-        ['docker', 'run', 'init-project'],
         ['docker', 'run', 'test'],
+        ['docker', 'run', 'init-project'],
     ]

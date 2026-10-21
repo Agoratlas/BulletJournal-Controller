@@ -277,41 +277,11 @@ class EnvironmentService:
             bulletjournal_version=project.bulletjournal_version,
             custom_requirements_text=project.custom_requirements_text,
         )
-        self.merge_dependency_config(
-            bulletjournal_version=project.bulletjournal_version,
-            custom_requirements_text=project.custom_requirements_text,
-        )
         common_mount_paths = [
             project_paths.root,
             project_paths.runtime_uv_cache_dir,
             *[mount_path for mount_path, _target, _readonly in self.runtime_config_service.additional_mounts()],
         ]
-        init_command = self.installer.build_project_init_command(
-            image=self.runtime_config_service.runtime_config.runtime_image_name,
-            project_root=project_paths.root,
-            project_id=project.project_id,
-            network_mode=self.instance_config.docker_network_mode,
-            env_file=self.runtime_config_service.env_file(),
-            additional_mounts=self.runtime_config_service.additional_mounts(),
-            user_uid=self.runtime_config_service.runtime_config.container_uid,
-            user_gid=self.runtime_config_service.runtime_config.container_gid,
-        )
-        log_writer(f'project init command: {" ".join(init_command)}')
-        init_result = self._run_with_mount_retry(
-            command=init_command,
-            mount_paths=common_mount_paths,
-            log_writer=log_writer,
-        )
-        if init_result.returncode != 0:
-            raise RuntimeError(
-                self._command_failure_message(
-                    phase='Project initialization',
-                    command=init_command,
-                    returncode=init_result.returncode,
-                    stdout=init_result.stdout,
-                    stderr=init_result.stderr,
-                )
-            )
         install_command = self.installer.build_install_command(
             image=self.runtime_config_service.runtime_config.runtime_image_name,
             project_root=project_paths.root,
@@ -322,6 +292,7 @@ class EnvironmentService:
             user_uid=self.runtime_config_service.runtime_config.container_uid,
             user_gid=self.runtime_config_service.runtime_config.container_gid,
             upgrade_all=upgrade_all,
+            device_write_bps=self.instance_config.installer_device_write_bps,
         )
         log_writer(f'install command: {" ".join(install_command)}')
         result = self._run_with_mount_retry(
@@ -339,6 +310,35 @@ class EnvironmentService:
                     stderr=result.stderr,
                 )
             )
+        # Bootstrap metadata with the environment we just installed. Running via
+        # uv here would sync a second time, and existing projects need no init.
+        if not project_paths.project_json_path.is_file():
+            init_command = self.installer.build_project_init_command(
+                image=self.runtime_config_service.runtime_config.runtime_image_name,
+                project_root=project_paths.root,
+                project_id=project.project_id,
+                network_mode=self.instance_config.docker_network_mode,
+                env_file=self.runtime_config_service.env_file(),
+                additional_mounts=self.runtime_config_service.additional_mounts(),
+                user_uid=self.runtime_config_service.runtime_config.container_uid,
+                user_gid=self.runtime_config_service.runtime_config.container_gid,
+            )
+            log_writer(f'project init command: {" ".join(init_command)}')
+            init_result = self._run_with_mount_retry(
+                command=init_command,
+                mount_paths=common_mount_paths,
+                log_writer=log_writer,
+            )
+            if init_result.returncode != 0:
+                raise RuntimeError(
+                    self._command_failure_message(
+                        phase='Project initialization',
+                        command=init_command,
+                        returncode=init_result.returncode,
+                        stdout=init_result.stdout,
+                        stderr=init_result.stderr,
+                    )
+                )
         if mark_all_artifacts_stale:
             validate_command = self.installer.build_validate_environment_command(
                 image=self.runtime_config_service.runtime_config.runtime_image_name,

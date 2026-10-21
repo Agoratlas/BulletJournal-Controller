@@ -20,6 +20,7 @@ class InstallerRunner:
         env_file: Path | None = None,
         additional_mounts: list[tuple[Path, str, bool]] | None = None,
         upgrade_all: bool = False,
+        device_write_bps: dict[str, int] | None = None,
         user_uid: int | None = None,
         user_gid: int | None = None,
     ) -> list[str]:
@@ -45,6 +46,8 @@ class InstallerRunner:
         ]
         if env_file is not None:
             options = ['--env-file', str(env_file), *options]
+        for device, rate in (device_write_bps or {}).items():
+            options = ['--device-write-bps', f'{device}:{rate}', *options]
         if user_uid is not None and user_gid is not None:
             options = ['--user', f'{user_uid}:{user_gid}', '--env', 'HOME=/home/bulletjournal', *options]
         if gpu_enabled:
@@ -165,11 +168,7 @@ class InstallerRunner:
             '--env',
             'UV_CACHE_DIR=/project/.runtime/uv-cache',
             image,
-            'uv',
-            'run',
-            '--project',
-            '/project',
-            'bulletjournal',
+            '/project/.runtime/venv/bin/bulletjournal',
             'init',
             '/project',
             '--project-id',

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -43,6 +43,7 @@ class InstanceConfig:
     runtime_dockerfile: str | None = None
     runtime_build_context: str | None = None
     prometheus_metrics_mode: str = 'off'
+    installer_device_write_bps: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(slots=True, frozen=True)
@@ -137,6 +138,7 @@ def instance_config_from_dict(data: dict[str, object]) -> InstanceConfig:
             runtime_dockerfile=_optional_str(data.get('runtime_dockerfile')),
             runtime_build_context=_optional_str(data.get('runtime_build_context')),
             prometheus_metrics_mode=_metrics_mode(data.get('prometheus_metrics_mode')),
+            installer_device_write_bps=_installer_device_write_bps(data.get('installer_device_write_bps', {})),
         )
     except KeyError as exc:
         raise ConfigurationError(f'Missing required instance configuration field: {exc.args[0]}') from exc
@@ -145,6 +147,7 @@ def instance_config_from_dict(data: dict[str, object]) -> InstanceConfig:
 
 
 def validate_instance_config(config: InstanceConfig) -> None:
+    _installer_device_write_bps(config.installer_device_write_bps)
     if config.schema_version != INSTANCE_SCHEMA_VERSION:
         raise ConfigurationError(
             f'Unsupported instance schema version {config.schema_version}; expected {INSTANCE_SCHEMA_VERSION}.',
@@ -202,6 +205,7 @@ def instance_config_json(config: InstanceConfig) -> str:
         'runtime_dockerfile': config.runtime_dockerfile,
         'runtime_build_context': config.runtime_build_context,
         'prometheus_metrics_mode': config.prometheus_metrics_mode,
+        'installer_device_write_bps': config.installer_device_write_bps,
     }
     return json.dumps(data, indent=2, sort_keys=False) + '\n'
 
@@ -227,6 +231,27 @@ def load_server_config_from_env() -> ServerConfig:
         dev_frontend_url=_optional_str(os.environ.get('BULLETJOURNAL_DEV_FRONTEND_URL')),
         prometheus_api_key=_optional_str(os.environ.get('BULLETJOURNAL_PROMETHEUS_API_KEY')),
     )
+
+
+def _installer_device_write_bps(value: object) -> dict[str, int]:
+    message = 'installer_device_write_bps must map absolute device paths to positive integer bytes per second.'
+    if not isinstance(value, dict):
+        raise ConfigurationError(message)
+    limits: dict[str, int] = {}
+    for device, rate in value.items():
+        if (
+            not isinstance(device, str)
+            or not device.startswith('/dev/')
+            or device == '/dev/'
+            or ':' in device
+            or any(character.isspace() for character in device)
+            or isinstance(rate, bool)
+            or not isinstance(rate, int)
+            or rate <= 0
+        ):
+            raise ConfigurationError(message)
+        limits[device] = rate
+    return limits
 
 
 def _optional_str(value: object) -> str | None:

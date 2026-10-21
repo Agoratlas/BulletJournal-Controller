@@ -42,7 +42,8 @@ Canonical non-secret instance configuration:
   "default_cpu_limit_cpus": 2,
   "default_memory_limit_gb": 8,
   "default_disk_soft_limit_gb": 50,
-  "default_dependencies_file": "/etc/bulletjournal/default-dependencies.txt"
+  "default_dependencies_file": "/etc/bulletjournal/default-dependencies.txt",
+  "installer_device_write_bps": {}
 }
 ```
 

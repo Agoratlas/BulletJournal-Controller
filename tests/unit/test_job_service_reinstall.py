@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from bulletjournal_controller.domain.enums import JobType, ProjectStatus, ProjectStatusReason
 from bulletjournal_controller.domain.errors import ConflictError
 from bulletjournal_controller.services.job_service import JobService
@@ -89,6 +91,7 @@ def test_reinstall_environment_upgrades_all_packages() -> None:
     assert result['project_id'] == 'study-a'
     assert captured_install_call is not None
     assert captured_install_call['upgrade_all'] is True
+    assert captured_install_call['mark_all_artifacts_stale'] is True
 
 
 def test_update_environment_upgrades_all_packages() -> None:
@@ -159,6 +162,7 @@ def test_update_environment_upgrades_all_packages() -> None:
     assert result['project_id'] == 'study-a'
     assert captured_install_call is not None
     assert captured_install_call['upgrade_all'] is True
+    assert captured_install_call['mark_all_artifacts_stale'] is True
 
 
 def test_update_environment_reuses_project_python_version_when_payload_omits_it() -> None:
@@ -231,7 +235,7 @@ def test_update_environment_reuses_project_python_version_when_payload_omits_it(
     assert captured_install_call['upgrade_all'] is True
 
 
-def test_reinstall_environment_defaults_to_marking_artifacts_stale() -> None:
+def test_reinstall_environment_requires_explicit_artifact_staleness_choice() -> None:
     captured_install_call: dict | None = None
 
     class DummyEnvironmentService:
@@ -280,18 +284,17 @@ def test_reinstall_environment_defaults_to_marking_artifacts_stale() -> None:
     service._runtime_venv_size_bytes = lambda _project_id: 123  # type: ignore[method-assign]
     service._runtime_uv_cache_size_bytes = lambda _project_id: 456  # type: ignore[method-assign]
 
-    result = service._dispatch(
-        SimpleNamespace(
-            job_type=JobType.REINSTALL_ENVIRONMENT.value,
-            payload_json='{"restart_if_running": false}',
-            log_path='/tmp/job.log',
-            project_id='study-a',
+    with pytest.raises(KeyError, match='mark_all_artifacts_stale'):
+        service._dispatch(
+            SimpleNamespace(
+                job_type=JobType.REINSTALL_ENVIRONMENT.value,
+                payload_json='{"restart_if_running": false}',
+                log_path='/tmp/job.log',
+                project_id='study-a',
+            )
         )
-    )
 
-    assert result['project_id'] == 'study-a'
-    assert captured_install_call is not None
-    assert captured_install_call['mark_all_artifacts_stale'] is True
+    assert captured_install_call is None
 
 
 def test_reinstall_start_failure_preserves_successful_install_state() -> None:

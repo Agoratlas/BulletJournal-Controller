@@ -186,6 +186,37 @@ def test_invalid_request_shape_returns_422(instance_root, server_config) -> None
         assert response.status_code == 422
 
 
+def test_environment_requests_require_explicit_artifact_staleness_choice(instance_root, server_config) -> None:
+    app = create_app(instance_root=instance_root, server_config=server_config)
+    container: ServiceContainer = app.state.container
+    user = container.auth_service.create_user(username='admin', display_name='Admin', password='secret-pass')
+    container.project_service.create_project(
+        project_id='study-a',
+        created_by_user_id=user.user_id,
+        python_version='3.11',
+        custom_requirements_text='bulletjournal-editor\n',
+        cpu_limit_millis=1000,
+        memory_limit_bytes=2048,
+        disk_soft_limit_bytes=None,
+        gpu_enabled=False,
+    )
+
+    with _auth_client(app) as client:
+        reinstall_response = client.post(
+            '/api/v1/projects/study-a/reinstall-environment',
+            headers={'origin': 'http://testserver'},
+            json={'restart_if_running': False},
+        )
+        update_response = client.post(
+            '/api/v1/projects/study-a/update-environment',
+            headers={'origin': 'http://testserver'},
+            json={'custom_requirements_text': 'bulletjournal-editor\n', 'restart_if_running': False},
+        )
+
+    assert reinstall_response.status_code == 422
+    assert update_response.status_code == 422
+
+
 def test_project_create_rejects_gpu_when_instance_gpu_disabled(instance_root, server_config) -> None:
     app = create_app(instance_root=instance_root, server_config=server_config)
     container: ServiceContainer = app.state.container

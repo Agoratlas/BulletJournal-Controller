@@ -64,12 +64,12 @@ class UpdateProjectRequest(LimitsRequest):
 class UpdateEnvironmentRequest(StrictModel):
     bulletjournal_version: str | None = None
     custom_requirements_text: str
-    mark_all_artifacts_stale: bool = True
+    mark_all_artifacts_stale: bool
     restart_if_running: bool = True
 
 
 class ReinstallEnvironmentRequest(StrictModel):
-    mark_all_artifacts_stale: bool = True
+    mark_all_artifacts_stale: bool
     restart_if_running: bool = True
 
 

@@ -3266,7 +3266,7 @@ function ProjectPage() {
   const [optimisticAction, setOptimisticAction] = useState<OptimisticProjectAction | null>(null)
   const [environmentForm, setEnvironmentForm] = useState({
     custom_requirements_text: '',
-    mark_all_artifacts_stale: true,
+    mark_all_artifacts_stale: false,
     restart_if_running: true,
   })
   const [limitsForm, setLimitsForm] = useState({

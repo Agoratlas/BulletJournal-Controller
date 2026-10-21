@@ -264,7 +264,7 @@ class JobService:
         }:
             project = self.project_service.get_project(job.project_id)
             restart_if_running = bool(payload.get('restart_if_running', True))
-            mark_all_artifacts_stale = bool(payload.get('mark_all_artifacts_stale', True))
+            mark_all_artifacts_stale = bool(payload['mark_all_artifacts_stale'])
             was_running = project.status == ProjectStatus.RUNNING.value
             if was_running:
                 self.project_service.stop_project(project.project_id, reason=ProjectStatusReason.MANUAL_STOP.value)

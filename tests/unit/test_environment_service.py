@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -172,7 +173,7 @@ def test_parse_dependency_config_supports_index_shorthand() -> None:
     )
     config = service.parse_dependency_config('cugraph-cu13 @ https://pypi.nvidia.com\npandas\n')
     assert config.dependency_lines == ['cugraph-cu13', 'pandas']
-    assert config.extra_index_urls == ['https://pypi.nvidia.com']
+    assert config.extra_index_urls == []
     assert config.source_indexes == {'cugraph-cu13': 'https://pypi.nvidia.com'}
 
 
@@ -184,7 +185,7 @@ def test_parse_dependency_config_supports_inline_index_comment() -> None:
     )
     config = service.parse_dependency_config('cugraph-cu13 # index-url: https://pypi.nvidia.com\npandas\n')
     assert config.dependency_lines == ['cugraph-cu13', 'pandas']
-    assert config.extra_index_urls == ['https://pypi.nvidia.com']
+    assert config.extra_index_urls == []
     assert config.source_indexes == {'cugraph-cu13': 'https://pypi.nvidia.com'}
 
 
@@ -204,6 +205,111 @@ def test_render_pyproject_emits_uv_index_sources_for_shorthand_index() -> None:
     assert '[[tool.uv.index]]' in rendered
     assert 'url = "https://pypi.nvidia.com"' in rendered
     assert 'cugraph-cu13 = { index = "extra_index_1" }' in rendered
+
+
+@pytest.mark.parametrize('global_nvidia_index', [False, True])
+def test_write_project_environment_isolates_package_indexes_unless_declared_global(
+    tmp_path: Path, global_nvidia_index: bool
+) -> None:
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=InstallerRunner(DockerAdapter()),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+    project_paths = make_project_paths(tmp_path)
+    service.write_project_environment(
+        project_paths=project_paths,
+        project_id='study-a',
+        python_version='3.11',
+        bulletjournal_version='0.1.0',
+        custom_requirements_text=(
+            ('--extra-index-url https://pypi.nvidia.com\n' if global_nvidia_index else '')
+            + 'bulletjournal-editor==0.1.0\n'
+            'minicluster\n'
+            'requests>=2.32.3\n'
+            'cugraph-cu13 # index-url: https://pypi.nvidia.com\n'
+            'cuml-cu13 # index-url: https://pypi.nvidia.com\n'
+            'torch # index-url: https://download.pytorch.org/whl/cu130\n'
+        ),
+    )
+
+    pyproject = tomllib.loads(project_paths.pyproject_path.read_text())
+    uv = pyproject['tool']['uv']
+    indexes = {index['url']: index for index in uv['index']}
+    pytorch = indexes['https://download.pytorch.org/whl/cu130']
+    nvidia = indexes['https://pypi.nvidia.com']
+    assert pytorch['explicit'] is True
+    assert nvidia.get('explicit', False) is not global_nvidia_index
+    assert uv['sources']['torch'] == {'index': pytorch['name']}
+    assert uv['sources']['cugraph-cu13'] == {'index': nvidia['name']}
+    assert uv['sources']['cuml-cu13'] == {'index': nvidia['name']}
+    assert len(indexes) == 2
+    assert 'requests' not in uv['sources']
+    assert 'requests>=2.32.3' in pyproject['project']['dependencies']
+
+
+@pytest.mark.parametrize(
+    'requirement',
+    [
+        'Torch[opt-einsum]==2.9.1+cu130 # index-url: https://download.pytorch.org/whl/cu130',
+        'Torch @ https://download.pytorch.org/whl/cu130',
+    ],
+)
+def test_package_index_annotations_use_normalized_package_names(requirement: str) -> None:
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=InstallerRunner(DockerAdapter()),
+        runtime_config_service=DummyRuntimeConfigService(),
+    )
+    config = service.parse_dependency_config(requirement)
+    assert config.source_indexes == {'torch': 'https://download.pytorch.org/whl/cu130'}
+    assert config.extra_index_urls == []
+    rendered = service.render_pyproject(
+        project_id='study-a',
+        python_version='3.11',
+        dependencies=config.dependency_lines,
+        extra_index_urls=config.extra_index_urls,
+        source_indexes=config.source_indexes,
+    )
+    uv = tomllib.loads(rendered)['tool']['uv']
+    assert uv['sources'] == {'torch': {'index': uv['index'][0]['name']}}
+    assert uv['index'][0]['explicit'] is True
+
+
+@pytest.mark.parametrize('global_index_option', ['--extra-index-url', '--index-url'])
+def test_global_index_declaration_overrides_package_only_index_across_defaults(
+    tmp_path: Path, global_index_option: str
+) -> None:
+    defaults = tmp_path / 'defaults.txt'
+    defaults.write_text(
+        'bulletjournal-editor==0.1.0\n'
+        'torch # index-url: https://download.pytorch.org/whl/cu130\n'
+        'alpha # index-url: https://packages.example.com/simple\n',
+        encoding='utf-8',
+    )
+    service = EnvironmentService(
+        instance_config=default_instance_config(),
+        installer=InstallerRunner(DockerAdapter()),
+        runtime_config_service=DummyRuntimeConfigService(defaults),
+    )
+    config = service.merge_dependency_config(
+        bulletjournal_version='0.1.0',
+        custom_requirements_text=(
+            f'bulletjournal-editor==0.1.0\n{global_index_option} https://download.pytorch.org/whl/cu130\n'
+        ),
+    )
+    rendered = service.render_pyproject(
+        project_id='study-a',
+        python_version='3.11',
+        dependencies=config.dependency_lines,
+        extra_index_urls=config.extra_index_urls,
+        source_indexes=config.source_indexes,
+    )
+    uv = tomllib.loads(rendered)['tool']['uv']
+    indexes = {index['url']: index for index in uv['index']}
+    assert not indexes['https://download.pytorch.org/whl/cu130'].get('explicit', False)
+    assert indexes['https://packages.example.com/simple']['explicit'] is True
+    assert len(indexes) == 2
 
 
 def test_default_dependency_text_reloads_from_runtime_config_service(

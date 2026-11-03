@@ -23,6 +23,52 @@ The controller re-reads these defaults when creating new projects, so changing `
 - dependency identity is normalized by package name
 - custom lines override default lines deterministically
 
+## Package Indexes
+
+Use an inline index annotation to select the source of an individual package:
+
+```text
+torch # index-url: https://download.pytorch.org/whl/cu130
+```
+
+Version pins and extras are supported, for example:
+
+```text
+torch[opt-einsum]==2.9.1+cu130 # index-url: https://download.pytorch.org/whl/cu130
+```
+
+The controller generates a `[tool.uv.sources]` mapping and an index with
+`explicit = true`. Only packages mapped to that index use it; unrelated
+dependencies such as `requests` continue to resolve from the global indexes or
+PyPI. The shorthand `torch @ https://download.pytorch.org/whl/cu130` has the same
+package-specific index behavior. Archive and VCS URLs remain direct references.
+
+For a global additional index, use a separate requirements line:
+
+```text
+--extra-index-url https://packages.example.com/simple
+```
+
+Global declarations in either the instance defaults or custom requirements take
+precedence over package-only isolation for the same URL. `--index-url` retains
+its existing behavior as another global additional index.
+
+If transitive dependencies also need an index, declare it globally. For example,
+RAPIDS requirements can make the NVIDIA index available to CUDA dependencies
+while keeping the PyTorch index package-specific:
+
+```text
+--extra-index-url https://pypi.nvidia.com
+cugraph-cu13 # index-url: https://pypi.nvidia.com
+cuml-cu13 # index-url: https://pypi.nvidia.com
+torch # index-url: https://download.pytorch.org/whl/cu130
+```
+
+These rules apply uniformly to every index; there are no hostname-specific exceptions.
+
+After upgrading the controller, the next environment update or reinstall
+regenerates the project's index configuration from its requirements.
+
 ## Install Sequence
 
 1. rewrite `pyproject.toml`

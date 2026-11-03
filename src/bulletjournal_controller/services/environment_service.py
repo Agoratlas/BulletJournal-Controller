@@ -52,6 +52,7 @@ VCS_PREFIXES = ('git+', 'hg+', 'svn+', 'bzr+')
 @dataclass(slots=True)
 class DependencyConfig:
     dependency_lines: list[str]
+    # Global indexes declared with --index-url or --extra-index-url.
     extra_index_urls: list[str]
     source_indexes: dict[str, str]
 
@@ -106,15 +107,13 @@ class EnvironmentService:
             if inline_index is not None:
                 dependency_name, index_url = inline_index
                 lines.append(dependency_name)
-                extra_index_urls.append(index_url)
-                source_indexes[normalize_package_name(dependency_name)] = index_url
+                source_indexes[self.dependency_identity(dependency_name)] = index_url
                 continue
             shorthand = self._index_shorthand(line)
             if shorthand is not None:
                 dependency_name, index_url = shorthand
                 lines.append(dependency_name)
-                extra_index_urls.append(index_url)
-                source_indexes[normalize_package_name(dependency_name)] = index_url
+                source_indexes[self.dependency_identity(dependency_name)] = index_url
                 continue
             lines.append(line)
         return DependencyConfig(
@@ -462,12 +461,15 @@ class EnvironmentService:
     ) -> str:
         lines: list[str] = []
         index_names: dict[str, str] = {}
-        for offset, index_url in enumerate(extra_index_urls, start=1):
+        index_urls = self._dedupe(extra_index_urls + list(source_indexes.values()))
+        for offset, index_url in enumerate(index_urls, start=1):
             name = f'extra_index_{offset}'
             index_names[index_url] = name
             lines.append('[[tool.uv.index]]')
             lines.append(f'name = "{name}"')
             lines.append(f'url = "{index_url}"')
+            if index_url not in extra_index_urls:
+                lines.append('explicit = true')
             lines.append('')
 
         source_lines: list[str] = []

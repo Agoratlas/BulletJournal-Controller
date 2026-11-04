@@ -280,6 +280,7 @@ class JobService:
             project = self.project_service.get_project(job.project_id)
             restart_if_running = bool(payload.get('restart_if_running', True))
             mark_all_artifacts_stale = bool(payload['mark_all_artifacts_stale'])
+            upgrade_all = bool(payload.get('upgrade_all', False))
             was_running = project.status == ProjectStatus.RUNNING.value
             if was_running:
                 self.project_service.stop_project(project.project_id, reason=ProjectStatusReason.MANUAL_STOP.value)
@@ -298,7 +299,8 @@ class JobService:
                 log_writer=log_writer,
                 mark_all_artifacts_stale=mark_all_artifacts_stale,
                 reason='controller-managed environment update',
-                upgrade_all=True,
+                upgrade_all=upgrade_all,
+                upgrade_custom_requirements=not upgrade_all,
             )
             project = self.project_service.mark_install_succeeded(
                 project.project_id,

@@ -68,11 +68,13 @@ class UpdateEnvironmentRequest(StrictModel):
     custom_requirements_text: str
     mark_all_artifacts_stale: bool
     restart_if_running: bool = True
+    upgrade_all: bool = False
 
 
 class ReinstallEnvironmentRequest(StrictModel):
     mark_all_artifacts_stale: bool
     restart_if_running: bool = True
+    upgrade_all: bool = False
 
 
 class ExportProjectRequest(StrictModel):

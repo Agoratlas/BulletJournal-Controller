@@ -30,6 +30,16 @@ Base API prefix: `/api/v1`
 - `GET /projects/{project_id}/roles`
 - `PUT /projects/{project_id}/roles`
 
+## Environment Actions
+
+Both `POST /projects/{project_id}/reinstall-environment` and
+`POST /projects/{project_id}/update-environment` accept `upgrade_all` (default
+`false`). By default, only packages listed in the project's custom requirements
+are targeted for upgrade, including refreshing Git branch references. Set
+`upgrade_all: true` to upgrade all dependencies within their constraints.
+Both actions require `mark_all_artifacts_stale` and accept `restart_if_running`
+(default `true`). The update action also requires `custom_requirements_text`.
+
 ## Jobs
 
 - `GET /jobs/{job_id}`

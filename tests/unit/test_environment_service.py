@@ -459,29 +459,51 @@ def test_write_project_environment_does_not_create_placeholder_lockfile(
     assert not project_paths.uv_lock_path.exists()
 
 
-def test_reinstall_skips_project_initialization_and_passes_bandwidth_limit(tmp_path: Path) -> None:
+@pytest.mark.parametrize('upgrade_all, upgrade_custom', [(False, False), (False, True), (True, True)])
+def test_reinstall_skips_project_initialization_and_passes_bandwidth_limit(
+    tmp_path: Path, upgrade_all: bool, upgrade_custom: bool
+) -> None:
     project_paths = make_project_paths(tmp_path)
     project_paths.project_json_path.parent.mkdir()
     project_paths.project_json_path.write_text('{}', encoding='utf-8')
     project_paths.uv_lock_path.write_text('lock = true', encoding='utf-8')
+    default_file = tmp_path / 'defaults.txt'
+    default_file.write_text('bulletjournal-editor\ndefault-only\n', encoding='utf-8')
+    project = DummyProjectRecord()
+    project.custom_requirements_text = (
+        '# comment\n\n--extra-index-url https://example.com/simple\n'
+        'bulletjournal-editor @ git+https://example.com/editor.git@main\n'
+        "My_Package[extra]>=1; python_version >= '3.11'\n"
+        'my-package>=1\n'
+        'indexed # index-url: https://example.com/simple\n'
+        'pinned==1.2.3\n'
+    )
 
     class RecordingInstaller(RetryingInstaller):
         def build_install_command(self, **kwargs):
             assert kwargs['device_write_bps'] == {'/dev/sda': 10485760}
+            assert kwargs['upgrade_all'] is upgrade_all
+            assert kwargs['upgrade_packages'] == (
+                ['bulletjournal-editor', 'my-package', 'indexed', 'pinned']
+                if upgrade_custom and not upgrade_all
+                else []
+            )
             return super().build_install_command(**kwargs)
 
     installer = RecordingInstaller([FakeResult(returncode=0)])
     service = EnvironmentService(
         instance_config=replace(default_instance_config(), installer_device_write_bps={'/dev/sda': 10485760}),
         installer=cast(Any, installer),
-        runtime_config_service=DummyRuntimeConfigService(),
+        runtime_config_service=DummyRuntimeConfigService(default_dependencies_file=default_file),
     )
     service.install_environment(
-        project=cast(Any, DummyProjectRecord()),
+        project=cast(Any, project),
         project_paths=project_paths,
         log_writer=lambda _message: None,
         mark_all_artifacts_stale=False,
         reason='test',
+        upgrade_all=upgrade_all,
+        upgrade_custom_requirements=upgrade_custom,
     )
     assert installer.commands == [['docker', 'run', 'test']]
 

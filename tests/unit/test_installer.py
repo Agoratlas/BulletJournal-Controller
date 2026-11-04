@@ -61,6 +61,21 @@ def test_install_command_supports_upgrading_all_packages_during_lock() -> None:
     assert 'uv lock --project /project --upgrade' in joined
 
 
+def test_install_command_supports_targeted_upgrades_during_lock() -> None:
+    runner = InstallerRunner(DockerAdapter())
+    command = runner.build_install_command(
+        image='bulletjournal-runtime:local',
+        project_root=Path('/srv/project'),
+        network_mode='bridge',
+        gpu_enabled=False,
+        upgrade_packages=['bulletjournal-editor', 'my-package'],
+    )
+    assert command[-1] == (
+        'uv lock --project /project --upgrade-package bulletjournal-editor --upgrade-package my-package'
+        ' && uv sync --project /project --locked --no-install-project'
+    )
+
+
 def test_install_command_uses_nvidia_runtime_when_gpu_enabled() -> None:
     runner = InstallerRunner(DockerAdapter())
     command = runner.build_install_command(

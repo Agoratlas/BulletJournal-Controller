@@ -268,6 +268,7 @@ class EnvironmentService:
         mark_all_artifacts_stale: bool,
         reason: str,
         upgrade_all: bool = False,
+        upgrade_custom_requirements: bool = False,
     ) -> str:
         self.write_project_environment(
             project_paths=project_paths,
@@ -291,6 +292,16 @@ class EnvironmentService:
             user_uid=self.runtime_config_service.runtime_config.container_uid,
             user_gid=self.runtime_config_service.runtime_config.container_gid,
             upgrade_all=upgrade_all,
+            upgrade_packages=(
+                self._dedupe(
+                    [
+                        self._dependency_key(line)
+                        for line in self.parse_dependency_text(project.custom_requirements_text)
+                    ]
+                )
+                if upgrade_custom_requirements and not upgrade_all
+                else []
+            ),
             device_write_bps=self.instance_config.installer_device_write_bps,
         )
         log_writer(f'install command: {" ".join(install_command)}')

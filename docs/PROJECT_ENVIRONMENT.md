@@ -69,6 +69,26 @@ These rules apply uniformly to every index; there are no hostname-specific excep
 After upgrading the controller, the next environment update or reinstall
 regenerates the project's index configuration from its requirements.
 
+## Update Strategy
+
+Both **Reinstall environment** and **Save and reinstall** upgrade only packages
+explicitly listed in the project's custom requirements by default. The controller
+passes one `--upgrade-package <name>` flag per unique package to `uv lock`.
+Comments and index directives are excluded. Default-only packages and transitive
+dependencies keep their locked versions where compatible; they may change when
+required by updated dependency constraints.
+
+For a requirement such as `my-package @ git+https://example.com/repo.git@main`,
+the targeted upgrade resolves the latest commit on `main`, even if the package
+version has not changed. Exact version pins and explicit Git commit pins remain
+respected.
+
+The **Upgrade all packages** checkbox is unchecked by default. Selecting it uses
+`uv lock --upgrade` to upgrade all dependencies within the project's constraints.
+API clients can select the same behavior with `upgrade_all: true`.
+
+Initial installation and routine startup retain the existing lockfile preference.
+
 ## Install Sequence
 
 1. rewrite `pyproject.toml`

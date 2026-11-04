@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -26,7 +27,8 @@ def test_runtime_sizes_track_venv_and_uv_cache_separately(tmp_path: Path) -> Non
     assert snapshot['uv_cache'] == 13
 
 
-def test_reinstall_environment_upgrades_all_packages() -> None:
+@pytest.mark.parametrize('upgrade_all', [None, False, True])
+def test_reinstall_environment_upgrade_choice(upgrade_all: bool | None) -> None:
     captured_install_call: dict | None = None
 
     class DummyEnvironmentService:
@@ -73,10 +75,13 @@ def test_reinstall_environment_upgrades_all_packages() -> None:
     service.project_service = DummyProjectService()
     service.export_service = object()
 
+    payload = {'restart_if_running': False, 'mark_all_artifacts_stale': True}
+    if upgrade_all is not None:
+        payload['upgrade_all'] = upgrade_all
     result = service._dispatch(
         SimpleNamespace(
             job_type=JobType.REINSTALL_ENVIRONMENT.value,
-            payload_json='{"restart_if_running": false, "mark_all_artifacts_stale": true}',
+            payload_json=json.dumps(payload),
             log_path='/tmp/job.log',
             project_id='study-a',
         )
@@ -84,11 +89,13 @@ def test_reinstall_environment_upgrades_all_packages() -> None:
 
     assert result['project_id'] == 'study-a'
     assert captured_install_call is not None
-    assert captured_install_call['upgrade_all'] is True
+    assert captured_install_call['upgrade_all'] is bool(upgrade_all)
+    assert captured_install_call['upgrade_custom_requirements'] is not bool(upgrade_all)
     assert captured_install_call['mark_all_artifacts_stale'] is True
 
 
-def test_update_environment_upgrades_all_packages() -> None:
+@pytest.mark.parametrize('upgrade_all', [None, False, True])
+def test_update_environment_upgrade_choice(upgrade_all: bool | None) -> None:
     captured_install_call: dict | None = None
 
     class DummyEnvironmentService:
@@ -142,10 +149,18 @@ def test_update_environment_upgrades_all_packages() -> None:
     service.project_service = DummyProjectService()
     service.export_service = object()
 
+    payload = {
+        'python_version': '3.11',
+        'custom_requirements_text': 'bulletjournal-editor==0.1.0\n',
+        'restart_if_running': False,
+        'mark_all_artifacts_stale': True,
+    }
+    if upgrade_all is not None:
+        payload['upgrade_all'] = upgrade_all
     result = service._dispatch(
         SimpleNamespace(
             job_type=JobType.UPDATE_ENVIRONMENT.value,
-            payload_json='{"python_version": "3.11", "custom_requirements_text": "bulletjournal-editor==0.1.0\\n", "restart_if_running": false, "mark_all_artifacts_stale": true}',
+            payload_json=json.dumps(payload),
             log_path='/tmp/job.log',
             project_id='study-a',
         )
@@ -153,7 +168,8 @@ def test_update_environment_upgrades_all_packages() -> None:
 
     assert result['project_id'] == 'study-a'
     assert captured_install_call is not None
-    assert captured_install_call['upgrade_all'] is True
+    assert captured_install_call['upgrade_all'] is bool(upgrade_all)
+    assert captured_install_call['upgrade_custom_requirements'] is not bool(upgrade_all)
     assert captured_install_call['mark_all_artifacts_stale'] is True
 
 
@@ -222,7 +238,8 @@ def test_update_environment_reuses_project_python_version_when_payload_omits_it(
 
     assert result['project_id'] == 'study-a'
     assert captured_install_call is not None
-    assert captured_install_call['upgrade_all'] is True
+    assert captured_install_call['upgrade_all'] is False
+    assert captured_install_call['upgrade_custom_requirements'] is True
 
 
 def test_reinstall_environment_requires_explicit_artifact_staleness_choice() -> None:

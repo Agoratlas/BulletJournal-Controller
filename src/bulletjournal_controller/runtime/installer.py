@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from shlex import quote
 
 from bulletjournal_controller.runtime.docker_adapter import DockerAdapter
 
@@ -20,6 +21,7 @@ class InstallerRunner:
         env_file: Path | None = None,
         additional_mounts: list[tuple[Path, str, bool]] | None = None,
         upgrade_all: bool = False,
+        upgrade_packages: list[str] | None = None,
         device_write_bps: dict[str, int] | None = None,
         user_uid: int | None = None,
         user_gid: int | None = None,
@@ -27,6 +29,9 @@ class InstallerRunner:
         lock_command = 'uv lock --project /project'
         if upgrade_all:
             lock_command += ' --upgrade'
+        else:
+            for package in upgrade_packages or []:
+                lock_command += f' --upgrade-package {quote(package)}'
         options = [
             '--rm',
             '--network',

@@ -1098,6 +1098,9 @@ style.textContent = `
     display: grid;
     gap: 16px;
   }
+  .project-env-grid .field-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
   .environment-overview-card {
     display: grid;
     gap: 14px;
@@ -3132,13 +3135,18 @@ function CreateProjectModal({
   const navigate = useNavigate()
   const { session } = useAppState()
   const gpuSupported = systemInfo.gpu_supported
-  const [form, setForm] = useState({
-    project_id: '',
-    custom_requirements_text: systemInfo.default_dependencies_text,
-    cpu_limit_input: formatConfigLimitInputValue(systemInfo.default_cpu_limit_cpus),
-    memory_limit_input: formatConfigLimitInputValue(systemInfo.default_memory_limit_gb),
-    disk_soft_limit_input: formatConfigLimitInputValue(systemInfo.default_disk_soft_limit_gb),
-    gpu_enabled: gpuSupported,
+  const projectIdInputRef = useRef<HTMLInputElement>(null)
+  const pointerStartedOnBackdrop = useRef(false)
+  const [form, setForm] = useState(() => {
+    const now = new Date()
+    return {
+      project_id: `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, '0')}_`,
+      custom_requirements_text: systemInfo.default_dependencies_text,
+      cpu_limit_input: formatConfigLimitInputValue(systemInfo.default_cpu_limit_cpus),
+      memory_limit_input: formatConfigLimitInputValue(systemInfo.default_memory_limit_gb),
+      disk_soft_limit_input: formatConfigLimitInputValue(systemInfo.default_disk_soft_limit_gb),
+      gpu_enabled: gpuSupported,
+    }
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -3148,6 +3156,14 @@ function CreateProjectModal({
     project_admins: { all_users: false, user_ids: session?.user ? [session.user.user_id] : [] },
     editors: { all_users: true, user_ids: [] },
   })
+
+  useEffect(() => {
+    const input = projectIdInputRef.current
+    if (input) {
+      input.focus()
+      input.setSelectionRange(input.value.length, input.value.length)
+    }
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -3202,8 +3218,10 @@ function CreateProjectModal({
   }
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={() => {
-      if (!submitting) {
+    <div className="modal-backdrop" role="presentation" onPointerDown={(event) => {
+      pointerStartedOnBackdrop.current = event.target === event.currentTarget
+    }} onClick={(event) => {
+      if (pointerStartedOnBackdrop.current && event.target === event.currentTarget && !submitting) {
         onClose()
       }
     }}>
@@ -3219,7 +3237,7 @@ function CreateProjectModal({
             <div className="field-grid">
               <div className="field">
                 <label htmlFor="create-project-id">Project id</label>
-                <input id="create-project-id" value={form.project_id} onChange={(event) => setForm((current) => ({ ...current, project_id: event.target.value }))} placeholder="study-a" required />
+                <input id="create-project-id" ref={projectIdInputRef} value={form.project_id} onChange={(event) => setForm((current) => ({ ...current, project_id: event.target.value }))} placeholder="study-a" required />
               </div>
               <div className="field-full">
                 <label htmlFor="create-dependencies">Dependency text</label>
@@ -3442,6 +3460,7 @@ function ProjectPage() {
   const [optimisticAction, setOptimisticAction] = useState<OptimisticProjectAction | null>(null)
   const [environmentForm, setEnvironmentForm] = useState({
     custom_requirements_text: '',
+    upgrade_all: false,
     mark_all_artifacts_stale: false,
     restart_if_running: true,
   })
@@ -3495,6 +3514,7 @@ function ProjectPage() {
       if (!environmentInputsDirtyRef.current && !environmentSyncPendingRef.current) {
         setEnvironmentForm((current) => ({
           custom_requirements_text: nextProject.custom_requirements_text,
+          upgrade_all: current.upgrade_all,
           mark_all_artifacts_stale: current.mark_all_artifacts_stale,
           restart_if_running: current.restart_if_running,
         }))
@@ -3658,6 +3678,7 @@ function ProjectPage() {
       const response = await request<ProjectActionJobResponse>(`/api/v1/projects/${projectId}/${shouldSaveAndReinstall ? 'update-environment' : 'reinstall-environment'}`, {
         method: 'POST',
         body: JSON.stringify(shouldSaveAndReinstall ? environmentForm : {
+          upgrade_all: environmentForm.upgrade_all,
           restart_if_running: environmentForm.restart_if_running,
           mark_all_artifacts_stale: environmentForm.mark_all_artifacts_stale,
         }),
@@ -4051,7 +4072,6 @@ function ProjectPage() {
                   }} />
                 </div>
                 <div className="field">
-                  <label>Restart behavior</label>
                   <div className="checkbox-row">
                     <input id="env-restart" type="checkbox" checked={environmentForm.restart_if_running} onChange={(event) => {
                       setEnvironmentForm((current) => ({ ...current, restart_if_running: event.target.checked }))
@@ -4060,7 +4080,14 @@ function ProjectPage() {
                   </div>
                 </div>
                 <div className="field">
-                  <label>Artifact invalidation</label>
+                  <div className="checkbox-row">
+                    <input id="env-upgrade-all" type="checkbox" checked={environmentForm.upgrade_all} onChange={(event) => {
+                      setEnvironmentForm((current) => ({ ...current, upgrade_all: event.target.checked }))
+                    }} />
+                    <label htmlFor="env-upgrade-all">Upgrade all packages</label>
+                  </div>
+                </div>
+                <div className="field">
                   <div className="checkbox-row">
                     <input id="env-mark-stale" type="checkbox" checked={environmentForm.mark_all_artifacts_stale} onChange={(event) => {
                       setEnvironmentForm((current) => ({ ...current, mark_all_artifacts_stale: event.target.checked }))

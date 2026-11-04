@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import sqlite3
 import zipfile
+from types import SimpleNamespace
 
+import pytest
 from bulletjournal.storage.project_fs import init_project_root
 from fastapi.testclient import TestClient
 
@@ -215,6 +217,46 @@ def test_environment_requests_require_explicit_artifact_staleness_choice(instanc
 
     assert reinstall_response.status_code == 422
     assert update_response.status_code == 422
+
+
+@pytest.mark.parametrize('action', ['reinstall-environment', 'update-environment'])
+@pytest.mark.parametrize('upgrade_all', [None, False, True])
+def test_environment_requests_queue_upgrade_choice(
+    instance_root, server_config, monkeypatch, action, upgrade_all
+) -> None:
+    app = create_app(instance_root=instance_root, server_config=server_config)
+    container: ServiceContainer = app.state.container
+    user = container.auth_service.create_user(username='admin', display_name='Admin', password='secret-pass')
+    container.project_service.create_project(
+        project_id='study-a',
+        created_by_user_id=user.user_id,
+        python_version='3.11',
+        custom_requirements_text='bulletjournal-editor\n',
+        cpu_limit_millis=1000,
+        memory_limit_bytes=2048,
+        disk_soft_limit_bytes=None,
+        gpu_enabled=False,
+    )
+    captured = {}
+
+    def queue_job(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(to_api=lambda: {'job_id': 'test-job'})
+
+    monkeypatch.setattr(container.job_service, 'queue_job', queue_job)
+    payload = {'mark_all_artifacts_stale': False}
+    if action == 'update-environment':
+        payload['custom_requirements_text'] = 'bulletjournal-editor\n'
+    if upgrade_all is not None:
+        payload['upgrade_all'] = upgrade_all
+    with _auth_client(app) as client:
+        response = client.post(
+            f'/api/v1/projects/study-a/{action}',
+            headers={'origin': 'http://testserver'},
+            json=payload,
+        )
+    assert response.status_code == 202
+    assert captured['payload']['upgrade_all'] is bool(upgrade_all)
 
 
 def test_project_create_rejects_gpu_when_instance_gpu_disabled(instance_root, server_config) -> None:

@@ -7,6 +7,7 @@ import pytest
 
 from bulletjournal_controller.domain.enums import JobType, ProjectStatus, ProjectStatusReason
 from bulletjournal_controller.domain.errors import ConflictError
+from bulletjournal_controller.services.disk_accounting import runtime_disk_accounting
 from bulletjournal_controller.services.job_service import JobService
 
 
@@ -18,16 +19,11 @@ def test_runtime_sizes_track_venv_and_uv_cache_separately(tmp_path: Path) -> Non
     (runtime_venv_dir / 'python.bin').write_bytes(b'x' * 11)
     (runtime_uv_cache_dir / 'archive.bin').write_bytes(b'x' * 13)
 
-    service = JobService(instance_paths=SimpleNamespace(), jobs=SimpleNamespace())
-    service.project_service = SimpleNamespace(
-        project_paths=lambda _project_id: SimpleNamespace(
-            runtime_venv_dir=runtime_venv_dir,
-            runtime_uv_cache_dir=runtime_uv_cache_dir,
-        )
+    snapshot = runtime_disk_accounting(
+        SimpleNamespace(root=tmp_path, runtime_venv_dir=runtime_venv_dir, runtime_uv_cache_dir=runtime_uv_cache_dir)
     )
-
-    assert service._runtime_venv_size_bytes('study-a') == 11
-    assert service._runtime_uv_cache_size_bytes('study-a') == 13
+    assert snapshot['python_env'] == 11
+    assert snapshot['uv_cache'] == 13
 
 
 def test_reinstall_environment_upgrades_all_packages() -> None:
@@ -58,8 +54,8 @@ def test_reinstall_environment_upgrades_all_packages() -> None:
             project_id: str,
             *,
             lock_sha256: str,
-            runtime_venv_size_bytes: int,
-            runtime_uv_cache_size_bytes: int,
+            runtime_venv_size_bytes: int | None = None,
+            runtime_uv_cache_size_bytes: int | None = None,
         ):
             return SimpleNamespace(
                 project_id=project_id,
@@ -76,8 +72,6 @@ def test_reinstall_environment_upgrades_all_packages() -> None:
     service = JobService(instance_paths=SimpleNamespace(), jobs=SimpleNamespace())
     service.project_service = DummyProjectService()
     service.export_service = object()
-    service._runtime_venv_size_bytes = lambda _project_id: 123  # type: ignore[method-assign]
-    service._runtime_uv_cache_size_bytes = lambda _project_id: 456  # type: ignore[method-assign]
 
     result = service._dispatch(
         SimpleNamespace(
@@ -129,8 +123,8 @@ def test_update_environment_upgrades_all_packages() -> None:
             project_id: str,
             *,
             lock_sha256: str,
-            runtime_venv_size_bytes: int,
-            runtime_uv_cache_size_bytes: int,
+            runtime_venv_size_bytes: int | None = None,
+            runtime_uv_cache_size_bytes: int | None = None,
         ):
             return SimpleNamespace(
                 project_id=project_id,
@@ -147,8 +141,6 @@ def test_update_environment_upgrades_all_packages() -> None:
     service = JobService(instance_paths=SimpleNamespace(), jobs=SimpleNamespace())
     service.project_service = DummyProjectService()
     service.export_service = object()
-    service._runtime_venv_size_bytes = lambda _project_id: 123  # type: ignore[method-assign]
-    service._runtime_uv_cache_size_bytes = lambda _project_id: 456  # type: ignore[method-assign]
 
     result = service._dispatch(
         SimpleNamespace(
@@ -200,8 +192,8 @@ def test_update_environment_reuses_project_python_version_when_payload_omits_it(
             project_id: str,
             *,
             lock_sha256: str,
-            runtime_venv_size_bytes: int,
-            runtime_uv_cache_size_bytes: int,
+            runtime_venv_size_bytes: int | None = None,
+            runtime_uv_cache_size_bytes: int | None = None,
         ):
             return SimpleNamespace(
                 project_id=project_id,
@@ -218,8 +210,6 @@ def test_update_environment_reuses_project_python_version_when_payload_omits_it(
     service = JobService(instance_paths=SimpleNamespace(), jobs=SimpleNamespace())
     service.project_service = DummyProjectService()
     service.export_service = object()
-    service._runtime_venv_size_bytes = lambda _project_id: 123  # type: ignore[method-assign]
-    service._runtime_uv_cache_size_bytes = lambda _project_id: 456  # type: ignore[method-assign]
 
     result = service._dispatch(
         SimpleNamespace(
@@ -263,8 +253,8 @@ def test_reinstall_environment_requires_explicit_artifact_staleness_choice() -> 
             project_id: str,
             *,
             lock_sha256: str,
-            runtime_venv_size_bytes: int,
-            runtime_uv_cache_size_bytes: int,
+            runtime_venv_size_bytes: int | None = None,
+            runtime_uv_cache_size_bytes: int | None = None,
         ):
             return SimpleNamespace(
                 project_id=project_id,
@@ -281,8 +271,6 @@ def test_reinstall_environment_requires_explicit_artifact_staleness_choice() -> 
     service = JobService(instance_paths=SimpleNamespace(), jobs=SimpleNamespace())
     service.project_service = DummyProjectService()
     service.export_service = object()
-    service._runtime_venv_size_bytes = lambda _project_id: 123  # type: ignore[method-assign]
-    service._runtime_uv_cache_size_bytes = lambda _project_id: 456  # type: ignore[method-assign]
 
     with pytest.raises(KeyError, match='mark_all_artifacts_stale'):
         service._dispatch(

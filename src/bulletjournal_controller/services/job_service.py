@@ -5,6 +5,7 @@ import json
 import queue
 import threading
 import time
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -20,13 +21,14 @@ from bulletjournal_controller.domain.errors import (
     NotFoundError,
 )
 from bulletjournal_controller.domain.models import JobRecord
+from bulletjournal_controller.services.export_downloads import ExportDownloads
 from bulletjournal_controller.services.export_service import ExportService
 from bulletjournal_controller.services.job_events import JobEventBroker
 from bulletjournal_controller.storage.instance_fs import InstancePaths
 from bulletjournal_controller.storage.repositories import JobRepository
 from bulletjournal_controller.utils import (
     json_dumps,
-    path_size_bytes,
+    parse_iso8601,
     random_token,
     utc_now_iso,
 )
@@ -42,6 +44,7 @@ class JobService:
     ):
         self.instance_paths = instance_paths
         self.jobs = jobs
+        self.export_downloads = ExportDownloads(instance_paths=instance_paths, jobs=jobs)
         self.event_broker = event_broker
         self._queue: queue.Queue[str] = queue.Queue()
         self._thread: threading.Thread | None = None
@@ -61,11 +64,13 @@ class JobService:
         if self._thread is not None:
             return
         self._stop_event.clear()
+        self.export_downloads.start()
         self._thread = threading.Thread(target=self._run_loop, name='job-worker', daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
         self._stop_event.set()
+        self.export_downloads.stop()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
             self._thread = None
@@ -107,6 +112,13 @@ class JobService:
     def get_job(self, job_id: str) -> JobRecord | None:
         return self.jobs.get(job_id)
 
+    def job_payload(self, job: JobRecord) -> dict[str, Any]:
+        payload = job.to_api()
+        download = self.export_downloads.metadata(job)
+        if download is not None:
+            payload['download'] = download
+        return payload
+
     def read_job_log(self, job_id: str, *, lines: int | None = 200) -> str:
         job = self.get_job(job_id)
         if job is None:
@@ -140,6 +152,8 @@ class JobService:
             self._run_job(job)
 
     def _run_job(self, job: JobRecord) -> None:
+        if job.status != JobStatus.QUEUED.value:
+            return
         running_job = self.jobs.update(
             job.job_id,
             status=JobStatus.RUNNING.value,
@@ -168,10 +182,15 @@ class JobService:
             )
             self._publish_job_update(failed_job)
             return
+        finished_at = utc_now_iso()
+        if job.job_type == JobType.EXPORT_PROJECT.value:
+            result['download']['expires_at'] = (
+                (parse_iso8601(finished_at) + timedelta(hours=24)).isoformat().replace('+00:00', 'Z')
+            )
         succeeded_job = self.jobs.update(
             job.job_id,
             status=JobStatus.SUCCEEDED.value,
-            finished_at=utc_now_iso(),
+            finished_at=finished_at,
             result_json=json.dumps(result, sort_keys=True),
             error_message=None,
         )
@@ -180,7 +199,7 @@ class JobService:
     def _publish_job_update(self, job: JobRecord | None) -> None:
         if self.event_broker is None or job is None:
             return
-        self.event_broker.publish(job.to_api())
+        self.event_broker.publish(self.job_payload(job))
 
     def _publish_job_log_line(self, job_id: str, line: str) -> None:
         if self.event_broker is None:
@@ -216,8 +235,6 @@ class JobService:
             project = self.project_service.mark_install_succeeded(
                 project.project_id,
                 lock_sha256=lock_sha,
-                runtime_venv_size_bytes=self._runtime_venv_size_bytes(project.project_id),
-                runtime_uv_cache_size_bytes=self._runtime_uv_cache_size_bytes(project.project_id),
             )
             project = self.project_service.start_project(project.project_id)
             return {
@@ -240,8 +257,6 @@ class JobService:
             project = self.project_service.mark_install_succeeded(
                 project.project_id,
                 lock_sha256=lock_sha,
-                runtime_venv_size_bytes=self._runtime_venv_size_bytes(project.project_id),
-                runtime_uv_cache_size_bytes=self._runtime_uv_cache_size_bytes(project.project_id),
             )
             return {
                 'project_id': project.project_id,
@@ -288,8 +303,6 @@ class JobService:
             project = self.project_service.mark_install_succeeded(
                 project.project_id,
                 lock_sha256=lock_sha,
-                runtime_venv_size_bytes=self._runtime_venv_size_bytes(project.project_id),
-                runtime_uv_cache_size_bytes=self._runtime_uv_cache_size_bytes(project.project_id),
             )
             if was_running and restart_if_running:
                 project = self.project_service.start_project(project.project_id)
@@ -305,18 +318,11 @@ class JobService:
                 if payload.get('export_mode') is not None
                 else ('full' if bool(payload.get('include_artifacts', True)) else 'code_only')
             )
-            archive_name = str(
-                payload.get('archive_name')
-                or ExportService.download_filename(
-                    project_id=project.project_id,
-                    mode=export_mode,
-                )
-            )
-            archive_path = self.instance_paths.exports_dir / archive_name
-            return self.export_service.export_project(
+            return self.export_downloads.create(
+                job=job,
                 project=project,
-                archive_path=archive_path,
                 mode=export_mode,
+                export_service=self.export_service,
             )
         if job.job_type == JobType.ARCHIVE_PROJECT.value:
             project = self.project_service.get_project(job.project_id)
@@ -409,21 +415,7 @@ class JobService:
         return self.project_service.mark_install_succeeded(
             project_id,
             lock_sha256=lock_sha,
-            runtime_venv_size_bytes=self._runtime_venv_size_bytes(project_id),
-            runtime_uv_cache_size_bytes=self._runtime_uv_cache_size_bytes(project_id),
         )
-
-    def _runtime_venv_size_bytes(self, project_id: str) -> int:
-        if self.project_service is None:
-            raise JobExecutionError('Job service is not fully bound.')
-        project_paths = self.project_service.project_paths(project_id)
-        return path_size_bytes(project_paths.runtime_venv_dir)
-
-    def _runtime_uv_cache_size_bytes(self, project_id: str) -> int:
-        if self.project_service is None:
-            raise JobExecutionError('Job service is not fully bound.')
-        project_paths = self.project_service.project_paths(project_id)
-        return path_size_bytes(project_paths.runtime_uv_cache_dir)
 
     def _apply_project_failure_state(self, job: JobRecord) -> None:
         if job.project_id is None or self.project_service is None:

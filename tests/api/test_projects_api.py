@@ -308,8 +308,12 @@ def test_project_export_download_supports_modes(instance_root, server_config) ->
     (project_root / 'checkpoints' / 'cp-1' / 'notebooks' / 'snap.py').parent.mkdir(parents=True, exist_ok=True)
     (project_root / 'checkpoints' / 'cp-1' / 'notebooks' / 'snap.py').write_text("print('cp')\n", encoding='utf-8')
 
-    with _auth_client(app) as client:
-        response = client.get(f'/api/v1/projects/{project.project_id}/export?mode=code_and_data')
+    client = _auth_client(app)
+    queued = client.post(f'/api/v1/projects/{project.project_id}/export', json={'mode': 'code_and_data'})
+    assert queued.status_code == 202
+    job_id = queued.json()['job']['job_id']
+    container.job_service._run_job(container.jobs.get(job_id))
+    response = client.get(f'/api/v1/jobs/{job_id}/download')
 
     assert response.status_code == 200
     assert response.headers['content-type'].startswith('application/zip')
@@ -317,7 +321,7 @@ def test_project_export_download_supports_modes(instance_root, server_config) ->
         'attachment; filename="bulletjournal_export_study-a_code_and_data.zip"'
         in response.headers['content-disposition']
     )
-    archive_path = container.instance_paths.exports_dir / 'bulletjournal_export_study-a_code_and_data.zip'
+    archive_path = container.instance_paths.exports_dir / job_id / 'archive.zip'
     assert archive_path.is_file()
     with zipfile.ZipFile(archive_path, 'r') as archive:
         names = set(archive.namelist())
@@ -343,7 +347,7 @@ def test_project_export_download_rejects_unknown_mode(instance_root, server_conf
     )
 
     with _auth_client(app) as client:
-        response = client.get('/api/v1/projects/study-a/export?mode=invalid')
+        response = client.post('/api/v1/projects/study-a/export', json={'mode': 'invalid'})
 
     assert response.status_code == 422
 

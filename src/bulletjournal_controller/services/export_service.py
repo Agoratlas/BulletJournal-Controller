@@ -103,11 +103,11 @@ class ExportService:
         with tempfile.TemporaryDirectory(dir=archive_dir) as temp_dir_name:
             temp_dir = Path(temp_dir_name)
             export_path = temp_dir / self._plaintext_archive_filename(project.project_id)
-            log_writer(f'creating full archive for project {project.project_id} at {export_path.name}')
+            log_writer(f'creating snapshot archive for project {project.project_id} at {export_path.name}')
             self.export_project(
                 project=project,
                 archive_path=export_path,
-                mode=ProjectExportMode.FULL,
+                mode=ProjectExportMode.SNAPSHOT,
             )
             exported_size = export_path.stat().st_size
             final_path = target_path
@@ -145,7 +145,9 @@ class ExportService:
     def download_filename(*, project_id: str, mode: ProjectExportMode) -> str:
         suffix = {
             ProjectExportMode.CODE_ONLY: 'code',
+            ProjectExportMode.CODE_AND_CONSTANTS: 'code_and_constants',
             ProjectExportMode.CODE_AND_DATA: 'code_and_data',
+            ProjectExportMode.SNAPSHOT: 'snapshot',
             ProjectExportMode.FULL: 'full',
         }[mode]
         return f'bulletjournal_export_{project_id}_{suffix}.zip'

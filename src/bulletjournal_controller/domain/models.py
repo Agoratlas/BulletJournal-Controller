@@ -88,6 +88,7 @@ class ProjectRecord:
     container_port: int | None
     runtime_started_at: str | None
     runtime_stopped_at: str | None
+    runtime_disk_accounting_json: str | None = None
 
     def to_api(self) -> dict[str, Any]:
         return {

@@ -110,12 +110,14 @@ class ServiceContainer:
             environment_service=self.environment_service,
             runtime_service=self.runtime_service,
             gpu_enabled=server_config.enable_gpu,
+            idle_timeout_seconds=self.instance_config.idle_timeout_seconds,
         )
         self.metrics_service = MetricsService(
             instance_paths=instance_paths,
             docker_adapter=self.docker_adapter,
             runtime_config_service=self.runtime_config_service,
             jobs=self.jobs,
+            projects=self.projects,
         )
         self.observability = Observability()
         self.export_service = ExportService(
@@ -196,6 +198,7 @@ class ServiceContainer:
 
     def refresh_prometheus_resources(self) -> None:
         projects = self.project_service.list_projects()
+        self.metrics_service.prune_projects(projects)
         metrics_map = self.metrics_service.project_metrics_map(projects)
         self.observability.update_resources(
             system=self.metrics_service.system_metrics(),

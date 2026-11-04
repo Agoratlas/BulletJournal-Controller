@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
+import { createPortal } from 'react-dom'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import type { CSSProperties, SVGProps } from 'react'
 
@@ -29,7 +30,16 @@ type JobRecord = {
   started_at: string | null
   finished_at: string | null
   error_message: string | null
+  download?: {
+    available: boolean
+    url: string | null
+    filename: string | null
+    expires_at: string | null
+    unavailable_reason: 'not_ready' | 'job_failed' | 'expired' | 'missing' | null
+  }
 }
+
+type DiskCategory = 'python_env' | 'uv_cache' | 'objects' | 'database' | 'others'
 
 type Project = {
   project_id: string
@@ -66,6 +76,7 @@ type Project = {
     memory_used_bytes?: number | null
     memory_limit_bytes?: number | null
     disk_used_bytes?: number | null
+    disk_breakdown_bytes?: Record<DiskCategory, number>
   }
   recent_jobs?: JobRecord[]
   effective_role: 'project_admin' | 'editor' | null
@@ -490,6 +501,8 @@ style.textContent = `
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .project-card {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
     display: grid;
     gap: 14px;
     padding: 0 18px 18px;
@@ -515,10 +528,16 @@ style.textContent = `
     background: var(--error-bg);
   }
   .project-card-top {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
     display: grid;
     gap: 14px;
   }
   .project-card h4 {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
     margin: 0;
     font-size: 1.2rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -529,6 +548,36 @@ style.textContent = `
     width: calc(100% + 36px);
     margin: 0 -18px;
   }
+  .project-title-container { min-width: 0; overflow: hidden; }
+  .tooltip-target { min-width: 0; }
+  .tooltip-target:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 12px; }
+  .portal-tooltip {
+    position: fixed;
+    z-index: 10000;
+    max-width: calc(100vw - 20px);
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: var(--ink);
+    color: var(--paper);
+    font-size: 0.78rem;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.2);
+    pointer-events: none;
+  }
+  .disk-metric { position: relative; overflow: hidden; height: 100%; padding-bottom: 20px; }
+  .disk-breakdown { position: absolute; bottom: 0; left: 0; right: 0; height: 8px; display: flex; }
+  .disk-metric.metric-warning .disk-breakdown,
+  .disk-metric.metric-danger .disk-breakdown {
+    box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.22);
+  }
+  .disk-breakdown-segment { min-width: 0; }
+  .disk-tooltip-line { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .disk-tooltip-line + .disk-tooltip-line { margin-top: 5px; }
+  .disk-tooltip-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .disk-tooltip { background: var(--paper-strong); color: var(--ink); border: 1px solid var(--line); font-size: 1.014rem; }
+  .disk-tooltip-value { margin-left: auto; font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .export-job-actions { display: flex; justify-content: center; }
+  .export-download:disabled { opacity: 0.4; cursor: not-allowed; }
+  .job-row-header { flex-wrap: wrap; }
   .badges {
     display: flex;
     flex-wrap: wrap;
@@ -1885,15 +1934,6 @@ function lockfileDownloadUrl(projectId: string): string {
   return `/api/v1/projects/${encodeURIComponent(projectId)}/lockfile`
 }
 
-function projectExportUrl(projectId: string, mode: 'code_only' | 'code_and_data' | 'full'): string {
-  return `/api/v1/projects/${encodeURIComponent(projectId)}/export?mode=${encodeURIComponent(mode)}`
-}
-
-function projectExportFilename(projectId: string, mode: 'code_only' | 'code_and_data' | 'full'): string {
-  const suffix = mode === 'code_only' ? 'code' : mode === 'code_and_data' ? 'code_and_data' : 'full'
-  return `bulletjournal_export_${projectId}_${suffix}.zip`
-}
-
 function responseDownloadFilename(response: Response): string | null {
   const contentDisposition = response.headers.get('content-disposition') || ''
   const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
@@ -2007,6 +2047,142 @@ function projectMetricDetails(project: Project): Array<{ label: string; value: s
       tone: metricTone(project.limits.cpu_limit_millis ? cpuPercent : null),
     },
   ]
+}
+
+function Tooltip({ content, children, focusable = true, placement = 'above', className }: { content: React.ReactNode; children: React.ReactNode; focusable?: boolean; placement?: 'above' | 'below'; className?: string }) {
+  const id = useId()
+  const target = useRef<HTMLDivElement>(null)
+  const bubble = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState<CSSProperties>({ visibility: 'hidden' })
+  useLayoutEffect(() => {
+    if (!open) return
+    function place() {
+      if (!target.current || !bubble.current) return
+      const anchor = target.current.getBoundingClientRect()
+      const tooltip = bubble.current.getBoundingClientRect()
+      const left = Math.max(10, Math.min(anchor.left + (anchor.width - tooltip.width) / 2, window.innerWidth - tooltip.width - 10))
+      const above = anchor.top - tooltip.height - 8
+      const preferredTop = placement === 'below' ? anchor.bottom + 8 : above >= 10 ? above : anchor.bottom + 8
+      const top = Math.max(10, Math.min(preferredTop, window.innerHeight - tooltip.height - 10))
+      setPosition({ left, top, visibility: 'visible' })
+    }
+    place()
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => {
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+    }
+  }, [open, content, placement])
+  return (
+    <div ref={target} className="tooltip-target" tabIndex={focusable ? 0 : undefined} aria-describedby={open ? id : undefined}
+      onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}
+      onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false) }}>
+      {children}
+      {open ? createPortal(<div ref={bubble} id={id} role="tooltip" className={classNames('portal-tooltip', className)} style={position}>{content}</div>, document.body) : null}
+    </div>
+  )
+}
+
+const diskCategories: Array<{ key: DiskCategory; label: string; color: string }> = [
+  { key: 'python_env', label: 'Python env', color: '#ef4444' },
+  { key: 'uv_cache', label: 'uv cache', color: '#f97316' },
+  { key: 'objects', label: 'Objects', color: '#eab308' },
+  { key: 'database', label: 'Database', color: '#22c55e' },
+  { key: 'others', label: 'Others', color: '#3b82f6' },
+]
+
+function ProjectDiskMetric({ project, metric }: { project: Project; metric: ReturnType<typeof projectMetricDetails>[number] }) {
+  const breakdown = project.metrics.disk_breakdown_bytes
+  const values = diskCategories.map((category) => Math.max(0, breakdown?.[category.key] ?? 0))
+  const total = values.reduce((sum, value) => sum + value, 0)
+  const content = breakdown ? diskCategories.map((category, index) => {
+    const bytes = values[index]
+    const formatted = bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${(bytes / 1024 ** 2).toFixed(1)} MB`
+    return <div key={category.key} className="disk-tooltip-line"><span className="disk-tooltip-dot" style={{ background: category.color }} /><span>{category.label}</span><span className="disk-tooltip-value">{formatted}</span></div>
+  }) : 'Disk breakdown is not available yet.'
+  return <Tooltip content={content} placement="below" className="disk-tooltip">
+    <div className={classNames('meta-item', 'metric-chip', 'disk-metric', metric.tone)}>
+      <span>{metric.label}</span><strong>{metric.value}</strong>
+      {breakdown && total > 0 ? <div className="disk-breakdown" aria-hidden="true">
+        {diskCategories.map((category, index) => <div key={category.key} className="disk-breakdown-segment" style={{ background: category.color, flex: `${values[index]} 1 0%` }} />)}
+      </div> : null}
+    </div>
+  </Tooltip>
+}
+
+function DashboardProjectTitle({ name }: { name: string }) {
+  const container = useRef<HTMLDivElement>(null)
+  const title = useRef<HTMLHeadingElement>(null)
+  useLayoutEffect(() => {
+    let cancelled = false
+    let previousWidth = -1
+    let frame = 0
+    function fit(force = false) {
+      const heading = title.current
+      const width = container.current?.clientWidth ?? 0
+      if (!heading || !width || (!force && width === previousWidth)) return
+      previousWidth = width
+      heading.style.fontSize = '1.2rem'
+      const defaultSize = parseFloat(window.getComputedStyle(heading).fontSize)
+      const range = document.createRange()
+      range.selectNodeContents(heading)
+      if (range.getBoundingClientRect().width <= width && heading.scrollWidth <= width) return
+      let lower = defaultSize / 2
+      let upper = defaultSize
+      heading.style.fontSize = `${lower}px`
+      if (range.getBoundingClientRect().width > width || heading.scrollWidth > width) return
+      // Font hinting can make proportional estimates slightly too wide. Find
+      // the largest fitting measured size, retaining the exact 50% floor.
+      for (let step = 0; step < 9; step++) {
+        const candidate = (lower + upper) / 2
+        heading.style.fontSize = `${candidate}px`
+        if (range.getBoundingClientRect().width <= width && heading.scrollWidth <= width) lower = candidate
+        else upper = candidate
+      }
+      heading.style.fontSize = `${lower}px`
+    }
+    fit(true)
+    function scheduleFit() {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => fit(true))
+    }
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(scheduleFit) : null
+    if (container.current) observer?.observe(container.current)
+    window.addEventListener('resize', scheduleFit)
+    void document.fonts.ready.then(() => { if (!cancelled) scheduleFit() })
+    return () => { cancelled = true; window.cancelAnimationFrame(frame); observer?.disconnect(); window.removeEventListener('resize', scheduleFit) }
+  }, [name])
+  return <div ref={container} className="project-title-container"><h4 ref={title} title={name}>{name}</h4></div>
+}
+
+function exportUnavailableMessage(job: JobRecord): string {
+  switch (job.download?.unavailable_reason) {
+    case 'expired': return 'Export expired after 24 hours.'
+    case 'missing': return 'Export file is no longer available.'
+    case 'job_failed': return 'Export did not complete successfully.'
+    default: return 'Export is still being prepared.'
+  }
+}
+
+function ExportJobDownload({ job, preparing, onDownload }: { job: JobRecord; preparing: boolean; onDownload: (job: JobRecord) => void }) {
+  const [now, setNow] = useState(Date.now)
+  const expiry = job.download?.expires_at ? new Date(job.download.expires_at).getTime() : null
+  useEffect(() => {
+    setNow(Date.now())
+    if (expiry === null || !Number.isFinite(expiry)) return
+    const timer = window.setTimeout(() => setNow(Date.now()), Math.min(2147483647, Math.max(0, expiry - Date.now() + 1)))
+    return () => window.clearTimeout(timer)
+  }, [expiry])
+  const expired = expiry !== null && Number.isFinite(expiry) && expiry <= now
+  const available = !!job.download?.available && !expired
+  const message = expired ? 'Export expired after 24 hours.' : available ? 'Download ZIP (available for 24 hours).' : exportUnavailableMessage(job)
+  return <div className="export-job-actions"><Tooltip content={message} focusable={!available || preparing}>
+    <button type="button" className={classNames(available ? 'button-open' : 'button-secondary', 'export-download')} disabled={!available || preparing} onClick={() => onDownload(job)}>
+      {preparing ? 'Preparing download...' : 'Download export'}
+    </button>
+  </Tooltip></div>
 }
 
 function FooterSystemMetrics({ systemInfo }: { systemInfo: SystemInfo | null }) {
@@ -2873,7 +3049,7 @@ function DashboardPage() {
                             <article className={classNames('project-card', projectCardStateClass(project))} key={project.project_id}>
                               <div className="project-card-header">
                                 <div className="project-card-top">
-                                  <h4>{project.project_id}</h4>
+                                  <DashboardProjectTitle name={project.project_id} />
                                   <hr className="project-card-divider" />
                                 </div>
                               </div>
@@ -3285,7 +3461,8 @@ function ProjectPage() {
   const [showArchiveModal, setShowArchiveModal] = useState(false)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [downloadingMcpConfig, setDownloadingMcpConfig] = useState(false)
-  const [downloadingExportMode, setDownloadingExportMode] = useState<'code_only' | 'code_and_data' | 'full' | null>(null)
+  const [submittingExportMode, setSubmittingExportMode] = useState<'code_and_constants' | 'snapshot' | null>(null)
+  const [preparingExportIds, setPreparingExportIds] = useState<string[]>([])
   const [downloadingJobIds, setDownloadingJobIds] = useState<string[]>([])
   const [showAllJobs, setShowAllJobs] = useState(false)
   const [environmentSyncPending, setEnvironmentSyncPending] = useState(false)
@@ -3310,6 +3487,10 @@ function ProjectPage() {
         return
       }
       setProject(nextProject)
+      setActiveJobIds((current) => Array.from(new Set([
+        ...current.filter((id) => !nextProject.recent_jobs?.some((job) => job.job_id === id && !isActiveJobStatus(job.status))),
+        ...(nextProject.recent_jobs ?? []).filter((job) => isActiveJobStatus(job.status)).map((job) => job.job_id),
+      ])))
       setRolesForm((current) => current ?? roleSelectionsFromProjectRoles(nextProject.roles))
       if (!environmentInputsDirtyRef.current && !environmentSyncPendingRef.current) {
         setEnvironmentForm((current) => ({
@@ -3402,6 +3583,12 @@ function ProjectPage() {
   }, [exportMenuOpen])
 
   const handleTrackedJobUpdate = useCallback((job: JobRecord) => {
+    // Log events use synthetic partial jobs; merge only complete status events.
+    if (job.job_type) {
+      setProject((current) => current ? {
+        ...current, recent_jobs: (current.recent_jobs ?? []).map((existing) => existing.job_id === job.job_id ? job : existing),
+      } : current)
+    }
     if (isActiveJobStatus(job.status)) {
       setActiveJobIds((current) => current.includes(job.job_id) ? current : [...current, job.job_id])
       return
@@ -3634,31 +3821,41 @@ function ProjectPage() {
     }
   }
 
-  async function downloadProjectExport(mode: 'code_only' | 'code_and_data' | 'full') {
+  async function queueProjectExport(mode: 'code_and_constants' | 'snapshot') {
     setError(null)
-    setDownloadingExportMode(mode)
+    setSubmittingExportMode(mode)
     try {
-      const response = await fetch(projectExportUrl(projectId, mode), { credentials: 'include' })
-      if (!response.ok) {
-        const contentType = response.headers.get('content-type') || ''
-        const payload = contentType.includes('application/json') ? await response.json() : await response.text()
-        const detail = typeof payload === 'object' && payload !== null && 'detail' in payload ? String((payload as { detail: unknown }).detail) : response.statusText
-        throw new Error(detail || 'Failed to export project.')
-      }
-      const blob = await response.blob()
-      const objectUrl = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = objectUrl
-      link.download = responseDownloadFilename(response) || projectExportFilename(projectId, mode)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.URL.revokeObjectURL(objectUrl)
+      const response = await request<{ job: JobRecord }>(`/api/v1/projects/${encodeURIComponent(projectId)}/export`, {
+        method: 'POST', body: JSON.stringify({ mode }),
+      })
+      setProject((current) => current ? { ...current, has_active_job: true, recent_jobs: [response.job, ...(current.recent_jobs ?? [])] } : current)
+      setActiveJobIds((current) => Array.from(new Set([...current, response.job.job_id])))
       setExportMenuOpen(false)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Failed to export project.')
     } finally {
-      setDownloadingExportMode(null)
+      setSubmittingExportMode(null)
+    }
+  }
+
+  async function downloadExportJob(job: JobRecord) {
+    if (!job.download?.available) return
+    setPreparingExportIds((current) => [...current, job.job_id])
+    setError(null)
+    try {
+      const latest = await request<JobRecord>(`/api/v1/jobs/${job.job_id}`)
+      setProject((current) => current ? { ...current, recent_jobs: (current.recent_jobs ?? []).map((existing) => existing.job_id === latest.job_id ? latest : existing) } : current)
+      if (!latest.download?.available || !latest.download.url) throw new Error(exportUnavailableMessage(latest))
+      const link = document.createElement('a')
+      link.href = latest.download.url
+      link.download = latest.download.filename || 'project.zip'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Failed to download export.')
+    } finally {
+      setPreparingExportIds((current) => current.filter((id) => id !== job.job_id))
     }
   }
 
@@ -3791,7 +3988,7 @@ function ProjectPage() {
           </div>
           <div className="metrics-row">
             {metrics.map((metric) => (
-              <div key={metric.label} className={classNames('meta-item', 'metric-chip', metric.tone)}>
+              metric.label === 'Disk' ? <ProjectDiskMetric key={metric.label} project={displayProject} metric={metric} /> : <div key={metric.label} className={classNames('meta-item', 'metric-chip', metric.tone)}>
                 <span>{metric.label}</span>
                 <strong>{metric.value}</strong>
               </div>
@@ -3944,7 +4141,7 @@ function ProjectPage() {
                       setLimitsDirty(true)
                       setLimitsForm((current) => ({ ...current, gpu_enabled: event.target.checked }))
                     }} disabled={limitsLocked} />
-                    <label htmlFor="limits-gpu">Enable GPU if supported on the host</label>
+                    <label htmlFor="limits-gpu">Enable GPU</label>
                   </div>
                 </div>
                 <div className="button-row">
@@ -4028,6 +4225,7 @@ function ProjectPage() {
                       onDownload={job.log_path ? downloadJobLog : undefined}
                     />
                   ) : null}
+                  {job.job_type === 'export_project' && isProjectAdmin ? <ExportJobDownload job={job} preparing={preparingExportIds.includes(job.job_id)} onDownload={(nextJob) => void downloadExportJob(nextJob)} /> : null}
                   {job.error_message ? <div className="error-banner">{job.error_message}</div> : null}
                 </article>
               ))}
@@ -4054,13 +4252,13 @@ function ProjectPage() {
                   type="button"
                   aria-haspopup="menu"
                   aria-expanded={exportMenuOpen}
-                  disabled={!!downloadingExportMode}
+                  disabled={!!submittingExportMode || displayProject.has_active_job}
                   onClick={(event) => {
                     event.stopPropagation()
                     setExportMenuOpen((current) => !current)
                   }}
                 >
-                  {downloadingExportMode ? 'Exporting...' : 'Export project'}
+                  {submittingExportMode ? 'Queueing export...' : 'Export project'}
                 </button>
                 {exportMenuOpen ? (
                   <div className="action-popover" role="menu" onClick={(event) => event.stopPropagation()}>
@@ -4068,34 +4266,23 @@ function ProjectPage() {
                       className="action-option"
                       type="button"
                       role="menuitem"
-                      disabled={downloadingExportMode !== null}
+                      disabled={submittingExportMode !== null || displayProject.has_active_job}
                       onClick={() => {
-                        void downloadProjectExport('code_only')
+                        void queueProjectExport('code_and_constants')
                       }}
                     >
-                      <strong>Code only</strong>
+                      <strong>Code and constants</strong>
                     </button>
                     <button
                       className="action-option"
                       type="button"
                       role="menuitem"
-                      disabled={downloadingExportMode !== null}
+                      disabled={submittingExportMode !== null || displayProject.has_active_job}
                       onClick={() => {
-                        void downloadProjectExport('code_and_data')
+                        void queueProjectExport('snapshot')
                       }}
                     >
-                      <strong>Code and data</strong>
-                    </button>
-                    <button
-                      className="action-option"
-                      type="button"
-                      role="menuitem"
-                      disabled={downloadingExportMode !== null}
-                      onClick={() => {
-                        void downloadProjectExport('full')
-                      }}
-                    >
-                      <strong>Full</strong>
+                      <strong>Full snapshot</strong>
                     </button>
                   </div>
                 ) : null}

@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 
 from bulletjournal_controller.domain.models import ProjectRecord
+from bulletjournal_controller.services.disk_accounting import disk_path_bytes, read_runtime_accounting
+from bulletjournal_controller.storage.instance_fs import ProjectPaths
 from bulletjournal_controller.utils import path_size_bytes
 
 PROJECT_DISK_USAGE_TTL_SECONDS = 15.0
@@ -24,12 +26,16 @@ class MetricsService:
         docker_adapter,
         runtime_config_service,
         jobs,
+        projects=None,
     ):
         self.instance_paths = instance_paths
         self.docker_adapter = docker_adapter
         self.runtime_config_service = runtime_config_service
         self.jobs = jobs
+        self.projects = projects
+        self._runtime_inode_cache: dict[str, tuple[str, set[tuple[int, int]]]] = {}
         self._project_disk_usage_cache: dict[str, tuple[str, int | None, int | None, float, int]] = {}
+        self._project_disk_breakdown_cache: dict[str, tuple[str, dict[str, int]]] = {}
         self._docker_stats_cache: dict[tuple[str, ...], tuple[float, dict[str, dict[str, object]]]] = {}
         self._container_rw_size_cache: dict[str, tuple[float, int | None]] = {}
         self._system_metrics_cache: tuple[float, dict[str, object]] | None = None
@@ -61,6 +67,9 @@ class MetricsService:
             project_metrics: dict[str, object] = {
                 'disk_used_bytes': disk_used_bytes,
             }
+            cached_breakdown = self._project_disk_breakdown_cache.get(project.project_id)
+            if cached_breakdown is not None:
+                project_metrics['disk_breakdown_bytes'] = dict(cached_breakdown[1])
             if project.container_name:
                 runtime = runtime_metrics.get(project.container_name)
                 if runtime is not None:
@@ -70,11 +79,19 @@ class MetricsService:
                 size_bytes = self._container_rw_size(project.container_name)
                 if size_bytes is not None:
                     project_metrics['disk_used_bytes'] = disk_used_bytes + size_bytes
+                    if 'disk_breakdown_bytes' in project_metrics:
+                        project_metrics['disk_breakdown_bytes']['others'] += size_bytes
             metrics[project.project_id] = project_metrics
         return metrics
 
     def project_metrics(self, project: ProjectRecord) -> dict[str, object]:
         return self.project_metrics_map([project]).get(project.project_id, {})
+
+    def prune_projects(self, projects: list[ProjectRecord]) -> None:
+        project_ids = {project.project_id for project in projects}
+        for cache in (self._runtime_inode_cache, self._project_disk_usage_cache, self._project_disk_breakdown_cache):
+            for project_id in set(cache) - project_ids:
+                cache.pop(project_id, None)
 
     def cached_project_metrics_map(self, projects: list[ProjectRecord]) -> dict[str, dict[str, object]]:
         """Return the latest collected values without blocking on metric collection."""
@@ -85,6 +102,9 @@ class MetricsService:
             if cached_disk is not None:
                 _, _, _, _, total = cached_disk
                 project_metrics['disk_used_bytes'] = total
+                cached_breakdown = self._project_disk_breakdown_cache.get(project.project_id)
+                if cached_breakdown is not None:
+                    project_metrics['disk_breakdown_bytes'] = dict(cached_breakdown[1])
             if project.container_name:
                 for _, stats in self._docker_stats_cache.values():
                     runtime = stats.get(project.container_name)
@@ -96,6 +116,8 @@ class MetricsService:
                     _, size_rw = cached_size
                     if size_rw is not None:
                         project_metrics['disk_used_bytes'] += size_rw
+                        if 'disk_breakdown_bytes' in project_metrics:
+                            project_metrics['disk_breakdown_bytes']['others'] += size_rw
             metrics[project.project_id] = project_metrics
         return metrics
 
@@ -115,8 +137,72 @@ class MetricsService:
                 and cached_venv_size == project.runtime_venv_size_bytes
                 and cached_uv_cache_size == project.runtime_uv_cache_size_bytes
                 and now < deadline
+                and (
+                    project.runtime_disk_accounting_json is None
+                    or self._project_disk_breakdown_cache.get(project.project_id, (None,))[0]
+                    == project.runtime_disk_accounting_json
+                )
             ):
                 return cached_total
+        snapshot = read_runtime_accounting(project)
+        runtime_inodes = self._runtime_inodes(project, snapshot) if snapshot is not None else None
+        if runtime_inodes is None:
+            snapshot = None
+        if snapshot is not None:
+            paths = ProjectPaths(Path(project.root_path))
+            seen = set(runtime_inodes)
+            database_paths = tuple(
+                paths.metadata_dir / name for name in ('state.db', 'state.db-wal', 'state.db-shm', 'state.db-journal')
+            )
+            breakdown = {
+                'python_env': snapshot['python_env'],
+                'uv_cache': snapshot['uv_cache'],
+                'objects': disk_path_bytes(paths.object_store_dir, seen=seen),
+                'database': sum(disk_path_bytes(path, seen=seen) for path in database_paths),
+                'others': disk_path_bytes(
+                    paths.root,
+                    seen=seen,
+                    exclude=(
+                        paths.runtime_venv_dir,
+                        paths.runtime_uv_cache_dir,
+                        paths.object_store_dir,
+                        *database_paths,
+                    ),
+                ),
+            }
+            for log_path in self.jobs.list_log_paths_for_project(project.project_id):
+                breakdown['others'] += disk_path_bytes(Path(log_path), seen=seen)
+            self._project_disk_breakdown_cache[project.project_id] = (project.runtime_disk_accounting_json, breakdown)
+            total = sum(breakdown.values())
+        else:
+            self._project_disk_breakdown_cache.pop(project.project_id, None)
+            total = self._legacy_project_disk_usage(project)
+        self._project_disk_usage_cache[project.project_id] = (
+            project.root_path,
+            project.runtime_venv_size_bytes,
+            project.runtime_uv_cache_size_bytes,
+            now + PROJECT_DISK_USAGE_TTL_SECONDS,
+            total,
+        )
+        return total
+
+    def _runtime_inodes(self, project, snapshot) -> set[tuple[int, int]] | None:
+        cached = self._runtime_inode_cache.get(project.project_id)
+        if cached is not None and cached[0] == project.runtime_disk_accounting_json:
+            return cached[1]
+        identities = snapshot.get('shared_inodes')
+        if identities is None and self.projects is not None:
+            encoded = self.projects.runtime_shared_inodes(project.project_id, snapshot['generation'])
+            if encoded is None:
+                return None
+            identities = json.loads(encoded)
+        if identities is None:
+            return None
+        seen = {tuple(pair) for pair in identities}
+        self._runtime_inode_cache[project.project_id] = (project.runtime_disk_accounting_json, seen)
+        return seen
+
+    def _legacy_project_disk_usage(self, project: ProjectRecord) -> int:
         total = (
             path_size_bytes(
                 Path(project.root_path),
@@ -130,13 +216,6 @@ class MetricsService:
         )
         for log_path_text in self.jobs.list_log_paths_for_project(project.project_id):
             total += path_size_bytes(Path(log_path_text))
-        self._project_disk_usage_cache[project.project_id] = (
-            project.root_path,
-            project.runtime_venv_size_bytes,
-            project.runtime_uv_cache_size_bytes,
-            now + PROJECT_DISK_USAGE_TTL_SECONDS,
-            total,
-        )
         return total
 
     def _docker_stats_by_container_name(self, container_names: list[str]) -> dict[str, dict[str, object]]:

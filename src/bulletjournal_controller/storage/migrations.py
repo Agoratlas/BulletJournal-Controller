@@ -310,4 +310,16 @@ MIGRATIONS: list[tuple[str, str]] = [
         CREATE INDEX idx_oauth_refresh_tokens_hash ON oauth_refresh_tokens(token_hash);
         """,
     ),
+    (
+        '011_runtime_disk_accounting',
+        """
+        ALTER TABLE projects ADD COLUMN runtime_disk_accounting_json TEXT;
+        CREATE TABLE project_runtime_disk_inodes (
+            project_id TEXT PRIMARY KEY,
+            generation TEXT NOT NULL,
+            identities_json TEXT NOT NULL,
+            FOREIGN KEY(project_id) REFERENCES projects(project_id) ON DELETE CASCADE
+        );
+        """,
+    ),
 ]

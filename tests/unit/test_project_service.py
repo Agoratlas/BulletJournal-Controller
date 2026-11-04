@@ -379,6 +379,7 @@ def test_stop_project_refreshes_runtime_status_before_shutdown(tmp_path) -> None
         'last_notebook_edit_at': '2026-07-09T15:02:00Z',
         'last_run_finished_at': '2026-07-09T14:30:00Z',
         'idle_shutdown_eligible_since': '2026-07-09T14:45:00Z',
+        'idle_shutdown_eligible': True,
     }
     service = ProjectService(
         instance_paths=instance_paths,

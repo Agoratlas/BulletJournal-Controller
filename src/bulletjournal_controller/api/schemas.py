@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -71,6 +73,10 @@ class UpdateEnvironmentRequest(StrictModel):
 class ReinstallEnvironmentRequest(StrictModel):
     mark_all_artifacts_stale: bool
     restart_if_running: bool = True
+
+
+class ExportProjectRequest(StrictModel):
+    mode: Literal['code_only', 'code_and_constants', 'code_and_data', 'snapshot', 'full'] = 'full'
 
 
 class ProjectJobResponse(StrictModel):

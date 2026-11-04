@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from bulletjournal_controller.services.reconcile_service import ReconcileService
+from bulletjournal_controller.utils import parse_iso8601
 
 
 class DummyProjectService:
@@ -69,7 +70,7 @@ def test_reconcile_does_not_stop_project_before_idle_timeout_elapsed() -> None:
 
     original_utc_now = reconcile_module.utc_now
     try:
-        reconcile_module.utc_now = lambda: reconcile_module.parse_iso8601('2026-03-23T12:03:00Z')
+        reconcile_module.utc_now = lambda: parse_iso8601('2026-03-23T12:03:00Z')
         service.run_once()
     finally:
         reconcile_module.utc_now = original_utc_now
@@ -98,7 +99,7 @@ def test_reconcile_stops_project_after_idle_timeout_elapsed() -> None:
 
     original_utc_now = reconcile_module.utc_now
     try:
-        reconcile_module.utc_now = lambda: reconcile_module.parse_iso8601('2026-03-23T10:00:01Z')
+        reconcile_module.utc_now = lambda: parse_iso8601('2026-03-23T10:00:01Z')
         service.run_once()
     finally:
         reconcile_module.utc_now = original_utc_now
@@ -133,3 +134,32 @@ def test_reconcile_marks_project_crashed_when_status_fetch_fails_for_missing_con
     assert project_service.crashed == ['study-a']
     assert project_service.applied_statuses == []
     assert len(runtime_service.captured) == 1
+
+
+def test_restart_gets_a_full_idle_timeout_despite_old_activity(monkeypatch):
+    import bulletjournal_controller.services.reconcile_service as reconcile_module
+
+    project = SimpleNamespace(
+        project_id='study-a',
+        status='running',
+        container_port=8765,
+        runtime_started_at='2026-03-23T10:00:00Z',
+    )
+    status_payload = {
+        'idle_shutdown_eligible': True,
+        'idle_shutdown_eligible_since': '2026-03-20T10:00:00Z',
+    }
+    project_service = DummyProjectService(project)
+    jobs = DummyJobService()
+    service = ReconcileService(
+        project_service=project_service,
+        runtime_service=DummyRuntimeService(status_payload),
+        idle_timeout_seconds=3600,
+        job_service=jobs,
+    )
+    monkeypatch.setattr(reconcile_module, 'utc_now', lambda: parse_iso8601('2026-03-23T10:05:00Z'))
+    service.run_once()
+    assert jobs.stop_requests == []
+    monkeypatch.setattr(reconcile_module, 'utc_now', lambda: parse_iso8601('2026-03-23T11:00:00Z'))
+    service.run_once()
+    assert jobs.stop_requests == [('study-a', 'idle_timeout')]

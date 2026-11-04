@@ -67,7 +67,9 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser.add_argument('instance_root')
     export_parser.add_argument('project_id')
     export_parser.add_argument('archive')
-    export_parser.add_argument('--without-artifacts', action='store_true')
+    export_mode = export_parser.add_mutually_exclusive_group()
+    export_mode.add_argument('--without-artifacts', action='store_true')
+    export_mode.add_argument('--mode', choices=['code_only', 'code_and_data', 'snapshot', 'full'])
 
     import_parser = subparsers.add_parser('import-project', help='Import a managed project from a zip archive')
     import_parser.add_argument('instance_root')
@@ -136,6 +138,7 @@ def app() -> None:
                     args.project_id,
                     args.archive,
                     include_artifacts=not args.without_artifacts,
+                    mode=args.mode,
                 ),
                 indent=2,
                 sort_keys=True,

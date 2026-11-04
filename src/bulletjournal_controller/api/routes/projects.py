@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import FileResponse, Response
 
 from bulletjournal_controller.api.auth import get_current_user, require_same_origin
 from bulletjournal_controller.api.schemas import (
     CreateProjectRequest,
     CreateProjectResponse,
+    ExportProjectRequest,
     LimitsRequest,
     ProjectJobResponse,
     ProjectRolesRequest,
@@ -15,7 +16,6 @@ from bulletjournal_controller.api.schemas import (
     UpdateProjectRequest,
 )
 from bulletjournal_controller.domain.errors import NotFoundError
-from bulletjournal_controller.services.export_service import ExportService
 
 router = APIRouter(prefix='/projects', tags=['projects'])
 
@@ -92,7 +92,9 @@ def get_project(project_id: str, request: Request, _user=Depends(get_current_use
     project = container.authorization_service.require_project_viewer(_user, project_id)
     metrics = container.metrics_service.cached_project_metrics_map([project]).get(project.project_id)
     payload = _project_payload(container, project, _user, metrics)
-    payload['recent_jobs'] = [job.to_api() for job in container.jobs.list_for_project(project_id)]
+    payload['recent_jobs'] = [
+        container.job_service.job_payload(job) for job in container.jobs.list_for_project(project_id)
+    ]
     return payload
 
 
@@ -110,30 +112,22 @@ def download_project_lockfile(project_id: str, request: Request, _user=Depends(g
     )
 
 
-@router.get('/{project_id}/export')
-def download_project_export(
+@router.post('/{project_id}/export', status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_same_origin)])
+def queue_project_export(
     project_id: str,
+    payload: ExportProjectRequest,
     request: Request,
-    mode: str = Query(default='full'),
     _user=Depends(get_current_user),
 ):
     container = request.app.state.container
     project = container.authorization_service.require_project_admin(_user, project_id)
-    export_mode = ExportService.parse_export_mode(mode)
-    archive_path = container.instance_paths.exports_dir / ExportService.download_filename(
+    job = container.job_service.queue_job(
+        job_type='export_project',
+        requested_by_user_id=_user.user_id,
         project_id=project.project_id,
-        mode=export_mode,
+        payload={'export_mode': payload.mode},
     )
-    container.export_service.export_project(
-        project=project,
-        archive_path=archive_path,
-        mode=export_mode,
-    )
-    return FileResponse(
-        archive_path,
-        media_type='application/zip',
-        filename=archive_path.name,
-    )
+    return {'job': container.job_service.job_payload(job)}
 
 
 @router.get('/{project_id}/mcp-config/opencode')

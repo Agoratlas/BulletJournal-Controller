@@ -17,6 +17,8 @@ instance_root/
 |  `- state.db
 |- projects/
 |- exports/
+|  `- job-<id>/
+|     `- archive.zip
 |- logs/
 |  |- controller.log
 |  `- jobs/
@@ -48,6 +50,22 @@ Canonical non-secret instance configuration:
 ```
 
 Secrets are never written into this file.
+
+## Controller Metadata and Temporary Exports
+
+`metadata/state.db` is migrated automatically when the controller opens it.
+The `projects.runtime_disk_accounting_json` field contains a compact, versioned
+runtime-size snapshot. Its hardlink identity index lives in
+`project_runtime_disk_inodes` and is committed in the same transaction as both
+runtime totals. Startup backfills only missing or outdated accounting snapshots.
+
+Successful export jobs retain download filenames, sizes, and expiry timestamps
+in `jobs.result_json`. ZIPs are created as `exports/<job_id>/partial.zip` and
+atomically published as `archive.zip` before the job succeeds. The ZIP expires
+24 hours after completion; cleanup removes its directory while retaining job
+history. Flat, explicitly written CLI exports are outside this cleanup scheme.
+
+## Project Defaults
 
 - `default_cpu_limit_cpus`, `default_memory_limit_gb`, and `default_disk_soft_limit_gb` are optional
 - these values are used to prefill the create-project form only

@@ -451,16 +451,44 @@ class ProjectRepository(BaseRepository[ProjectRecord]):
 
     def update(self, project_id: str, **changes: Any) -> ProjectRecord:
         changes = dict(changes)
+        runtime_inodes = changes.pop('_runtime_shared_inodes', None)
         changes['updated_at'] = utc_now_iso()
         assignments = ', '.join(f'{key} = ?' for key in changes)
         params = [self._coerce_write_value(value) for value in changes.values()] + [project_id]
         with self.db.transaction() as connection:
+            if runtime_inodes is not None:
+                generation, identities_json = runtime_inodes
+                connection.execute(
+                    'INSERT INTO project_runtime_disk_inodes (project_id, generation, identities_json) '
+                    'VALUES (?, ?, ?) '
+                    'ON CONFLICT(project_id) DO UPDATE SET generation = excluded.generation, '
+                    'identities_json = excluded.identities_json',
+                    (project_id, generation, identities_json),
+                )
             connection.execute(
                 f'UPDATE projects SET {assignments} WHERE project_id = ?',  # noqa: S608 - Assignments derive from fixed project repository fields.
                 params,
             )
             row = connection.execute('SELECT * FROM projects WHERE project_id = ?', (project_id,)).fetchone()
         return self._row_to_model(row)  # type: ignore[return-value]
+
+    def runtime_shared_inodes(self, project_id: str, generation: str) -> str | None:
+        with self.db.read() as connection:
+            row = connection.execute(
+                'SELECT identities_json FROM project_runtime_disk_inodes WHERE project_id = ? AND generation = ?',
+                (project_id, generation),
+            ).fetchone()
+        return str(row[0]) if row is not None else None
+
+    def has_runtime_shared_inodes(self, project_id: str, generation: str) -> bool:
+        with self.db.read() as connection:
+            return (
+                connection.execute(
+                    'SELECT 1 FROM project_runtime_disk_inodes WHERE project_id = ? AND generation = ?',
+                    (project_id, generation),
+                ).fetchone()
+                is not None
+            )
 
     def delete(self, project_id: str) -> None:
         with self.db.transaction() as connection:

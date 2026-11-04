@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from datetime import timedelta
 
 from bulletjournal_controller.domain.enums import (
     InstallStatus,
@@ -18,6 +19,8 @@ from bulletjournal_controller.domain.rules import (
     validate_project_id,
     validate_status_reason,
 )
+from bulletjournal_controller.services.disk_accounting import read_runtime_accounting, runtime_disk_accounting
+from bulletjournal_controller.services.idle_shutdown import effective_idle_since
 from bulletjournal_controller.storage.instance_fs import (
     InstancePaths,
     ProjectPaths,
@@ -28,7 +31,7 @@ from bulletjournal_controller.storage.repositories import (
     JobRepository,
     ProjectRepository,
 )
-from bulletjournal_controller.utils import path_size_bytes, random_token, utc_now_iso
+from bulletjournal_controller.utils import json_dumps, random_token, utc_now, utc_now_iso
 
 
 class ProjectService:
@@ -42,6 +45,7 @@ class ProjectService:
         environment_service,
         runtime_service,
         gpu_enabled: bool = False,
+        idle_timeout_seconds: int = 86400,
     ):
         self.instance_paths = instance_paths
         self.projects = projects
@@ -50,21 +54,33 @@ class ProjectService:
         self.environment_service = environment_service
         self.runtime_service = runtime_service
         self.gpu_enabled = gpu_enabled
+        self.idle_timeout_seconds = idle_timeout_seconds
 
     def list_projects(self) -> list[ProjectRecord]:
         return self.projects.list_all()
 
     def backfill_runtime_size_bytes(self) -> None:
         for project in self.projects.list_all():
-            if project.runtime_venv_size_bytes is not None and project.runtime_uv_cache_size_bytes is not None:
+            snapshot = read_runtime_accounting(project)
+            if snapshot is not None and (
+                'generation' not in snapshot
+                or self.projects.has_runtime_shared_inodes(project.project_id, snapshot['generation'])
+            ):
                 continue
-            project_paths = self.instance_paths.project_paths(project.project_id)
-            updates = {}
-            if project.runtime_venv_size_bytes is None:
-                updates['runtime_venv_size_bytes'] = path_size_bytes(project_paths.runtime_venv_dir)
-            if project.runtime_uv_cache_size_bytes is None:
-                updates['runtime_uv_cache_size_bytes'] = path_size_bytes(project_paths.runtime_uv_cache_dir)
-            self.projects.update(project.project_id, **updates)
+            self.projects.update(project.project_id, **self.runtime_size_updates(project.project_id))
+
+    def runtime_size_updates(self, project_id: str) -> dict:
+        snapshot = runtime_disk_accounting(self.project_paths(project_id))
+        # Keep the potentially large inode index out of ordinary project reads.
+        identities = snapshot.pop('shared_inodes')
+        generation = random_token(bytes_length=12)
+        snapshot['generation'] = generation
+        return {
+            'runtime_venv_size_bytes': snapshot['python_env'],
+            'runtime_uv_cache_size_bytes': snapshot['uv_cache'],
+            'runtime_disk_accounting_json': json_dumps(snapshot),
+            '_runtime_shared_inodes': (generation, json_dumps(identities)),
+        }
 
     def get_project(self, project_id: str) -> ProjectRecord:
         return self.projects.require(validate_project_id(project_id))
@@ -213,6 +229,7 @@ class ProjectService:
             'runtime_uv_cache_size_bytes': runtime_uv_cache_size_bytes,
             'last_install_at': utc_now_iso(),
         }
+        updates.update(self.runtime_size_updates(project_id))
         installed_version = self.environment_service.resolve_installed_bulletjournal_version(
             project_paths=self.project_paths(project_id)
         )
@@ -252,6 +269,7 @@ class ProjectService:
             project_id=project_id,
             status=ProjectStatus.STARTING.value,
             status_reason=None,
+            idle_shutdown_eligible_at=None,
         )
         project = self.get_project(project_id)
         runtime = self.runtime_service.start_project(project=project, project_paths=self.project_paths(project_id))
@@ -264,6 +282,7 @@ class ProjectService:
             container_port=runtime.host_port,
             runtime_started_at=runtime.started_at,
             runtime_stopped_at=None,
+            idle_shutdown_eligible_at=None,
         )
 
     def stop_project(self, project_id: str, *, reason: str | None = None) -> ProjectRecord:
@@ -272,16 +291,29 @@ class ProjectService:
             return project
         if project.status != ProjectStatus.RUNNING.value:
             raise ConflictError(f'Cannot stop project from status {project.status}.')
+        status_payload = None
+        if reason == ProjectStatusReason.IDLE_TIMEOUT.value:
+            # Idle-stop jobs can wait behind other work. Recheck against the
+            # current runtime, rather than executing a stale shutdown decision.
+            try:
+                status_payload = self.runtime_service.fetch_project_status(project=project)
+            except Exception:
+                return project
+            project = self.apply_runtime_status(project_id=project_id, status_payload=status_payload)
+            idle_since = effective_idle_since(project, status_payload)
+            if idle_since is None or idle_since + timedelta(seconds=self.idle_timeout_seconds) > utc_now():
+                return project
         self.set_status(
             project_id=project_id,
             status=ProjectStatus.STOPPING.value,
             status_reason=None,
         )
         project = self.get_project(project_id)
-        try:
-            status_payload = self.runtime_service.fetch_project_status(project=project)
-        except Exception:
-            status_payload = None
+        if status_payload is None:
+            try:
+                status_payload = self.runtime_service.fetch_project_status(project=project)
+            except Exception:
+                status_payload = None
         if status_payload is not None:
             self.apply_runtime_status(project_id=project_id, status_payload=status_payload)
             project = self.get_project(project_id)
@@ -330,14 +362,14 @@ class ProjectService:
             default=None,
         )
         last_run_finished_at = status_payload.get('last_run_finished_at')
-        idle_since = status_payload.get('idle_shutdown_eligible_since')
+        idle_since = effective_idle_since(self.get_project(project_id), status_payload)
         return self.projects.update(
             project_id,
             last_graph_edit_at=graph_edit if isinstance(graph_edit, str) else None,
             last_notebook_edit_at=notebook_edit if isinstance(notebook_edit, str) else None,
             last_edit_at=last_edit_at,
             last_run_finished_at=last_run_finished_at if isinstance(last_run_finished_at, str) else None,
-            idle_shutdown_eligible_at=idle_since if isinstance(idle_since, str) else None,
+            idle_shutdown_eligible_at=idle_since.isoformat().replace('+00:00', 'Z') if idle_since is not None else None,
         )
 
     def update_environment_inputs(

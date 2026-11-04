@@ -152,3 +152,30 @@ def test_proxied_route_metrics_use_route_label() -> None:
     assert 'route="/api/v1/graph"' in output
     assert 'route_type="project"' in output
     assert 'endpoint="/api/v1/graph"' not in output
+
+
+def test_disk_categories_exported_and_removed_when_unavailable_or_deleted():
+    observability = Observability()
+    project = {
+        'project_id': 'study-a',
+        'status': 'stopped',
+        'disk_breakdown_bytes': {
+            'python_env': 10,
+            'uv_cache': 20,
+            'objects': 30,
+            'database': 40,
+            'others': 50,
+        },
+    }
+    observability.update_resources(system={}, projects=[project])
+    output = observability.render().decode()
+    for category, value in project['disk_breakdown_bytes'].items():
+        assert (
+            f'bulletjournal_controller_project_disk_usage_bytes{{category="{category}",project_id="study-a"}} {value}.0'
+            in output
+        )
+    observability.update_resources(system={}, projects=[{'project_id': 'study-a', 'status': 'stopped'}])
+    assert 'category="python_env"' not in observability.render().decode()
+    observability.update_resources(system={}, projects=[project])
+    observability.update_resources(system={}, projects=[])
+    assert 'category="python_env"' not in observability.render().decode()

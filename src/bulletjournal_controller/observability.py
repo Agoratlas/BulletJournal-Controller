@@ -13,6 +13,7 @@ from prometheus_client import (
 )
 
 from bulletjournal_controller.domain.enums import ProjectStatus
+from bulletjournal_controller.services.disk_accounting import DISK_CATEGORIES
 
 LATENCY_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60)
 
@@ -121,6 +122,12 @@ class Observability:
             ('project_id',),
             registry=self.registry,
         )
+        self.project_disk_usage = Gauge(
+            'bulletjournal_controller_project_disk_usage_bytes',
+            'Project disk usage by category, counting hardlinked files once.',
+            ('project_id', 'category'),
+            registry=self.registry,
+        )
         self.project_status = Gauge(
             'bulletjournal_controller_project_status',
             'Current controller status for each project; exactly one status is 1.',
@@ -152,6 +159,13 @@ class Observability:
             _set_or_remove(self.project_cpu_percent, project_id, project.get('cpu_percent'))
             _set_or_remove(self.project_memory_used, project_id, project.get('memory_used_bytes'))
             _set_or_remove(self.project_disk_used, project_id, project.get('disk_used_bytes'))
+            breakdown = project.get('disk_breakdown_bytes')
+            for category in DISK_CATEGORIES:
+                value = breakdown.get(category) if isinstance(breakdown, dict) else None
+                if isinstance(value, int | float) and not isinstance(value, bool):
+                    self.project_disk_usage.labels(project_id=project_id, category=category).set(value)
+                else:
+                    _remove_labels(self.project_disk_usage, project_id, category)
             _set_or_remove(
                 self.project_cpu_limit,
                 project_id,
@@ -212,6 +226,8 @@ class Observability:
         _remove_labels(self.project_memory_used, project_id)
         _remove_labels(self.project_memory_limit, project_id)
         _remove_labels(self.project_disk_used, project_id)
+        for category in DISK_CATEGORIES:
+            _remove_labels(self.project_disk_usage, project_id, category)
         _remove_labels(self.project_disk_soft_limit, project_id)
         for status in self._project_statuses:
             _remove_labels(self.project_status, project_id, status)

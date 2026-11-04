@@ -14,6 +14,7 @@ def export_project(
     archive: str,
     *,
     include_artifacts: bool = True,
+    mode: str | None = None,
 ) -> dict[str, object]:
     instance_paths = require_instance_root(Path(instance_root))
     container = ServiceContainer(
@@ -26,5 +27,7 @@ def export_project(
     return container.export_service.export_project(
         project=project,
         archive_path=Path(archive).resolve(),
-        mode=(ProjectExportMode.FULL if include_artifacts else ProjectExportMode.CODE_ONLY),
+        mode=container.export_service.parse_export_mode(mode)
+        if mode is not None
+        else (ProjectExportMode.FULL if include_artifacts else ProjectExportMode.CODE_ONLY),
     )

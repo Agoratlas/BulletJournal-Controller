@@ -3,7 +3,9 @@ from __future__ import annotations
 import zipfile
 
 import pytest
-from bulletjournal.storage.project_fs import init_project_root
+from bulletjournal.api.app import create_app as create_editor_app
+from bulletjournal.storage.project_fs import init_project_root, require_project_root
+from fastapi.testclient import TestClient
 
 from bulletjournal_controller.api.deps import ServiceContainer
 from bulletjournal_controller.config import ServerConfig
@@ -12,7 +14,8 @@ from bulletjournal_controller.services.export_service import ProjectExportMode
 from bulletjournal_controller.storage import require_instance_root
 
 
-def test_export_import_round_trip(instance_root) -> None:
+@pytest.mark.parametrize('mode', ['full', 'snapshot'])
+def test_export_import_round_trip(instance_root, mode) -> None:
     instance_paths = require_instance_root(instance_root)
     container = ServiceContainer(
         instance_paths=instance_paths,
@@ -37,7 +40,7 @@ def test_export_import_round_trip(instance_root) -> None:
     exported = container.export_service.export_project(
         project=project,
         archive_path=archive,
-        mode=ProjectExportMode.FULL,
+        mode=ProjectExportMode(mode),
     )
     assert archive.is_file()
     container.project_service.delete_project('study-a')
@@ -47,6 +50,7 @@ def test_export_import_round_trip(instance_root) -> None:
     assert imported_project.controller_status_token
     assert imported_project.bulletjournal_version == '0.1.0'
     assert imported_project.custom_requirements_text == 'bulletjournal-editor==0.1.0\n'
+    require_project_root(instance_paths.project_root('study-a'))
 
 
 def test_export_modes_follow_bulletjournal_archive_layout(instance_root) -> None:
@@ -90,6 +94,7 @@ def test_export_modes_follow_bulletjournal_archive_layout(instance_root) -> None
     archives = {
         ProjectExportMode.CODE_ONLY: instance_paths.exports_dir / 'study-a-code-only.zip',
         ProjectExportMode.CODE_AND_DATA: instance_paths.exports_dir / 'study-a-code-and-data.zip',
+        ProjectExportMode.SNAPSHOT: instance_paths.exports_dir / 'study-a-snapshot.zip',
         ProjectExportMode.FULL: instance_paths.exports_dir / 'study-a-full.zip',
     }
 
@@ -102,6 +107,9 @@ def test_export_modes_follow_bulletjournal_archive_layout(instance_root) -> None
         )
         with zipfile.ZipFile(archive, 'r') as exported_archive:
             exported_names[mode] = set(exported_archive.namelist())
+            extracted = instance_root / f'extracted-{mode.value}'
+            exported_archive.extractall(extracted)
+            require_project_root(extracted)
 
     for names in exported_names.values():
         assert 'graph/' in names
@@ -135,10 +143,15 @@ def test_export_modes_follow_bulletjournal_archive_layout(instance_root) -> None
     )
     assert 'objects/artifact.bin' in exported_names[ProjectExportMode.FULL]
     assert 'checkpoints/cp-1/notebooks/keep.py' in exported_names[ProjectExportMode.FULL]
+    assert 'objects/artifact.bin' not in exported_names[ProjectExportMode.SNAPSHOT]
+    assert 'checkpoints/cp-1/notebooks/keep.py' not in exported_names[ProjectExportMode.SNAPSHOT]
 
 
-def test_archive_project_removes_project_after_writing_encrypted_archive(
+@pytest.mark.parametrize('encryption_key', [None, 'archive-secret'])
+def test_archive_project_removes_project_after_writing_snapshot_archive(
     instance_root,
+    monkeypatch,
+    encryption_key,
 ) -> None:
     instance_paths = require_instance_root(instance_root)
     archive_dir = instance_root / 'external-archives'
@@ -148,7 +161,7 @@ def test_archive_project_removes_project_after_writing_encrypted_archive(
             session_secret='test-secret',
             cookie_secure=False,
             archive_dir=str(archive_dir),
-            archive_encryption_key='archive-secret',
+            archive_encryption_key=encryption_key,
         ),
         ensure_runtime_image=False,
     )
@@ -166,18 +179,65 @@ def test_archive_project_removes_project_after_writing_encrypted_archive(
     project_root = instance_paths.project_root(project.project_id)
     init_project_root(project_root, project_id='study-a')
     (project_root / 'uv.lock').write_text('version = 1\n', encoding='utf-8')
+    with TestClient(create_editor_app(project_path=project_root)) as client:
+        version = client.get('/api/v1/graph').json()['meta']['graph_version']
+        response = client.patch(
+            '/api/v1/graph',
+            json={
+                'graph_version': version,
+                'operations': [
+                    {
+                        'type': 'add_constant_node',
+                        'node_id': 'count',
+                        'title': 'Count',
+                        'data_type': 'int',
+                        'value': 1,
+                    }
+                ],
+            },
+        )
+        assert response.status_code == 200, response.text
+        old_hash = client.get('/api/v1/artifacts/count/value').json()['artifact_hash']
+        response = client.post('/api/v1/constants/count/value', json={'value': 2})
+        assert response.status_code == 200, response.text
+        current_hash = response.json()['artifact_hash']
+        assert client.post('/api/v1/checkpoints').status_code == 200
+    environment_file = project_root / '.venv' / 'local-package.txt'
+    environment_file.parent.mkdir()
+    environment_file.write_text('local environment')
+    export_modes = []
+    export_project = container.export_service.export_project
+
+    def capture_export_mode(**kwargs):
+        export_modes.append(kwargs['mode'])
+        return export_project(**kwargs)
+
+    monkeypatch.setattr(container.export_service, 'export_project', capture_export_mode)
     container.projects.update(project.project_id, status='stopped', install_status='ready')
 
     archived = container.export_service.archive_project(
         project=project,
         log_writer=lambda _message: None,
     )
+    assert export_modes == [ProjectExportMode.SNAPSHOT]
     container.project_service.delete_project(project.project_id)
 
-    archive_path = archive_dir / 'study-a.zip.enc'
-    assert archived['encrypted'] is True
-    assert archived['archive_filename'] == 'study-a.zip.enc'
+    filename = 'study-a.zip.enc' if encryption_key else 'study-a.zip'
+    archive_path = archive_dir / filename
+    assert archived['encrypted'] is bool(encryption_key)
+    assert archived['archive_filename'] == filename
     assert archive_path.is_file()
+    if not encryption_key:
+        with zipfile.ZipFile(archive_path) as archive:
+            files = {info.filename for info in archive.infolist() if not info.is_dir()}
+            assert {name for name in files if name.startswith('objects/')} == {
+                f'objects/{current_hash[:2]}/{current_hash[2:]}'
+            }
+            assert f'objects/{old_hash[:2]}/{old_hash[2:]}' not in files
+            assert not any(name.startswith(('.venv/', 'checkpoints/')) for name in files)
+            extracted = instance_root / 'archived-snapshot'
+            archive.extractall(extracted)
+        require_project_root(extracted)
     assert container.project_service.projects.get(project.project_id) is None
     assert not project_root.exists()
 

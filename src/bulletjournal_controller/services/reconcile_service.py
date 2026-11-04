@@ -6,7 +6,8 @@ from datetime import timedelta
 
 from bulletjournal_controller.config import RECONCILE_INTERVAL_SECONDS
 from bulletjournal_controller.domain.enums import ProjectStatus, ProjectStatusReason
-from bulletjournal_controller.utils import parse_iso8601, utc_now
+from bulletjournal_controller.services.idle_shutdown import effective_idle_since
+from bulletjournal_controller.utils import utc_now
 
 
 class ReconcileService:
@@ -49,11 +50,7 @@ class ReconcileService:
                     continue
                 raise
             self.project_service.apply_runtime_status(project_id=project.project_id, status_payload=status)
-            eligible_since = parse_iso8601(
-                status.get('idle_shutdown_eligible_since')
-                if isinstance(status.get('idle_shutdown_eligible_since'), str)
-                else None
-            )
+            eligible_since = effective_idle_since(project, status)
             idle_deadline = (
                 None if eligible_since is None else eligible_since + timedelta(seconds=self.idle_timeout_seconds)
             )

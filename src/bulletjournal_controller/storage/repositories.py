@@ -621,6 +621,14 @@ class JobRepository(BaseRepository[JobRecord]):
             ).fetchall()
         return [str(row[0]) for row in rows if row and row[0]]
 
+    def running_counts(self) -> dict[tuple[str, str], int]:
+        with self.db.read() as connection:
+            rows = connection.execute(
+                'SELECT project_id, job_type, COUNT(*) FROM jobs WHERE status = ? GROUP BY project_id, job_type',
+                (JobStatus.RUNNING.value,),
+            ).fetchall()
+        return {(row[0] or '', row[1]): row[2] for row in rows}
+
     def has_active_mutation(self, project_id: str) -> bool:
         with self.db.read() as connection:
             row = connection.execute(

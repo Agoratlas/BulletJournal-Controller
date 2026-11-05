@@ -127,6 +127,7 @@ The controller refreshes system and
 project resources in a background sampler every 5 seconds, independently of
 the web UI and scrape requests. Serving `/metrics` itself performs no Docker
 call or filesystem scan.
+
 # MCP Setup
 
 Set `BULLETJOURNAL_PUBLIC_ORIGIN` to the canonical HTTPS Controller origin before

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from bulletjournal_controller.domain.enums import JobStatus
 from bulletjournal_controller.storage import (
     JobRepository,
     ProjectRepository,
@@ -89,6 +90,7 @@ def test_repository_crud_behaves_deterministically(instance_root) -> None:
     )
     assert jobs.get(job.job_id) == job
     assert jobs.has_active_mutation(project.project_id) is True
+    assert jobs.running_counts() == {}
 
     completed = jobs.update(job.job_id, status='succeeded')
     assert completed.status == 'succeeded'
@@ -178,6 +180,7 @@ def test_read_queries_use_read_connection(instance_root, monkeypatch) -> None:
     assert jobs.list_for_project(project.project_id) == [job]
     assert jobs.list_log_paths_for_project(project.project_id) == ['/tmp/job-1.log']
     assert jobs.has_active_mutation(project.project_id) is True
+    assert jobs.running_counts() == {}
 
 
 def test_read_connection_does_not_commit(instance_root, monkeypatch) -> None:
@@ -209,3 +212,45 @@ def test_read_connection_does_not_commit(instance_root, monkeypatch) -> None:
         connection.execute('SELECT 1').fetchone()
 
     assert commits == 0
+
+
+def test_running_job_counts_group_by_project_and_type_and_exclude_other_statuses(instance_root) -> None:
+    db = StateDB(instance_root / 'metadata' / 'state.db')
+    UserRepository(db).create(
+        user_id='user-1', username='admin', display_name='Admin', password_hash='hash', is_active=True
+    )
+    jobs = JobRepository(db)
+    assert jobs.running_counts() == {}
+    records = [
+        ('study-a', 'update_environment', 'running'),
+        ('study-a', 'update_environment', 'running'),
+        ('study-a', 'export_project', 'running'),
+        ('study-b', 'update_environment', 'running'),
+        (None, 'import_project', 'running'),
+        *[('study-a', 'update_environment', status.value) for status in JobStatus if status != JobStatus.RUNNING],
+    ]
+    for index, (project_id, job_type, status) in enumerate(records):
+        jobs.create(
+            job_id=f'job-{index}',
+            project_id=project_id,
+            job_type=job_type,
+            status=status,
+            requested_by_user_id='user-1',
+            payload_json='{}',
+            result_json=None,
+            log_path=str(instance_root / 'logs' / 'jobs' / f'job-{index}.log'),
+            created_at='2026-03-18T12:00:00Z',
+            started_at=None,
+            finished_at=None,
+            error_message=None,
+        )
+    assert jobs.running_counts() == {
+        ('study-a', 'update_environment'): 2,
+        ('study-a', 'export_project'): 1,
+        ('study-b', 'update_environment'): 1,
+        ('', 'import_project'): 1,
+    }
+    jobs.update('job-0', status='succeeded')
+    assert jobs.running_counts()[('study-a', 'update_environment')] == 1
+    db.abort_inflight_jobs()
+    assert jobs.running_counts() == {}

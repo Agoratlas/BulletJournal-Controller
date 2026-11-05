@@ -198,6 +198,10 @@ class ServiceContainer:
 
     def refresh_prometheus_resources(self) -> None:
         projects = self.project_service.list_projects()
+        self.observability.update_running_jobs(
+            project_ids=(project.project_id for project in projects),
+            running_counts=self.jobs.running_counts(),
+        )
         self.metrics_service.prune_projects(projects)
         metrics_map = self.metrics_service.project_metrics_map(projects)
         self.observability.update_resources(

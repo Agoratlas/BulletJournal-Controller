@@ -12,7 +12,7 @@ from prometheus_client import (
     generate_latest,
 )
 
-from bulletjournal_controller.domain.enums import ProjectStatus
+from bulletjournal_controller.domain.enums import JobType, ProjectStatus
 from bulletjournal_controller.services.disk_accounting import DISK_CATEGORIES
 
 LATENCY_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60)
@@ -137,9 +137,28 @@ class Observability:
         self._project_statuses = tuple(status.value for status in ProjectStatus)
         self._known_project_ids: set[str] = set()
         self._project_outcomes: dict[str, set[str]] = {}
+        self.jobs_running = Gauge(
+            'bulletjournal_controller_jobs_running',
+            'Last sampled number of running controller jobs by project and job type.',
+            ('project_id', 'category'),
+            registry=self.registry,
+        )
+        self._known_job_labels: set[tuple[str, str]] = set()
 
     def render(self) -> bytes:
         return generate_latest(self.registry)
+
+    def update_running_jobs(self, *, project_ids: Iterable[str], running_counts: dict[tuple[str, str], int]) -> None:
+        current_labels = {
+            (project_id, category.value) for project_id in {'', *project_ids} for category in JobType
+        } | running_counts.keys()
+        for project_id, category in current_labels:
+            self.jobs_running.labels(project_id=project_id, category=category).set(
+                running_counts.get((project_id, category), 0)
+            )
+        for project_id, category in self._known_job_labels - current_labels:
+            _remove_labels(self.jobs_running, project_id, category)
+        self._known_job_labels = current_labels
 
     def update_resources(self, *, system: dict[str, object], projects: Iterable[dict[str, object]]) -> None:
         _set_if_number(self.system_cpu_percent, system.get('cpu_percent'))

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from bulletjournal_controller.domain.enums import JobType
 from bulletjournal_controller.observability import (
     Observability,
     controller_route,
@@ -179,3 +180,51 @@ def test_disk_categories_exported_and_removed_when_unavailable_or_deleted():
     observability.update_resources(system={}, projects=[project])
     observability.update_resources(system={}, projects=[])
     assert 'category="python_env"' not in observability.render().decode()
+
+
+def test_running_jobs_export_counts_and_zero_idle_categories_and_reset_after_completion() -> None:
+    observability = Observability()
+    observability.update_running_jobs(
+        project_ids=['study-a', 'study-b'],
+        running_counts={('study-a', 'update_environment'): 2, ('', 'import_project'): 1},
+    )
+    for project_id in ('study-a', 'study-b', ''):
+        for category in JobType:
+            expected = {('study-a', 'update_environment'): 2, ('', 'import_project'): 1}.get(
+                (project_id, category.value), 0
+            )
+            assert (
+                observability.registry.get_sample_value(
+                    'bulletjournal_controller_jobs_running', {'project_id': project_id, 'category': category.value}
+                )
+                == expected
+            )
+    observability.update_running_jobs(project_ids=['study-a', 'study-b'], running_counts={})
+    for project_id, category in (('study-a', 'update_environment'), ('', 'import_project')):
+        assert (
+            observability.registry.get_sample_value(
+                'bulletjournal_controller_jobs_running', {'project_id': project_id, 'category': category}
+            )
+            == 0
+        )
+
+
+def test_running_jobs_keep_deleted_project_counts_until_completion_then_remove_series() -> None:
+    observability = Observability()
+    observability.update_running_jobs(project_ids=['study-a'], running_counts={})
+    observability.update_running_jobs(project_ids=[], running_counts={('study-a', 'archive_project'): 1})
+    assert (
+        observability.registry.get_sample_value(
+            'bulletjournal_controller_jobs_running', {'project_id': 'study-a', 'category': 'archive_project'}
+        )
+        == 1
+    )
+    observability.update_running_jobs(project_ids=[], running_counts={})
+    samples = observability.render().decode()
+    assert 'project_id="study-a"' not in samples
+    assert (
+        observability.registry.get_sample_value(
+            'bulletjournal_controller_jobs_running', {'project_id': '', 'category': 'import_project'}
+        )
+        == 0
+    )

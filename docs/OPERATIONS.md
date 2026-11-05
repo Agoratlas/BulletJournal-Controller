@@ -120,7 +120,7 @@ enabled. The endpoint exports route metrics through
 `controller` or `project`, project-level latency aggregates through
 `bulletjournal_controller_requests_per_project_*`, and controller/project
 resource gauges. Disk categories are exposed as
-`bulletjournal_controller_project_disk_usage_bytes{project_id,category}`, with
+`bulletjournal_controller_project_disk_used_by_category_bytes{project_id,category}`, with
 categories `python_env`, `uv_cache`, `objects`, `database`, and `others`; their sum
 matches `bulletjournal_controller_project_disk_used_bytes`.
 The controller refreshes system and

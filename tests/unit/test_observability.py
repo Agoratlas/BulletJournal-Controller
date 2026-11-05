@@ -171,8 +171,8 @@ def test_disk_categories_exported_and_removed_when_unavailable_or_deleted():
     output = observability.render().decode()
     for category, value in project['disk_breakdown_bytes'].items():
         assert (
-            f'bulletjournal_controller_project_disk_usage_bytes{{category="{category}",project_id="study-a"}} {value}.0'
-            in output
+            f'bulletjournal_controller_project_disk_used_by_category_bytes'
+            f'{{category="{category}",project_id="study-a"}} {value}.0' in output
         )
     observability.update_resources(system={}, projects=[{'project_id': 'study-a', 'status': 'stopped'}])
     assert 'category="python_env"' not in observability.render().decode()

@@ -122,8 +122,8 @@ class Observability:
             ('project_id',),
             registry=self.registry,
         )
-        self.project_disk_usage = Gauge(
-            'bulletjournal_controller_project_disk_usage_bytes',
+        self.project_disk_used_by_category = Gauge(
+            'bulletjournal_controller_project_disk_used_by_category_bytes',
             'Project disk usage by category, counting hardlinked files once.',
             ('project_id', 'category'),
             registry=self.registry,
@@ -163,9 +163,9 @@ class Observability:
             for category in DISK_CATEGORIES:
                 value = breakdown.get(category) if isinstance(breakdown, dict) else None
                 if isinstance(value, int | float) and not isinstance(value, bool):
-                    self.project_disk_usage.labels(project_id=project_id, category=category).set(value)
+                    self.project_disk_used_by_category.labels(project_id=project_id, category=category).set(value)
                 else:
-                    _remove_labels(self.project_disk_usage, project_id, category)
+                    _remove_labels(self.project_disk_used_by_category, project_id, category)
             _set_or_remove(
                 self.project_cpu_limit,
                 project_id,
@@ -227,7 +227,7 @@ class Observability:
         _remove_labels(self.project_memory_limit, project_id)
         _remove_labels(self.project_disk_used, project_id)
         for category in DISK_CATEGORIES:
-            _remove_labels(self.project_disk_usage, project_id, category)
+            _remove_labels(self.project_disk_used_by_category, project_id, category)
         _remove_labels(self.project_disk_soft_limit, project_id)
         for status in self._project_statuses:
             _remove_labels(self.project_status, project_id, status)

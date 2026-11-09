@@ -5,7 +5,7 @@ import re
 from bulletjournal_controller.domain.enums import ProjectStatus, ProjectStatusReason
 from bulletjournal_controller.domain.errors import ConflictError, ProjectValidationError
 
-PROJECT_ID_PATTERN = re.compile(r'^[a-z0-9][a-z0-9_-]{1,62}$')
+PROJECT_ID_PATTERN = re.compile(r'^[a-z0-9][a-z0-9_-]{0,61}[a-z0-9]$')
 
 ALLOWED_STATUS_TRANSITIONS: dict[ProjectStatus, set[ProjectStatus]] = {
     ProjectStatus.CREATING: {ProjectStatus.INSTALLING, ProjectStatus.ERROR},
@@ -21,7 +21,10 @@ ALLOWED_STATUS_TRANSITIONS: dict[ProjectStatus, set[ProjectStatus]] = {
 def validate_project_id(project_id: str) -> str:
     candidate = project_id.strip()
     if not PROJECT_ID_PATTERN.fullmatch(candidate):
-        raise ProjectValidationError('Project id must match ^[a-z0-9][a-z0-9_-]{1,62}$.')
+        raise ProjectValidationError(
+            'Project id must be 2-63 characters, use only lowercase letters, digits, hyphens, or underscores, '
+            'and start and end with a lowercase letter or digit.'
+        )
     return candidate
 
 

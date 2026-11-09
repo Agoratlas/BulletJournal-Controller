@@ -188,6 +188,30 @@ def test_invalid_request_shape_returns_422(instance_root, server_config) -> None
         assert response.status_code == 422
 
 
+@pytest.mark.parametrize('project_id', ['2026_11_', 'study-'])
+def test_project_create_rejects_invalid_name_before_creating_artifacts(
+    instance_root, server_config, project_id: str
+) -> None:
+    app = create_app(instance_root=instance_root, server_config=server_config)
+    container: ServiceContainer = app.state.container
+    container.auth_service.create_user(username='admin', display_name='Admin', password='secret-pass')
+    with _auth_client(app) as client:
+        response = client.post(
+            '/api/v1/projects',
+            headers={'origin': 'http://testserver'},
+            json={
+                'project_id': project_id,
+                'custom_requirements_text': 'bulletjournal-editor==0.3.0\n',
+            },
+        )
+
+    assert response.status_code == 422
+    assert 'start and end with a lowercase letter or digit' in response.json()['detail']
+    assert container.projects.list_all() == []
+    assert container.jobs.list_for_project(project_id) == []
+    assert not (container.instance_paths.projects_dir / project_id).exists()
+
+
 def test_environment_requests_require_explicit_artifact_staleness_choice(instance_root, server_config) -> None:
     app = create_app(instance_root=instance_root, server_config=server_config)
     container: ServiceContainer = app.state.container

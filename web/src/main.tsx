@@ -3237,7 +3237,18 @@ function CreateProjectModal({
             <div className="field-grid">
               <div className="field">
                 <label htmlFor="create-project-id">Project id</label>
-                <input id="create-project-id" ref={projectIdInputRef} value={form.project_id} onChange={(event) => setForm((current) => ({ ...current, project_id: event.target.value }))} placeholder="study-a" required />
+                <input
+                  id="create-project-id"
+                  ref={projectIdInputRef}
+                  value={form.project_id}
+                  onChange={(event) => setForm((current) => ({ ...current, project_id: event.target.value }))}
+                  placeholder="study-a"
+                  pattern={'[a-z0-9][a-z0-9_\\-]{0,61}[a-z0-9]'}
+                  title="Use 2-63 lowercase letters, digits, hyphens, or underscores; start and end with a letter or digit."
+                  aria-describedby="create-project-id-hint"
+                  required
+                />
+                <p id="create-project-id-hint" className="section-copy">Use 2-63 lowercase letters, digits, hyphens, or underscores; start and end with a letter or digit.</p>
               </div>
               <div className="field-full">
                 <label htmlFor="create-dependencies">Dependency text</label>
